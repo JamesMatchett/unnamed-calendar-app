@@ -1,0 +1,14 @@
+# Local state and plan artefacts — never committed.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+
+# Provider lock files ARE committed: they pin provider versions across CI and
+# every developer. Do not add .terraform.lock.hcl here.
+
+# Local overrides
+*.auto.tfvars
+override.tf
+override.tf.json

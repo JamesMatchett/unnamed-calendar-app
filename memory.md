@@ -22,10 +22,54 @@ project *is*.
 | App IA and key flows | Settled (§3.5) |
 | Festivals, promoters, SEO | Designed but **deferred past v1** (§6.4–6.6) |
 | Visual design | Not started |
-| Infrastructure code | Not started — Terraform, per §3.6 |
+| Infrastructure code | **Written, PENDING** — `src/terraform` skeleton, state bootstrap, the DynamoDB table module, GitHub OIDC roles, plan/apply workflows all exist. **Nothing has been applied**, and it is parked until the AWS accounts exist |
 
-**Next artefact:** the Terraform DynamoDB table definition plus the TypeScript item types in
-`packages/core`. That is where the one-way doors get pinned down.
+### Parked: Terraform and CI
+
+Blocked on AWS account creation and the surrounding plumbing (Organization, accounts,
+billing, admin access). The code is committed but inert. When the accounts are ready,
+`src/terraform/README.md` has the full sequence; the short version:
+
+1. `terraform fmt -recursive src/terraform` **first** — the files were authored without a
+   local Terraform binary, so formatting is unverified and the CI `fmt -check` job will
+   otherwise be the first thing to fail.
+2. Run `bootstrap/` in each account; note the three outputs.
+3. Replace `REPLACE_WITH_ACCOUNT_ID` in each env's `backend.tf` and `terraform.tfvars`.
+4. Apply `envs/dev` locally once to create the CI roles.
+5. Set the three repository variables, create the three GitHub Environments, and add
+   required reviewers to `prod`.
+
+Nothing else in the project depends on this being done.
+
+### Done since
+
+- **`src/packages/core`** — branded ULID ids, the time triple, every key builder, all item
+  shapes, and the authorisation and RSVP-resolution rules. Typechecks clean under `strict` +
+  `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes`, and `npm test` runs 13 node:test
+  assertions covering the rules subtle enough to be reimplemented wrongly. No runtime
+  dependency beyond `ulid`.
+
+- **`src/apps/mobile`** — Expo SDK 57 app, npm workspaces at the repo root. The §3.5
+  vertical slice (Calendars → Calendar → Day → Event, plus Agenda) on a real SQLite mirror
+  with seeded fixtures, one-tap RSVP writing through a mutation queue, light and dark
+  themes. Typechecks clean; `expo export` bundles for iOS, Android and web.
+
+### Unblocked next artefacts
+
+1. First-run flow: create calendar → first event → invite (§3.5).
+2. Event creation, with natural-language entry and duplicate detection.
+3. Cognito user pool and the three Lambda trigger definitions (§3.2) — writable now,
+   appliable later.
+4. The first Lambda handler and route, against `@uca/core`.
+
+### Known limitation: expo-sqlite on web
+
+`openDatabaseSync` needs `SharedArrayBuffer` and a sync-access worker, and fails on web with
+"Sync operation timeout" even under cross-origin isolation. iOS and Android are unaffected.
+Two ways out are written up in `src/apps/mobile/README.md`; the better one — hydrate a
+calendar into memory on entry, keep reads synchronous, write through to SQLite — is also the
+shape the app will want at scale. Not urgent: v1's website is a thin acquisition surface, not
+this app in a browser.
 
 ## Still open
 
@@ -85,6 +129,37 @@ Ordered roughly by how expensive they are to discover late.
     and makes rollback awkward. `ignore_changes` on the code hash, ship via CI (§3.6).
 13. **Cognito is likely the largest single line item** at scale — three to ten times the whole
     compute and storage bill. Keep auth behind an interface (§3.2, §10).
+
+## Frontend and tooling traps
+
+Found while building the app, and all of them cost time to diagnose.
+
+1. **Expo Go from the App Store lags the SDK.** As of May 2026 Expo Go on the store still
+   targeted SDK 54, with SDK 55 pending Apple review; this app is on **SDK 57**, so a
+   physical iPhone running store Expo Go will refuse the project. The *simulator* build of
+   Expo Go is fetched by the Expo CLI and is not App Store gated, so `press i` works fine.
+   For a physical device you need a development build (`npx expo run:ios`, or EAS Build),
+   which needs Xcode locally or an Apple Developer account for device installs.
+2. **`@uca/core` must be BUILT before the app can import it.** The package resolves to
+   `dist/`, so `npm run build:core` precedes `npm run mobile`. Skipping it produces a module
+   resolution error that looks like a broken workspace.
+3. **Metro needs explicit monorepo wiring.** `watchFolders`, `nodeModulesPaths` and
+   `disableHierarchicalLookup` in `metro.config.js`. Without them, importing `@uca/core`
+   fails with an unhelpful "module not found" that reads like a typo.
+4. **`wasm` must be added to Metro's `assetExts`** or the web bundle fails to resolve
+   `expo-sqlite`'s WASM build — while iOS and Android build fine. A confusing
+   platform-specific break.
+5. **Never run `npm install` for this repo from a Linux shell.** Native dependencies resolve
+   per-platform; installing from anywhere other than the Mac leaves binaries that fail at
+   runtime. (Relevant when a tool has shell access to the repo from a Linux VM.)
+6. **`node --test` needs a glob, not a directory** — `node --test "test/*.test.mjs"`.
+   Passing `test/` makes it try to execute the directory as a file.
+7. **`expo-sqlite`'s synchronous API does not work on web** — see the section above.
+8. **Plain `git status` from a sandboxed shell can strand `.git/index.lock`.** It takes the
+   index lock to refresh, and if that shell cannot delete files the lock survives, after
+   which every git command fails with "Another git process seems to be running". Use
+   `git --no-optional-locks status`, which does not take the lock. To recover, `mv` the lock
+   aside — deleting it is not always possible from that shell.
 
 ## Things deliberately not built
 

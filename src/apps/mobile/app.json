@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "UCA",
+    "slug": "uca",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+
+    "//scheme": "Universal links carry invite tokens straight into the app when it is installed (Architecture.md §7.1, §13.9).",
+    "scheme": "uca",
+
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.uca.mobile"
+    },
+    "android": {
+      "package": "app.uca.mobile",
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

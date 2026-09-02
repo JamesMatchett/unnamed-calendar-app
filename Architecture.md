@@ -688,8 +688,9 @@ The Brief's own design mostly solves this, which is worth calling out explicitly
   approves rather than editing directly, which removes most of the conflict surface. This
   fell out of a product decision rather than a technical one, and it is worth keeping.
 - **But two roles can still write directly**: the event author, and the calendar owner, who
-  by design can edit anything (with attribution shown via `lastUpdatedBy`). Plus any member
-  when the author has set `allowSuggestions: false`. So the concurrent-edit path is real,
+  by design can edit anything (with attribution shown via `lastUpdatedBy`). Note that
+  `allowSuggestions: false` does *not* grant other members a direct edit — it means they can
+  neither suggest nor edit, per the table in §8.1. So the concurrent-edit path is real,
   not theoretical: every direct write carries a `version` attribute and a
   `ConditionExpression`, and a stale client gets a 409 and re-syncs rather than silently
   clobbering. Cheap to implement, but do not skip it.
