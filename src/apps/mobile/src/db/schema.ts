@@ -26,6 +26,11 @@ CREATE TABLE IF NOT EXISTS calendars (
   default_tz           TEXT NOT NULL,
   collect_availability INTEGER NOT NULL DEFAULT 0,
   travel_mode          TEXT NOT NULL DEFAULT 'plane',
+  cover_image          TEXT,
+  -- Yours alone, or yours and one other person's. A flag rather than a member
+  -- count: two people planning a weekend away are not the same thing as a
+  -- couple's shared calendar, even though both have two members.
+  is_private           INTEGER NOT NULL DEFAULT 0,
   require_approval     INTEGER NOT NULL DEFAULT 1,
   allow_member_invites INTEGER NOT NULL DEFAULT 1,
   allow_member_events  INTEGER NOT NULL DEFAULT 1,
@@ -69,6 +74,7 @@ CREATE TABLE IF NOT EXISTS events (
   created_at       TEXT NOT NULL,
   version          INTEGER NOT NULL DEFAULT 1,
   rrule            TEXT,
+  image_key        TEXT,
   -- 'synced' | 'pending' | 'failed'. Pending never blocks interaction (§5.6).
   sync_state       TEXT NOT NULL DEFAULT 'synced',
   FOREIGN KEY (calendar_id) REFERENCES calendars(calendar_id) ON DELETE CASCADE
@@ -210,6 +216,18 @@ CREATE TABLE IF NOT EXISTS invite_links (
   created_at  TEXT NOT NULL,
   uses        INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (calendar_id) REFERENCES calendars(calendar_id) ON DELETE CASCADE
+);
+
+-- People waiting for an owner to let them in (§7.1). Kept separate from members
+-- so that "asked to join" and "is in the calendar" can never be confused.
+CREATE TABLE IF NOT EXISTS join_requests (
+  calendar_id        TEXT NOT NULL,
+  user_id            TEXT NOT NULL,
+  display_name       TEXT NOT NULL,
+  requested_at       TEXT NOT NULL,
+  via_token          TEXT,
+  previously_removed INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (calendar_id, user_id)
 );
 
 CREATE TABLE IF NOT EXISTS meta (

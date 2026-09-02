@@ -4,6 +4,7 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 
+import { Cover } from "@/components/Cover";
 import { DayPills } from "@/components/DayPills";
 import { DayPresenceNote } from "@/components/DayPresenceNote";
 import { EventRow } from "@/components/EventRow";
@@ -98,8 +99,17 @@ export default function CalendarScreen() {
           ),
         }}
       />
-      <ScrollView contentContainerStyle={{ paddingVertical: space.lg, gap: space.lg }}>
+      <ScrollView
+        contentContainerStyle={{
+          paddingTop: space.lg,
+          // Clears the floating Add button, which otherwise sits on top of the
+          // last event in the list.
+          paddingBottom: 96,
+          gap: space.lg,
+        }}
+      >
         <View style={{ paddingHorizontal: space.lg, gap: space.sm }}>
+          <Cover value={calendar.cover_image} />
           <Text style={{ ...type.title, color: t.color.text }}>{calendar.name}</Text>
           {calendar.description ? (
             <Text style={{ ...type.body, color: t.color.textMuted }}>

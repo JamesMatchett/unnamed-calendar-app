@@ -27,6 +27,131 @@ export function seedIfEmpty(db: SQLite.SQLiteDatabase): void {
   seedCalendars(db);
   seedInbox(db);
   seedPeople(db);
+  seedJoinable(db);
+  seedJoinRequest(db);
+  seedPrivate(db);
+}
+
+/** One of each private case: a solo calendar and a two-person one. */
+function seedPrivate(db: SQLite.SQLiteDatabase): void {
+  const exists = db.getFirstSync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM calendars WHERE is_private = 1",
+  );
+  if ((exists?.n ?? 0) > 0) return;
+
+  db.withTransactionSync(() => {
+    const rows: [string, string, string, string | null][] = [
+      ["01JC0CALSOLO000000000000", "My own plans", "Things I've said yes to.", null],
+      [
+        "01JC0CALUSTWO00000000000",
+        "Me and Priya",
+        "Ours. Nobody else needs to see it.",
+        "01JC0USERPRIYA0000000000",
+      ],
+    ];
+
+    for (const [cid, name, description, other] of rows) {
+      db.runSync(
+        `INSERT INTO calendars (calendar_id, name, description, mode, default_tz,
+           collect_availability, travel_mode, require_approval, allow_member_invites,
+           allow_member_events, is_private, status, created_by, created_at, last_seq)
+         VALUES (?,?,?, 'continuous', 'Europe/London', 0, 'walk', 1, 0, 1, 1,
+                 'active', ?, ?, 0)`,
+        [cid, name, description, CURRENT_USER_ID, day(-60, 9)],
+      );
+      db.runSync(
+        `INSERT INTO members (calendar_id, user_id, role, status, display_name, joined_at)
+         VALUES (?,?, 'owner', 'active', 'James', ?)`,
+        [cid, CURRENT_USER_ID, day(-60, 9)],
+      );
+      if (other) {
+        db.runSync(
+          `INSERT INTO members (calendar_id, user_id, role, status, display_name, joined_at)
+           VALUES (?,?, 'owner', 'active', 'Priya', ?)`,
+          [cid, other, day(-60, 9)],
+        );
+      }
+    }
+
+    db.runSync(
+      `INSERT INTO events (event_id, calendar_id, title, start_utc, tz, local_wall,
+         precision, tickets_required, allow_suggestions, status, created_by, created_at, version, sync_state)
+       VALUES ('01JC0EVTROAST00000000000', '01JC0CALUSTWO00000000000', 'Sunday roast at the Anchor',
+               ?, 'Europe/London', ?, 'datetime', 0, 1, 'active', ?, ?, 1, 'synced')`,
+      [day(4, 13, 0), day(4, 13, 0).slice(0, 19), CURRENT_USER_ID, day(-10, 9)],
+    );
+    db.runSync("UPDATE events SET image_key = 'roast' WHERE event_id = '01JC0EVTROAST00000000000'");
+  });
+}
+
+/**
+ * A calendar the current user is NOT a member of, with a live invite link.
+ *
+ * Without one there is no way to exercise the join flow: every seeded calendar
+ * already has them in it, and a preview of something you have already joined
+ * proves nothing. Guarded on its own existence rather than the schema version,
+ * so adding it costs nobody their data.
+ */
+export const DEMO_INVITE_TOKEN = "glasto2027";
+
+function seedJoinable(db: SQLite.SQLiteDatabase): void {
+  const exists = db.getFirstSync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM calendars WHERE calendar_id = ?",
+    ["01JC0CALGLASTO0000000000"],
+  );
+  if ((exists?.n ?? 0) > 0) return;
+
+  db.withTransactionSync(() => {
+    db.runSync(
+      `INSERT INTO calendars (calendar_id, name, description, mode, start_date, end_date,
+         default_tz, collect_availability, travel_mode, require_approval,
+         allow_member_invites, allow_member_events, status, created_by, created_at, last_seq, cover_image)
+       VALUES (?,?,?,'bounded',?,?, 'Europe/London', 1, 'car', 1, 1, 1, 'active', ?, ?, 0, 'glastonbury')`,
+      [
+        "01JC0CALGLASTO0000000000",
+        "Glastonbury 2027",
+        "Worthy Farm. Priya has the tickets, somehow.",
+        isoDate(280),
+        isoDate(284),
+        "01JC0USERPRIYA0000000000",
+        day(-40, 9),
+      ],
+    );
+
+    const members: [string, string, string][] = [
+      ["01JC0USERPRIYA0000000000", "owner", "Priya"],
+      ["01JC0USERGLENN0000000000", "member", "Glenn"],
+      ["01JC0USERLUKE00000000000", "member", "Luke"],
+    ];
+    for (const [uid, role, name] of members) {
+      db.runSync(
+        `INSERT INTO members (calendar_id, user_id, role, status, display_name, joined_at)
+         VALUES ('01JC0CALGLASTO0000000000',?,?,'active',?,?)`,
+        [uid, role, name, day(-40, 9)],
+      );
+    }
+
+    const events: [string, string, string][] = [
+      ["01JC0EVTPYRAMID000000000", "Pyramid Stage, whoever headlines", day(281, 21, 30)],
+      ["01JC0EVTARRIVE0000000000", "Get the tent up", day(280, 14, 0)],
+      ["01JC0EVTWEST00000000000A", "West Holts, all afternoon", day(282, 15, 0)],
+    ];
+    for (const [id, title, start] of events) {
+      db.runSync(
+        `INSERT INTO events (event_id, calendar_id, title, start_utc, tz, local_wall,
+           precision, tickets_required, allow_suggestions, status, created_by, created_at, version, image_key, sync_state)
+         VALUES (?, '01JC0CALGLASTO0000000000', ?, ?, 'Europe/London', ?, 'datetime', 1, 1,
+                 'active', '01JC0USERPRIYA0000000000', ?, 1, 'glastonbury', 'synced')`,
+        [id, title, start, start.slice(0, 19), day(-30, 9)],
+      );
+    }
+
+    db.runSync(
+      `INSERT INTO invite_links (calendar_id, token, created_at, uses)
+       VALUES ('01JC0CALGLASTO0000000000', ?, ?, 2)`,
+      [DEMO_INVITE_TOKEN, day(-5, 12)],
+    );
+  });
 }
 
 function seedPeople(db: SQLite.SQLiteDatabase): void {
@@ -146,8 +271,8 @@ function seedCalendars(db: SQLite.SQLiteDatabase): void {
     db.runSync(
       `INSERT INTO calendars (calendar_id, name, description, mode, start_date, end_date,
          default_tz, collect_availability, require_approval, allow_member_invites,
-         status, created_by, created_at, last_seq)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         status, created_by, created_at, last_seq, cover_image)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'lisbon')`,
       [
         "01JC0CALLISBON0000000000",
         "Lisbon, October",
@@ -169,8 +294,8 @@ function seedCalendars(db: SQLite.SQLiteDatabase): void {
     db.runSync(
       `INSERT INTO calendars (calendar_id, name, description, mode, start_date, end_date,
          default_tz, collect_availability, require_approval, allow_member_invites,
-         status, created_by, created_at, last_seq)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         status, created_by, created_at, last_seq, cover_image)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'london')`,
       [
         "01JC0CALLONDON0000000000",
         "London things",
@@ -222,6 +347,7 @@ function seedCalendars(db: SQLite.SQLiteDatabase): void {
       url: string | null;
       by: string;
       rrule: string | null;
+      image?: string;
     };
 
     const events: EventSeed[] = [
@@ -240,6 +366,7 @@ function seedCalendars(db: SQLite.SQLiteDatabase): void {
         url: null,
         by: "01JC0USERPRIYA0000000000",
         rrule: null,
+        image: "market",
       },
       {
         id: "01JC0EVTTRAM000000000000",
@@ -256,6 +383,7 @@ function seedCalendars(db: SQLite.SQLiteDatabase): void {
         url: null,
         by: "01JC0USERLUKE00000000000",
         rrule: null,
+        image: "tram",
       },
       {
         id: "01JC0EVTFADO000000000000",
@@ -272,6 +400,7 @@ function seedCalendars(db: SQLite.SQLiteDatabase): void {
         url: "https://example.com/tickets/fado",
         by: CURRENT_USER_ID,
         rrule: null,
+        image: "fado",
       },
       {
         id: "01JC0EVTBEACH00000000000",
@@ -288,6 +417,7 @@ function seedCalendars(db: SQLite.SQLiteDatabase): void {
         url: null,
         by: "01JC0USERGLENN0000000000",
         rrule: null,
+        image: "beach",
       },
       {
         id: "01JC0EVTFOOTBALL00000000",
@@ -304,6 +434,7 @@ function seedCalendars(db: SQLite.SQLiteDatabase): void {
         url: null,
         by: "01JC0USERLUKE00000000000",
         rrule: "FREQ=WEEKLY;BYDAY=TU",
+        image: "football",
       },
       {
         id: "01JC0EVTGIG0000000000000",
@@ -320,6 +451,7 @@ function seedCalendars(db: SQLite.SQLiteDatabase): void {
         url: "https://example.com/tickets/gig",
         by: "01JC0USERPRIYA0000000000",
         rrule: null,
+        image: "gig",
       },
     ];
 
@@ -327,8 +459,8 @@ function seedCalendars(db: SQLite.SQLiteDatabase): void {
       db.runSync(
         `INSERT INTO events (event_id, calendar_id, title, description, start_utc, end_utc,
            tz, local_wall, precision, location_name, location_address, tickets_required,
-           ticket_url, allow_suggestions, status, created_by, created_at, version, rrule, sync_state)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,'active',?,?,1,?, 'synced')`,
+           ticket_url, allow_suggestions, status, created_by, created_at, version, rrule, image_key, sync_state)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,'active',?,?,1,?,?, 'synced')`,
         [
           e.id,
           e.cid,
@@ -346,6 +478,7 @@ function seedCalendars(db: SQLite.SQLiteDatabase): void {
           e.by,
           day(-20, 9),
           e.rrule,
+          e.image ?? null,
         ],
       );
     }
@@ -387,4 +520,25 @@ function seedCalendars(db: SQLite.SQLiteDatabase): void {
       );
     }
   });
+}
+
+/**
+ * Someone waiting to be let into a calendar the current user owns.
+ *
+ * Without one, the approval half of ownership has nothing to act on and cannot
+ * be judged: a settings screen with an empty queue looks the same whether the
+ * feature works or not.
+ */
+export function seedJoinRequest(db: SQLite.SQLiteDatabase): void {
+  const exists = db.getFirstSync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM join_requests WHERE calendar_id = ?",
+    ["01JC0CALLISBON0000000000"],
+  );
+  if ((exists?.n ?? 0) > 0) return;
+
+  db.runSync(
+    `INSERT INTO join_requests (calendar_id, user_id, display_name, requested_at, via_token, previously_removed)
+     VALUES ('01JC0CALLISBON0000000000', '01JC0USERSOFIA0000000000', 'Sofia Almeida', ?, 'lisbon-link', 0)`,
+    [day(-1, 20)],
+  );
 }

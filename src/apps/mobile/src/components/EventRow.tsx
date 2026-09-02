@@ -3,7 +3,7 @@ import { Link } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import type { EventRow as EventRowData, MemberRow, RsvpRow } from "@/db/repo";
-import { resolveForUser, setRsvp, tallyForEvent } from "@/db/repo";
+import { clearRsvp, resolveForUser, setRsvp, tallyForEvent } from "@/db/repo";
 import { CURRENT_USER_ID } from "@/db/seed";
 import { formatEventTime } from "@/lib/format";
 import { radius, space, type, useTheme } from "@/theme";
@@ -102,26 +102,28 @@ export function EventRow({
         <Text style={{ ...type.caption, color: t.color.danger }}>Cancelled</Text>
       ) : null}
 
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: space.sm,
-        }}
-      >
+      {/* Summary and control are stacked rather than side by side: on a phone
+          the three options plus a full attendance summary do not fit on one
+          line, and squeezing them clipped the last button off the card. */}
+      <View style={{ gap: space.sm }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
           <AvatarStack names={goingNames} />
-          <Text style={{ ...type.caption, color: t.color.textMuted }}>
+          <Text
+            numberOfLines={1}
+            style={{ ...type.caption, color: t.color.textMuted, flex: 1 }}
+          >
             {summarise(tally.going, tally.maybe, tally.noResponse)}
           </Text>
         </View>
 
         <RsvpControl
           compact
+          fill
           value={mine.status as RsvpStatus | null}
           onChange={(next) =>
-            setRsvp(event.calendar_id, event.event_id, occurrence, next)
+            next === null
+              ? clearRsvp(event.event_id, occurrence)
+              : setRsvp(event.calendar_id, event.event_id, occurrence, next)
           }
         />
       </View>

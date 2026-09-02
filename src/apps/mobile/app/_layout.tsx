@@ -47,6 +47,12 @@ export default function RootLayout() {
           name="calendar/[calendarId]/event/new"
           options={{ presentation: "modal" }}
         />
+        <Stack.Screen
+          name="calendar/[calendarId]/invite"
+          options={{ presentation: "modal" }}
+        />
+        {/* Where universal links land: uca.app/join/<token> (§7.1). */}
+        <Stack.Screen name="join/[token]" options={{ presentation: "modal" }} />
       </Stack>
     </SafeAreaProvider>
   );

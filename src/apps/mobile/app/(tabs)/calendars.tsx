@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Link, useRouter } from "expo-router";
 import { Pressable, ScrollView, Text, View } from "react-native";
 
+import { Cover } from "@/components/Cover";
 import { AvatarStack, Card, EmptyState } from "@/components/ui";
 import { listCalendars, listEvents, listMembers } from "@/db/repo";
 import { formatDateRange } from "@/lib/format";
@@ -24,16 +25,29 @@ export default function CalendarsScreen() {
     );
   }
 
-  const bounded = calendars.filter((c) => c.mode === "bounded");
-  const continuous = calendars.filter((c) => c.mode === "continuous");
+  // Private first: they are the person's own, and burying them under trips they
+  // share with other people gets the emphasis backwards.
+  const priv = calendars.filter((c) => c.is_private === 1);
+  const bounded = calendars.filter((c) => c.is_private !== 1 && c.mode === "bounded");
+  const continuous = calendars.filter(
+    (c) => c.is_private !== 1 && c.mode === "continuous",
+  );
 
   return (
     <View style={{ flex: 1 }}>
       <ScrollView
         contentContainerStyle={{ padding: space.lg, paddingBottom: 96, gap: space.xl }}
       >
+      {priv.length > 0 ? (
+        <Section title="Private">
+          {priv.map((c) => (
+            <CalendarCard key={c.calendar_id} calendar={c} />
+          ))}
+        </Section>
+      ) : null}
+
       {bounded.length > 0 ? (
-        <Section title="Trips and dates">
+        <Section title="Trips, Holidays, Festivals and more">
           {bounded.map((c) => (
             <CalendarCard key={c.calendar_id} calendar={c} />
           ))}
@@ -41,7 +55,7 @@ export default function CalendarsScreen() {
       ) : null}
 
       {continuous.length > 0 ? (
-        <Section title="Ongoing">
+        <Section title="Ongoing calendars">
           {continuous.map((c) => (
             <CalendarCard key={c.calendar_id} calendar={c} />
           ))}
@@ -118,7 +132,16 @@ function CalendarCard({
     >
       <Pressable accessibilityRole="link">
         <Card style={{ gap: space.sm }}>
-          <Text style={{ ...type.heading, color: t.color.text }}>{calendar.name}</Text>
+          <Cover value={calendar.cover_image} height={96} />
+
+          <View
+            style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}
+          >
+            <Text style={{ ...type.heading, color: t.color.text, flex: 1 }}>
+              {calendar.name}
+            </Text>
+            {calendar.my_role === "owner" ? <OwnerBadge /> : null}
+          </View>
           {calendar.description ? (
             <Text style={{ ...type.caption, color: t.color.textMuted }} numberOfLines={2}>
               {calendar.description}
@@ -143,5 +166,39 @@ function CalendarCard({
         </Card>
       </Pressable>
     </Link>
+  );
+}
+
+/**
+ * Marks the calendars this person runs, so "can I change this?" is answerable
+ * from the list rather than by opening each one and looking for the controls.
+ */
+function OwnerBadge() {
+  const t = useTheme();
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 3,
+        paddingHorizontal: space.sm,
+        paddingVertical: 3,
+        borderRadius: radius.pill,
+        borderWidth: 1,
+        borderColor: t.color.going,
+      }}
+    >
+      <Ionicons name="key-outline" size={11} color={t.color.going} />
+      <Text
+        style={{
+          ...type.caption,
+          fontSize: 11,
+          fontWeight: "700",
+          color: t.color.going,
+        }}
+      >
+        Owner
+      </Text>
+    </View>
   );
 }

@@ -2,11 +2,14 @@ import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
-import { Alert, Platform, Pressable, ScrollView, Share, Text, View } from "react-native";
+import { Alert, Platform, Pressable, ScrollView, Text, View } from "react-native";
 
 import type { TravelMode } from "@uca/core";
 import { zonedWallToUtc } from "@uca/core";
 
+import * as ImagePicker from "expo-image-picker";
+
+import { Cover, CoverPlaceholder } from "@/components/Cover";
 import { PersonRowItem } from "@/components/PersonRowItem";
 import { TripDatePicker } from "@/components/TripDatePicker";
 import { TravelModePicker } from "@/components/TravelMode";
@@ -19,6 +22,8 @@ import {
   inviteUser,
   leavingWouldOrphanCalendar,
   listMembers,
+  answerJoinRequest,
+  listJoinRequests,
   listSentInvites,
   myAvailability,
   myMembership,
@@ -286,23 +291,40 @@ function OwnerControls({
   members: ReturnType<typeof listMembers>;
 }) {
   const t = useTheme();
+  const router = useRouter();
   const [name, setName] = useState(calendar.name);
   const [query, setQuery] = useState("");
 
   const results = useQuery(`invite-search:${query}`, () => searchPeople(query));
   const sent = useQuery(`sent:${calendarId}`, () => listSentInvites(calendarId));
   const link = useQuery(`link:${calendarId}`, () => getInviteLink(calendarId));
+  const requests = useQuery(`requests:${calendarId}`, () =>
+    listJoinRequests(calendarId),
+  );
+
+  /**
+   * The picked image stays a local file URI. Uploading it somewhere is the
+   * server's job; the client's job is to remember which image was chosen.
+   */
+  const pickCover = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) return;
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [2, 1],
+      quality: 0.8,
+    });
+    const picked = result.assets?.[0]?.uri;
+    if (!result.canceled && picked) {
+      updateCalendar(calendarId, { coverImage: picked });
+    }
+  };
 
   const alreadyIn = new Set(members.map((m) => m.user_id));
   const alreadyAsked = new Set(sent.map((s) => s.user_id));
 
-  const share = async () => {
-    const current = link ?? rotateInviteLink(calendarId);
-    const url = `https://uca.app/join/${current.token}`;
-    await Share.share({ message: `Join ${calendar.name} on UCA: ${url}` }).catch(
-      () => undefined,
-    );
-  };
 
   const demote = (userId: string, displayName: string) => {
     // Ownership is flat: any owner can demote any other, including whoever
@@ -334,6 +356,98 @@ function OwnerControls({
 
   return (
     <>
+      <View style={{ gap: space.sm }}>
+        <Text style={{ ...type.label, color: t.color.textMuted }}>Cover</Text>
+        {calendar.cover_image ? (
+          <Cover value={calendar.cover_image} height={120} />
+        ) : (
+          <CoverPlaceholder label="No cover yet" height={120} />
+        )}
+        <View style={{ flexDirection: "row", gap: space.lg }}>
+          <Pressable onPress={() => void pickCover()} accessibilityRole="button">
+            <Text style={{ ...type.caption, color: t.color.accent }}>
+              {calendar.cover_image ? "Change cover" : "Choose a cover"}
+            </Text>
+          </Pressable>
+          {calendar.cover_image ? (
+            <Pressable
+              onPress={() => updateCalendar(calendarId, { coverImage: null })}
+              accessibilityRole="button"
+            >
+              <Text style={{ ...type.caption, color: t.color.textMuted }}>
+                Remove
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
+
+      {requests.length > 0 ? (
+        <View style={{ gap: space.sm }}>
+          <Text style={{ ...type.label, color: t.color.textMuted }}>
+            Waiting to join
+          </Text>
+          <Card style={{ gap: space.lg }}>
+            {requests.map((r) => (
+              <View
+                key={r.user_id}
+                style={{ gap: space.sm }}
+              >
+                <View style={{ gap: 1 }}>
+                  <Text style={{ ...type.body, fontSize: 15, color: t.color.text }}>
+                    {r.display_name}
+                  </Text>
+                  <Text style={{ ...type.caption, color: t.color.textMuted }}>
+                    {r.via_token ? "Used an invite link" : "Invited directly"}
+                  </Text>
+                  {/* Removal is not a ban (decision 15), so someone who was
+                      removed can come back. The owner decides at the door
+                      rather than discovering it afterwards. */}
+                  {r.previously_removed === 1 ? (
+                    <Text style={{ ...type.caption, color: t.color.danger }}>
+                      You removed this person before
+                    </Text>
+                  ) : null}
+                </View>
+
+                <View style={{ flexDirection: "row", gap: space.sm }}>
+                  <Pressable
+                    onPress={() => answerJoinRequest(calendarId, r.user_id, true)}
+                    accessibilityRole="button"
+                    style={{
+                      flex: 1,
+                      alignItems: "center",
+                      paddingVertical: space.sm,
+                      borderRadius: radius.pill,
+                      backgroundColor: t.color.accent,
+                    }}
+                  >
+                    <Text style={{ ...type.caption, fontWeight: "700", color: "#fff" }}>
+                      Let them in
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => answerJoinRequest(calendarId, r.user_id, false)}
+                    accessibilityRole="button"
+                    style={{
+                      paddingHorizontal: space.lg,
+                      paddingVertical: space.sm,
+                      borderRadius: radius.pill,
+                      borderWidth: 1,
+                      borderColor: t.color.border,
+                    }}
+                  >
+                    <Text style={{ ...type.caption, color: t.color.textMuted }}>
+                      No
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            ))}
+          </Card>
+        </View>
+      ) : null}
+
       <View style={{ gap: space.sm }}>
         <Text style={{ ...type.label, color: t.color.textMuted }}>Name</Text>
         <TextField
@@ -374,6 +488,12 @@ function OwnerControls({
         <Text style={{ ...type.label, color: t.color.textMuted }}>
           What members can do
         </Text>
+        <ToggleRow
+          label="Keep this private"
+          hint="For your own plans, or something just you and one other person share."
+          value={calendar.is_private === 1}
+          onChange={(v) => updateCalendar(calendarId, { isPrivate: v })}
+        />
         <ToggleRow
           label="Let anyone add events"
           hint="Off makes it a calendar you curate, so only owners can add things."
@@ -448,7 +568,12 @@ function OwnerControls({
       <View style={{ gap: space.sm }}>
         <Text style={{ ...type.label, color: t.color.textMuted }}>Invite link</Text>
         <Pressable
-          onPress={() => void share()}
+          onPress={() =>
+            router.push({
+              pathname: "/calendar/[calendarId]/invite",
+              params: { calendarId },
+            })
+          }
           accessibilityRole="button"
           style={{
             flexDirection: "row",
@@ -463,7 +588,7 @@ function OwnerControls({
         >
           <Ionicons name="link-outline" size={19} color={t.color.accent} />
           <Text style={{ ...type.body, color: t.color.text, flex: 1 }}>
-            {link ? "Share the link" : "Create a link"}
+            Show the QR code, or send a link
           </Text>
           <Ionicons name="chevron-forward" size={17} color={t.color.textMuted} />
         </Pressable>

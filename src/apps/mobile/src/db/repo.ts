@@ -38,6 +38,8 @@ export interface CalendarRow {
   default_tz: string;
   collect_availability: number;
   travel_mode: TravelMode;
+  cover_image: string | null;
+  is_private: number;
   require_approval: number;
   allow_member_invites: number;
   allow_member_events: number;
@@ -61,6 +63,7 @@ export interface EventRow {
   status: "active" | "cancelled";
   created_by: string;
   rrule: string | null;
+  image_key: string | null;
   sync_state: "synced" | "pending" | "failed";
 }
 
@@ -81,9 +84,9 @@ export interface RsvpRow {
 }
 
 /** Access pattern 1. */
-export function listCalendars(): CalendarRow[] {
-  return getDb().getAllSync<CalendarRow>(
-    `SELECT c.* FROM calendars c
+export function listCalendars(): (CalendarRow & { my_role: "owner" | "member" })[] {
+  return getDb().getAllSync<CalendarRow & { my_role: "owner" | "member" }>(
+    `SELECT c.*, m.role AS my_role FROM calendars c
        JOIN members m ON m.calendar_id = c.calendar_id
       WHERE m.user_id = ? AND m.status = 'active' AND c.status = 'active'
       ORDER BY c.mode = 'continuous', COALESCE(c.start_date, '9999'), c.name`,
@@ -237,11 +240,39 @@ export function setRsvp(
   notifyChanged();
 }
 
+/**
+ * Withdrawing an answer, which returns the person to "hasn't replied" rather
+ * than to "not going". The two are different states and the tally counts them
+ * separately (§3.5).
+ */
 export function clearRsvp(eventId: string, occurrence: string): void {
-  getDb().runSync(
-    "DELETE FROM rsvps WHERE event_id = ? AND occurrence = ? AND user_id = ?",
+  const db = getDb();
+  const now = new Date().toISOString();
+
+  const row = db.getFirstSync<{ calendar_id: string }>(
+    "SELECT calendar_id FROM rsvps WHERE event_id = ? AND occurrence = ? AND user_id = ?",
     [eventId, occurrence, CURRENT_USER_ID],
   );
+  if (!row) return;
+
+  db.withTransactionSync(() => {
+    db.runSync(
+      "DELETE FROM rsvps WHERE event_id = ? AND occurrence = ? AND user_id = ?",
+      [eventId, occurrence, CURRENT_USER_ID],
+    );
+    db.runSync(
+      `INSERT INTO mutation_queue (mutation_id, calendar_id, method, path, body, queued_at)
+       VALUES (?,?, 'DELETE', ?, ?, ?)`,
+      [
+        `rsvp-clear:${eventId}:${occurrence}:${CURRENT_USER_ID}:${now}`,
+        row.calendar_id,
+        `/v1/calendars/${row.calendar_id}/events/${eventId}/rsvp`,
+        JSON.stringify({ occurrence }),
+        now,
+      ],
+    );
+  });
+
   notifyChanged();
 }
 
@@ -521,6 +552,8 @@ export interface NewCalendar {
   collectAvailability: boolean;
   allowMemberEvents: boolean;
   travelMode: TravelMode;
+  isPrivate: boolean;
+  coverImage?: string | null;
 }
 
 /**
@@ -552,6 +585,8 @@ export function createCalendar(input: NewCalendar): string {
         input.collectAvailability ? 1 : 0,
         input.travelMode,
         input.allowMemberEvents ? 1 : 0,
+        input.isPrivate ? 1 : 0,
+        input.coverImage ?? null,
         CURRENT_USER_ID,
         now,
       ],
@@ -679,10 +714,12 @@ export function updateCalendar(
     allowMemberInvites: boolean;
     allowMemberEvents: boolean;
     travelMode: TravelMode;
+    coverImage: string | null;
+    isPrivate: boolean;
   }>,
 ): void {
   const sets: string[] = [];
-  const args: (string | number)[] = [];
+  const args: (string | number | null)[] = [];
 
   if (patch.name !== undefined) {
     sets.push("name = ?");
@@ -707,6 +744,14 @@ export function updateCalendar(
   if (patch.travelMode !== undefined) {
     sets.push("travel_mode = ?");
     args.push(patch.travelMode);
+  }
+  if (patch.coverImage !== undefined) {
+    sets.push("cover_image = ?");
+    args.push(patch.coverImage);
+  }
+  if (patch.isPrivate !== undefined) {
+    sets.push("is_private = ?");
+    args.push(patch.isPrivate ? 1 : 0);
   }
   if (sets.length === 0) return;
 
@@ -955,6 +1000,177 @@ export function setMyTicketStatus(
         now,
       ],
     );
+  });
+
+  notifyChanged();
+}
+
+// --- joining by link (§7.1, §3.5) ------------------------------------------
+
+export interface InvitePreview {
+  calendarId: string;
+  name: string;
+  mode: "bounded" | "continuous";
+  startDate: string | null;
+  endDate: string | null;
+  eventCount: number;
+  memberCount: number;
+  invitedByName: string;
+  alreadyMember: boolean;
+  requestPending: boolean;
+  requiresApproval: boolean;
+}
+
+/**
+ * What a person sees before signing in or joining.
+ *
+ * Returns COUNTS ONLY. Never member names, never event titles: an invite link is
+ * a bearer token that gets forwarded and screenshotted, so anything this returns
+ * should be safe in the hands of a stranger (§3.5).
+ *
+ * In production this is the one unauthenticated route in the system.
+ */
+export function previewInvite(token: string): InvitePreview | null {
+  const db = getDb();
+
+  const link = db.getFirstSync<{ calendar_id: string; created_at: string }>(
+    "SELECT calendar_id, created_at FROM invite_links WHERE token = ?",
+    [token],
+  );
+  if (!link) return null;
+
+  const calendar = getCalendar(link.calendar_id);
+  if (!calendar || calendar.status !== "active") return null;
+
+  const counts = db.getFirstSync<{ events: number; members: number }>(
+    `SELECT
+       (SELECT COUNT(*) FROM events WHERE calendar_id = ? AND status = 'active') AS events,
+       (SELECT COUNT(*) FROM members WHERE calendar_id = ? AND status = 'active') AS members`,
+    [link.calendar_id, link.calendar_id],
+  );
+
+  const owner = db.getFirstSync<{ display_name: string }>(
+    `SELECT display_name FROM members
+      WHERE calendar_id = ? AND role = 'owner' AND status = 'active'
+      ORDER BY joined_at LIMIT 1`,
+    [link.calendar_id],
+  );
+
+  const mine = myMembership(link.calendar_id);
+  const pending = db.getFirstSync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM join_requests WHERE calendar_id = ? AND user_id = ?",
+    [link.calendar_id, CURRENT_USER_ID],
+  );
+
+  return {
+    calendarId: link.calendar_id,
+    name: calendar.name,
+    mode: calendar.mode,
+    startDate: calendar.start_date,
+    endDate: calendar.end_date,
+    eventCount: counts?.events ?? 0,
+    memberCount: counts?.members ?? 0,
+    invitedByName: owner?.display_name ?? "Someone",
+    alreadyMember: mine?.status === "active",
+    requestPending: (pending?.n ?? 0) > 0,
+    requiresApproval: calendar.require_approval === 1,
+  };
+}
+
+export type JoinOutcome = "joined" | "requested" | "already";
+
+/**
+ * Every joiner is approved when the calendar says so, with no exceptions, and a
+ * previously removed person is forced through approval whatever the calendar
+ * says (§7.1, §8.4).
+ */
+export function joinByToken(token: string): JoinOutcome | null {
+  const db = getDb();
+  const preview = previewInvite(token);
+  if (!preview) return null;
+  if (preview.alreadyMember) return "already";
+
+  const prior = db.getFirstSync<{ status: string; was_removed: number }>(
+    "SELECT status FROM members WHERE calendar_id = ? AND user_id = ?",
+    [preview.calendarId, CURRENT_USER_ID],
+  );
+  const wasRemoved = prior?.status === "removed";
+  const now = new Date().toISOString();
+
+  if (preview.requiresApproval || wasRemoved) {
+    db.runSync(
+      `INSERT INTO join_requests (calendar_id, user_id, display_name, requested_at, via_token, previously_removed)
+       VALUES (?,?,?,?,?,?)
+       ON CONFLICT (calendar_id, user_id) DO NOTHING`,
+      [
+        preview.calendarId,
+        CURRENT_USER_ID,
+        "James",
+        now,
+        token,
+        wasRemoved ? 1 : 0,
+      ],
+    );
+    notifyChanged();
+    return "requested";
+  }
+
+  db.runSync(
+    `INSERT INTO members (calendar_id, user_id, role, status, display_name, joined_at)
+     VALUES (?,?, 'member', 'active', ?, ?)
+     ON CONFLICT (calendar_id, user_id)
+     DO UPDATE SET status = 'active', joined_at = excluded.joined_at`,
+    [preview.calendarId, CURRENT_USER_ID, "James", now],
+  );
+  db.runSync("UPDATE invite_links SET uses = uses + 1 WHERE token = ?", [token]);
+  notifyChanged();
+  return "joined";
+}
+
+// --- approving joiners (§7.1) ----------------------------------------------
+
+export interface JoinRequestRow {
+  user_id: string;
+  display_name: string;
+  requested_at: string;
+  via_token: string | null;
+  previously_removed: number;
+}
+
+export function listJoinRequests(calendarId: string): JoinRequestRow[] {
+  return getDb().getAllSync<JoinRequestRow>(
+    `SELECT user_id, display_name, requested_at, via_token, previously_removed
+       FROM join_requests WHERE calendar_id = ? ORDER BY requested_at`,
+    [calendarId],
+  );
+}
+
+export function answerJoinRequest(
+  calendarId: string,
+  userId: string,
+  approve: boolean,
+): void {
+  const db = getDb();
+  const request = db.getFirstSync<{ display_name: string }>(
+    "SELECT display_name FROM join_requests WHERE calendar_id = ? AND user_id = ?",
+    [calendarId, userId],
+  );
+  if (!request) return;
+
+  db.withTransactionSync(() => {
+    db.runSync(
+      "DELETE FROM join_requests WHERE calendar_id = ? AND user_id = ?",
+      [calendarId, userId],
+    );
+    if (approve) {
+      db.runSync(
+        `INSERT INTO members (calendar_id, user_id, role, status, display_name, joined_at)
+         VALUES (?,?, 'member', 'active', ?, ?)
+         ON CONFLICT (calendar_id, user_id)
+         DO UPDATE SET status = 'active'`,
+        [calendarId, userId, request.display_name, new Date().toISOString()],
+      );
+    }
   });
 
   notifyChanged();

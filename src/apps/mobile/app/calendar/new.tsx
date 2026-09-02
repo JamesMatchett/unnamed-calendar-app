@@ -1,7 +1,7 @@
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Stack, useRouter } from "expo-router";
 import { useState } from "react";
-import { Platform, ScrollView, Text, View } from "react-native";
+import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 
 import {
   Field,
@@ -11,6 +11,9 @@ import {
   TextField,
   ToggleRow,
 } from "@/components/form";
+import * as ImagePicker from "expo-image-picker";
+
+import { Cover, CoverPlaceholder } from "@/components/Cover";
 import { TimeZonePicker } from "@/components/TimeZonePicker";
 import { TravelModePicker } from "@/components/TravelMode";
 import { Muted } from "@/components/ui";
@@ -51,6 +54,26 @@ export default function NewCalendarScreen() {
   const [collectAvailability, setCollectAvailability] = useState(false);
   const [allowMemberEvents, setAllowMemberEvents] = useState(true);
   const [travelMode, setTravelMode] = useState<TravelMode>("plane");
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [coverImage, setCoverImage] = useState<string | null>(null);
+
+  /**
+   * The picked image stays a local file URI: uploading it is the server's job,
+   * and the client's job is only to remember which one was chosen.
+   */
+  const pickCover = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) return;
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [2, 1],
+      quality: 0.8,
+    });
+    const picked = result.assets?.[0]?.uri;
+    if (!result.canceled && picked) setCoverImage(picked);
+  };
   const [zonePickerOpen, setZonePickerOpen] = useState(false);
 
   const today = new Date();
@@ -69,6 +92,8 @@ export default function NewCalendarScreen() {
       defaultTz: tz,
       allowMemberEvents,
       travelMode,
+      isPrivate,
+      coverImage,
       collectAvailability: mode === "bounded" ? collectAvailability : false,
       ...(mode === "bounded" ? { startDate, endDate } : {}),
     });
@@ -101,6 +126,34 @@ export default function NewCalendarScreen() {
             maxLength={60}
           />
         </Field>
+
+        {/* Optional, and below the name on purpose: a picture is a nice-to-have,
+            and putting it above the one required field would suggest otherwise. */}
+        <Field label="Cover picture">
+          {coverImage ? (
+            <Cover value={coverImage} height={120} />
+          ) : (
+            <CoverPlaceholder label="Optional" height={120} />
+          )}
+        </Field>
+
+        <View style={{ flexDirection: "row", gap: space.lg, marginTop: -space.md }}>
+          <Pressable onPress={() => void pickCover()} accessibilityRole="button">
+            <Text style={{ ...type.caption, color: t.color.accent }}>
+              {coverImage ? "Change picture" : "Choose a picture"}
+            </Text>
+          </Pressable>
+          {coverImage ? (
+            <Pressable
+              onPress={() => setCoverImage(null)}
+              accessibilityRole="button"
+            >
+              <Text style={{ ...type.caption, color: t.color.textMuted }}>
+                Remove
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
 
         <Field
           label="Does it have dates?"
@@ -167,6 +220,13 @@ export default function NewCalendarScreen() {
             onPress={() => setZonePickerOpen(true)}
           />
         </Field>
+
+        <ToggleRow
+          label="Keep this private"
+          hint="For your own plans, or something just you and one other person share."
+          value={isPrivate}
+          onChange={setIsPrivate}
+        />
 
         <ToggleRow
           label="Let anyone add events"

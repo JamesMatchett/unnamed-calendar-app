@@ -3,10 +3,12 @@ import type { RsvpStatus, TicketStatus } from "@uca/core";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 
+import { Cover } from "@/components/Cover";
 import { RsvpControl } from "@/components/RsvpControl";
 import { TicketControl } from "@/components/TicketControl";
 import { Card, EmptyState, Muted } from "@/components/ui";
 import {
+  clearRsvp,
   getCalendar,
   getEvent,
   listMembers,
@@ -73,6 +75,8 @@ export default function EventScreen() {
     <>
       <Stack.Screen options={{ title: "" }} />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg }}>
+        <Cover value={event.image_key} height={140} />
+
         <View style={{ gap: space.xs }}>
           <Text
             style={{
@@ -204,7 +208,11 @@ export default function EventScreen() {
           <Text style={{ ...type.label, color: t.color.textMuted }}>Are you going?</Text>
           <RsvpControl
             value={mine.status as RsvpStatus | null}
-            onChange={(next) => setRsvp(calendarId, eventId, OCCURRENCE, next)}
+            onChange={(next) =>
+              next === null
+                ? clearRsvp(eventId, OCCURRENCE)
+                : setRsvp(calendarId, eventId, OCCURRENCE, next)
+            }
           />
         </View>
 

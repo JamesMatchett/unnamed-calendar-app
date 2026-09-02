@@ -17,6 +17,7 @@
     "@uca/core": "*",
     "expo": "~57.0.19",
     "expo-constants": "~57.0.17",
+    "expo-image-picker": "~57.0.15",
     "expo-linking": "~57.0.9",
     "expo-router": "~57.0.18",
     "expo-screen-orientation": "~57.0.2",
@@ -25,8 +26,10 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
+    "react-native-qrcode-svg": "^6.3.22",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
+    "react-native-svg": "15.15.4",
     "react-native-web": "~0.21.0"
   },
   "devDependencies": {

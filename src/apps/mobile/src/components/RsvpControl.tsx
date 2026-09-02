@@ -22,10 +22,14 @@ export function RsvpControl({
   value,
   onChange,
   compact = false,
+  fill = false,
 }: {
   value: RsvpStatus | null;
-  onChange: (next: RsvpStatus) => void;
+  /** `null` when the current answer is tapped again, clearing it. */
+  onChange: (next: RsvpStatus | null) => void;
   compact?: boolean;
+  /** Share the available width equally, so three options always fit. */
+  fill?: boolean;
 }) {
   const t = useTheme();
 
@@ -39,12 +43,18 @@ export function RsvpControl({
         return (
           <Pressable
             key={o.value}
-            onPress={() => onChange(o.value)}
+            // Tapping the current answer clears it. "Haven't replied" is a real
+            // state (§3.5) and there has to be a way back to it: people change
+            // their minds, and being stuck on "Can't" because it was a mistap is
+            // worse than having no answer.
+            onPress={() => onChange(selected ? null : o.value)}
             accessibilityRole="button"
             accessibilityState={{ selected }}
             accessibilityLabel={o.long}
             hitSlop={6}
             style={{
+              flex: fill ? 1 : undefined,
+              alignItems: fill ? "center" : undefined,
               paddingHorizontal: compact ? space.sm : space.md,
               paddingVertical: compact ? 5 : space.sm,
               borderRadius: radius.pill,

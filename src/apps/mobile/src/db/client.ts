@@ -31,6 +31,9 @@ function addMissingColumns(database: SQLite.SQLiteDatabase): void {
     ["calendars", "travel_mode", "TEXT NOT NULL DEFAULT 'plane'"],
     ["availability", "travel_mode", "TEXT"],
     ["rsvps", "ticket_status", "TEXT"],
+    ["calendars", "cover_image", "TEXT"],
+    ["events", "image_key", "TEXT"],
+    ["calendars", "is_private", "INTEGER NOT NULL DEFAULT 0"],
   ];
 
   for (const [table, column, decl] of added) {
