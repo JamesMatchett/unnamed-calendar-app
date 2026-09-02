@@ -4,15 +4,28 @@ Expo / React Native app. SDK 57, React 19, new architecture on.
 
 ## Running it
 
-From the repo root:
+Install once, from the **repo root** — npm workspaces installs core and the app
+together, and installing from a subdirectory will not work:
 
 ```sh
-npm install          # workspaces: installs core and mobile together
-npm run build:core   # @uca/core must be built before the app can import it
-npm run mobile       # or: npm start --workspace @uca/mobile
+cd <repo root> && npm install
 ```
 
-Then scan the QR with Expo Go, or press `i` / `a` for a simulator.
+After that, either directory works:
+
+```sh
+# from this directory
+npm start
+
+# or from the repo root
+npm run mobile
+```
+
+`prestart` builds `@uca/core` first, because the app imports it from `dist/`.
+
+Then press `i` for the iOS simulator (needs Xcode) or `a` for Android. **Scanning
+the QR with App Store Expo Go will not work** — the store build lags this SDK.
+See `memory.md`, "Frontend and tooling traps".
 
 ## What is here
 
