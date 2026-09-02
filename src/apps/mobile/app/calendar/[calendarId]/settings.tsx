@@ -5,8 +5,10 @@ import { useState } from "react";
 import { Alert, Platform, Pressable, ScrollView, Share, Text, View } from "react-native";
 
 import type { TravelMode } from "@uca/core";
+import { zonedWallToUtc } from "@uca/core";
 
 import { PersonRowItem } from "@/components/PersonRowItem";
+import { TripDatePicker } from "@/components/TripDatePicker";
 import { TravelModePicker } from "@/components/TravelMode";
 import { SearchBar } from "@/components/SearchBar";
 import { Field, RowButton, TextField, ToggleRow } from "@/components/form";
@@ -93,6 +95,8 @@ export default function CalendarSettingsScreen() {
             calendarId={calendarId}
             tz={calendar.default_tz}
             calendarTravelMode={calendar.travel_mode}
+            rangeStart={calendar.start_date}
+            rangeEnd={calendar.end_date}
           />
         ) : null}
 
@@ -143,10 +147,14 @@ function YourTrip({
   calendarId,
   tz,
   calendarTravelMode,
+  rangeStart,
+  rangeEnd,
 }: {
   calendarId: string;
   tz: string;
   calendarTravelMode: TravelMode;
+  rangeStart: string | null;
+  rangeEnd: string | null;
 }) {
   const t = useTheme();
   const availability = useQuery(`avail:${calendarId}`, () => myAvailability(calendarId));
@@ -184,22 +192,44 @@ function YourTrip({
       />
 
       {picking ? (
-        <DateTimePicker
-          value={new Date((picking === "arrive" ? arrives : departs) ?? Date.now())}
-          mode="datetime"
-          display={Platform.OS === "ios" ? "inline" : "default"}
-          onChange={(_, selected) => {
-            if (Platform.OS !== "ios") setPicking(null);
-            if (!selected) return;
-            const iso = selected.toISOString();
-            setMyAvailability(
-              calendarId,
-              picking === "arrive" ? iso : arrives,
-              picking === "depart" ? iso : departs,
-              mine,
-            );
-          }}
-        />
+        <View style={{ gap: space.sm }}>
+          <TripDatePicker
+            value={dayOf(picking === "arrive" ? arrives : departs, tz)}
+            rangeStart={rangeStart}
+            rangeEnd={rangeEnd}
+            tz={tz}
+            onSelect={(date) => {
+              // Keep whatever time was already set; changing the day should not
+              // silently reset someone's 06:00 flight to midnight.
+              const existing = picking === "arrive" ? arrives : departs;
+              const clock = existing ? formatClock(existing, tz) : "12:00";
+              const iso = zonedWallToUtc(`${date}T${clock}:00`, tz);
+              setMyAvailability(
+                calendarId,
+                picking === "arrive" ? iso : arrives,
+                picking === "depart" ? iso : departs,
+                mine,
+              );
+            }}
+          />
+
+          <DateTimePicker
+            value={new Date((picking === "arrive" ? arrives : departs) ?? Date.now())}
+            mode="time"
+            display={Platform.OS === "ios" ? "compact" : "default"}
+            onChange={(_, selected) => {
+              if (Platform.OS !== "ios") setPicking(null);
+              if (!selected) return;
+              const iso = selected.toISOString();
+              setMyAvailability(
+                calendarId,
+                picking === "arrive" ? iso : arrives,
+                picking === "depart" ? iso : departs,
+                mine,
+              );
+            }}
+          />
+        </View>
       ) : null}
 
       <Field label="How are you getting there?">
@@ -534,4 +564,17 @@ function OwnerControls({
       </View>
     </>
   );
+}
+
+/** The calendar day an instant falls on, in the calendar's zone. */
+function dayOf(instant: string | null, tz: string): string | null {
+  if (!instant) return null;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: tz,
+  }).formatToParts(new Date(instant));
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "01";
+  return `${get("year")}-${get("month")}-${get("day")}`;
 }

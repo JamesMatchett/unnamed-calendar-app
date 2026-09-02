@@ -208,7 +208,11 @@ Found while building the app, and all of them cost time to diagnose.
    TypeScript template literal, so a backtick in a SQL *comment* terminates it and the error
    surfaces dozens of lines later as a nonsense syntax error. Never use backticks in
    `schema.ts` comments.
-9. **Plain `git status` from a sandboxed shell can strand `.git/index.lock`.** It takes the
+9. **`expo start` must run in `src/apps/mobile`, never the repo root.** The root has no
+   `main`, so Expo falls back to its default `AppEntry.js` and fails with
+   `Unable to resolve "../../App"` - which reads like a missing file rather than a wrong
+   directory. `npm start` at the root now delegates to the workspace, so either place works.
+10. **Plain `git status` from a sandboxed shell can strand `.git/index.lock`.** It takes the
    index lock to refresh, and if that shell cannot delete files the lock survives, after
    which every git command fails with "Another git process seems to be running". Use
    `git --no-optional-locks status`, which does not take the lock. To recover, `mv` the lock

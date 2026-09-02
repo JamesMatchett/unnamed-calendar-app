@@ -186,7 +186,12 @@ export default function PeopleScreen() {
                 title="Nobody to suggest"
                 body="People you share a calendar with show up here, ready to add."
                 actionLabel="Go to calendars"
-                onAction={() => router.push("/calendars")}
+                // People is a modal, so pushing would stack the calendars
+                // screen on top of it. Dismiss first, then switch tab.
+                onAction={() => {
+                  router.dismissAll();
+                  router.navigate("/calendars");
+                }}
               />
             ) : (
               <Card style={{ gap: space.lg }}>

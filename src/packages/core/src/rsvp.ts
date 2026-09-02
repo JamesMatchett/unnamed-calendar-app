@@ -8,7 +8,7 @@
  * offline device, and still misses occurrences that do not exist yet.
  */
 
-import type { RsvpAnswer, RsvpStatus } from "./entities.js";
+import type { RsvpAnswer, RsvpStatus, TicketStatus } from "./entities.js";
 import { SERIES_DEFAULT } from "./keys.js";
 import type { Instant } from "./time.js";
 
@@ -55,13 +55,26 @@ export function resolveRsvp(
 export const isSeriesDefault = (r: RsvpAnswer): boolean =>
   r.occurrence === SERIES_DEFAULT;
 
+export interface TicketTally {
+  readonly have: number;
+  readonly looking: number;
+  readonly none: number;
+  /** Coming, but has not said anything about a ticket. */
+  readonly unsaid: number;
+}
+
 export interface RsvpTally {
   readonly going: number;
   readonly maybe: number;
   readonly notGoing: number;
   /** Members with no resolvable answer. Absence of an item IS this state. */
   readonly noResponse: number;
-  readonly withTicket: number;
+  /**
+   * Counted only among people who are coming. Someone who has said they cannot
+   * make it does not need a ticket, and counting them as missing one would
+   * inflate every number an organiser looks at.
+   */
+  readonly tickets: TicketTally;
 }
 
 /**
@@ -76,13 +89,18 @@ export function tallyRsvps(
   let going = 0;
   let maybe = 0;
   let notGoing = 0;
-  let withTicket = 0;
+  const tickets = { have: 0, looking: 0, none: 0, unsaid: 0 };
 
   for (const r of resolved) {
     if (r.status === "going") going += 1;
     else if (r.status === "maybe") maybe += 1;
     else if (r.status === "not_going") notGoing += 1;
-    if (r.item?.hasTicket === true) withTicket += 1;
+
+    if (r.status === "going" || r.status === "maybe") {
+      const ticket: TicketStatus | null = r.item?.ticketStatus ?? null;
+      if (ticket === null) tickets.unsaid += 1;
+      else tickets[ticket] += 1;
+    }
   }
 
   const answered = going + maybe + notGoing;
@@ -91,6 +109,6 @@ export function tallyRsvps(
     maybe,
     notGoing,
     noResponse: Math.max(0, memberCount - answered),
-    withTicket,
+    tickets,
   };
 }

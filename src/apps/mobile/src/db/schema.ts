@@ -86,7 +86,9 @@ CREATE TABLE IF NOT EXISTS rsvps (
   calendar_id    TEXT NOT NULL,
   status         TEXT NOT NULL CHECK (status IN ('going','maybe','not_going')),
   responded_at   TEXT NOT NULL,
-  has_ticket     INTEGER,
+  -- 'have' | 'looking' | 'none'. NULL means they have not said, which is not the
+  -- same as having decided they have not got one.
+  ticket_status  TEXT,
   effective_from TEXT,
   sync_state     TEXT NOT NULL DEFAULT 'synced',
   PRIMARY KEY (event_id, occurrence, user_id),

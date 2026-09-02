@@ -1,9 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
-import type { RsvpStatus } from "@uca/core";
+import type { RsvpStatus, TicketStatus } from "@uca/core";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 
 import { RsvpControl } from "@/components/RsvpControl";
+import { TicketControl } from "@/components/TicketControl";
 import { Card, EmptyState, Muted } from "@/components/ui";
 import {
   getCalendar,
@@ -11,6 +12,7 @@ import {
   listMembers,
   listRsvps,
   resolveForUser,
+  setMyTicketStatus,
   setRsvp,
   tallyForEvent,
 } from "@/db/repo";
@@ -58,6 +60,14 @@ export default function EventScreen() {
   );
 
   const author = members.find((m) => m.user_id === event.created_by);
+
+  const lookingNames = members
+    .filter(
+      (m) =>
+        resolveForUser(rsvps, eventId, OCCURRENCE, m.user_id).item?.ticketStatus ===
+        "looking",
+    )
+    .map((m) => m.display_name);
 
   return (
     <>
@@ -135,11 +145,35 @@ export default function EventScreen() {
         ) : null}
 
         {event.tickets_required === 1 ? (
-          <Card style={{ gap: space.sm }}>
-            <Text style={{ ...type.label, color: t.color.text }}>Tickets needed</Text>
-            <Muted>
-              {tally.withTicket} of {tally.going} going {tally.going === 1 ? "has" : "have"} theirs
-            </Muted>
+          <Card style={{ gap: space.md }}>
+            <Text style={{ ...type.label, color: t.color.text }}>Tickets</Text>
+
+            <View style={{ gap: space.sm }}>
+              <Muted>Have you got one?</Muted>
+              <TicketControl
+                value={(mine.item?.ticketStatus ?? null) as TicketStatus | null}
+                onChange={(next) =>
+                  setMyTicketStatus(calendarId, eventId, OCCURRENCE, next)
+                }
+              />
+            </View>
+
+            <Muted>{describeTickets(tally.tickets)}</Muted>
+
+            {/* Surfaced separately because it is the one state other people can
+                act on: whoever has a spare can see who needs it. */}
+            {lookingNames.length > 0 ? (
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}
+              >
+                <Ionicons name="search-outline" size={15} color={t.color.maybe} />
+                <Text style={{ ...type.caption, color: t.color.maybe, flex: 1 }}>
+                  {lookingNames.join(", ")}{" "}
+                  {lookingNames.length === 1 ? "needs" : "need"} a ticket
+                </Text>
+              </View>
+            ) : null}
+
             {event.ticket_url ? (
               <Pressable
                 onPress={() => {
@@ -154,7 +188,13 @@ export default function EventScreen() {
                   backgroundColor: t.color.accentSoft,
                 }}
               >
-                <Text style={{ ...type.label, color: t.color.accent }}>Get tickets</Text>
+                <Text style={{ ...type.label, color: t.color.accent }}>
+                  {/* Someone who already has one is buying for a friend, not
+                      repeating themselves. */}
+                  {mine.item?.ticketStatus === "have"
+                    ? "Get more tickets"
+                    : "Get tickets"}
+                </Text>
               </Pressable>
             ) : null}
           </Card>
@@ -204,4 +244,26 @@ function Attendees({
       </Text>
     </View>
   );
+}
+
+/**
+ * Reads as a sentence rather than a row of counters. "Nobody has sorted a
+ * ticket" is a more useful thing to see than "0 have".
+ */
+function describeTickets(t: {
+  have: number;
+  looking: number;
+  none: number;
+  unsaid: number;
+}): string {
+  const coming = t.have + t.looking + t.none + t.unsaid;
+  if (coming === 0) return "Nobody has said they're coming yet.";
+  if (t.have === coming) return "Everyone coming has a ticket.";
+
+  const parts: string[] = [];
+  if (t.have > 0) parts.push(`${t.have} sorted`);
+  if (t.looking > 0) parts.push(`${t.looking} looking`);
+  if (t.none > 0) parts.push(`${t.none} without`);
+  if (t.unsaid > 0) parts.push(`${t.unsaid} haven't said`);
+  return parts.join(" · ");
 }

@@ -51,15 +51,31 @@ test("no answer is a state, distinct from not_going", () => {
   assert.equal(resolveRsvp(OCC, null, null).source, "none");
   const tally = tallyRsvps(
     [
-      { status: "going", item: { hasTicket: true } },
+      { status: "going", item: { ticketStatus: "have" } },
       { status: "maybe", item: null },
     ],
     6,
   );
   assert.deepEqual(
-    { going: tally.going, noResponse: tally.noResponse, withTicket: tally.withTicket },
-    { going: 1, noResponse: 4, withTicket: 1 },
+    { going: tally.going, noResponse: tally.noResponse, have: tally.tickets.have },
+    { going: 1, noResponse: 4, have: 1 },
   );
+});
+
+test("tickets are counted only among people who are coming", () => {
+  const tally = tallyRsvps(
+    [
+      { status: "going", item: { ticketStatus: "have" } },
+      { status: "going", item: { ticketStatus: "looking" } },
+      { status: "maybe", item: { ticketStatus: "none" } },
+      { status: "going", item: null },
+      // Not coming, so not short of a ticket. Counting them would inflate
+      // every number the organiser reads.
+      { status: "not_going", item: { ticketStatus: "none" } },
+    ],
+    5,
+  );
+  assert.deepEqual(tally.tickets, { have: 1, looking: 1, none: 1, unsaid: 1 });
 });
 
 test("a soft-deleted membership is not permission", () => {
@@ -140,4 +156,32 @@ test("members can add events unless the calendar is curated", async () => {
     canCreateEvent({ allowMemberEvents: true }, { status: "left", role: "member" }),
     false,
   );
+});
+
+test("ULIDs are sortable, correctly shaped, and do not collide", async () => {
+  const { ulid } = await import("../dist/index.js");
+
+  const one = ulid();
+  assert.equal(one.length, 26);
+  assert.match(one, /^[0-9A-HJKMNP-TV-Z]{26}$/); // Crockford base32
+
+  // Lexicographic order must match creation order: several sort keys rely on it.
+  const earlier = ulid(1_700_000_000_000);
+  const later = ulid(1_700_000_001_000);
+  assert.ok(earlier < later);
+
+  const many = new Set(Array.from({ length: 20_000 }, () => ulid()));
+  assert.equal(many.size, 20_000);
+});
+
+test("ULID generation works with no crypto available", async () => {
+  const { ulid } = await import("../dist/index.js");
+  const saved = globalThis.crypto;
+  try {
+    // Hermes has no WebCrypto, which is exactly what broke the ulid package.
+    Object.defineProperty(globalThis, "crypto", { value: undefined, configurable: true });
+    assert.equal(ulid().length, 26);
+  } finally {
+    Object.defineProperty(globalThis, "crypto", { value: saved, configurable: true });
+  }
 });

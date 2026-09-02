@@ -10,9 +10,9 @@ import type {
   NotificationSurface,
   RsvpAnswer,
   RsvpStatus,
+  TicketStatus,
   TravelMode,
 } from "@uca/core";
-import { ulid } from "ulid";
 import {
   SERIES_DEFAULT,
   classifyPresence,
@@ -22,6 +22,7 @@ import {
   resolveRsvp,
   surfaceFor,
   tallyRsvps,
+  ulid,
 } from "@uca/core";
 
 import { getDb, notifyChanged } from "./client";
@@ -75,7 +76,7 @@ export interface RsvpRow {
   occurrence: string;
   user_id: string;
   status: RsvpStatus;
-  has_ticket: number | null;
+  ticket_status: TicketStatus | null;
   effective_from: string | null;
 }
 
@@ -157,7 +158,7 @@ export function listRsvpsForCalendar(calendarId: string): RsvpRow[] {
 const toAnswer = (r: RsvpRow): RsvpAnswer => ({
   occurrence: r.occurrence,
   status: r.status,
-  ...(r.has_ticket === null ? {} : { hasTicket: r.has_ticket === 1 }),
+  ...(r.ticket_status === null ? {} : { ticketStatus: r.ticket_status }),
   ...(r.effective_from === null ? {} : { effectiveFrom: r.effective_from }),
 });
 
@@ -915,4 +916,46 @@ export function findSimilarEvents(
       const existing = e.title.toLowerCase();
       return words.some((w) => existing.includes(w));
     });
+}
+
+/**
+ * Where I stand on getting a ticket for this event.
+ *
+ * Only meaningful once someone is coming, so setting it implies an RSVP: nobody
+ * hunts for a ticket to something they are not attending. Answering here rather
+ * than making them answer twice is the whole point.
+ */
+export function setMyTicketStatus(
+  calendarId: string,
+  eventId: string,
+  occurrence: string,
+  ticket: TicketStatus | null,
+): void {
+  const db = getDb();
+  const now = new Date().toISOString();
+
+  db.withTransactionSync(() => {
+    db.runSync(
+      `INSERT INTO rsvps (event_id, occurrence, user_id, calendar_id, status, responded_at, ticket_status, sync_state)
+       VALUES (?,?,?,?, 'going', ?, ?, 'pending')
+       ON CONFLICT (event_id, occurrence, user_id)
+       DO UPDATE SET ticket_status = excluded.ticket_status,
+                     sync_state = 'pending'`,
+      [eventId, occurrence, CURRENT_USER_ID, calendarId, now, ticket],
+    );
+
+    db.runSync(
+      `INSERT INTO mutation_queue (mutation_id, calendar_id, method, path, body, queued_at)
+       VALUES (?,?, 'PUT', ?, ?, ?)`,
+      [
+        `ticket:${eventId}:${occurrence}:${CURRENT_USER_ID}:${now}`,
+        calendarId,
+        `/v1/calendars/${calendarId}/events/${eventId}/rsvp/ticket`,
+        JSON.stringify({ occurrence, ticketStatus: ticket }),
+        now,
+      ],
+    );
+  });
+
+  notifyChanged();
 }

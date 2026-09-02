@@ -223,11 +223,20 @@ export type RsvpStatus = "going" | "maybe" | "not_going";
  * stored item so the rule can be applied to a row read out of the client's
  * SQLite mirror without first reconstructing DynamoDB keys.
  */
+/**
+ * Where someone stands on getting in. `null` (absent) means they have not said,
+ * which is distinct from having decided they do not have one.
+ *
+ * "looking" exists because it is actionable by other people: someone holding a
+ * spare can see who needs it, which a yes/no flag cannot express.
+ */
+export type TicketStatus = "have" | "looking" | "none";
+
 export interface RsvpAnswer {
   /** A real occurrence instant, or SERIES_DEFAULT for "all upcoming". */
   readonly occurrence: string;
   readonly status: RsvpStatus;
-  readonly hasTicket?: boolean;
+  readonly ticketStatus?: TicketStatus | null;
   /**
    * Series defaults only. Stops "I'm going to all of these" from retroactively
    * answering for occurrences that have already happened (§5.5).

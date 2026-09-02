@@ -1,8 +1,10 @@
 import { dayBoundsIn } from "@uca/core";
 import * as ScreenOrientation from "expo-screen-orientation";
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect } from "react";
-import { ScrollView, Text, View, useWindowDimensions } from "react-native";
+import { Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { DayTimeline } from "@/components/DayTimeline";
 import { EventRow } from "@/components/EventRow";
@@ -32,6 +34,8 @@ import { space, type, useTheme } from "@/theme";
  */
 export default function DayScreen() {
   const t = useTheme();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { calendarId, date } = useLocalSearchParams<{
     calendarId: string;
     date: string;
@@ -65,7 +69,12 @@ export default function DayScreen() {
   if (onThisDay.length === 0 && !showPresence) {
     return (
       <>
-        <Stack.Screen options={{ title: formatDayHeading(`${date}T12:00:00.000Z`, tz) }} />
+        <Stack.Screen options={{ headerShown: false }} />
+        <DayHeader
+          title={formatDayHeading(`${date}T12:00:00.000Z`, tz)}
+          insetTop={insets.top}
+          onBack={() => router.back()}
+        />
         <EmptyState
           title="Nothing on this day"
           body="A free day is a feature, not a bug. Add something if you'd rather it weren't."
@@ -79,7 +88,7 @@ export default function DayScreen() {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
-        <View style={{ flex: 1, paddingTop: space.sm }}>
+        <View style={{ flex: 1, paddingTop: insets.top > 0 ? space.xs : space.sm }}>
           <Text
             style={{
               ...type.label,
@@ -104,7 +113,12 @@ export default function DayScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: formatDayHeading(`${date}T12:00:00.000Z`, tz) }} />
+      <Stack.Screen options={{ headerShown: false }} />
+      <DayHeader
+        title={formatDayHeading(`${date}T12:00:00.000Z`, tz)}
+        insetTop={insets.top}
+        onBack={() => router.back()}
+      />
       <ScrollView contentContainerStyle={{ padding: space.lg }}>
         <View style={{ gap: space.lg }}>
           {showPresence ? (
@@ -144,5 +158,57 @@ export default function DayScreen() {
         </View>
       </ScrollView>
     </>
+  );
+}
+
+/**
+ * The day screen owns its header rather than letting the navigator draw one.
+ *
+ * The navigator's header cannot be shown in one orientation and hidden in the
+ * other without it measuring itself against the wrong frame: rotating to
+ * landscape and back left the bar positioned off the top of the screen. Drawing
+ * it here means the orientation change moves nothing the navigator has to
+ * re-measure.
+ */
+function DayHeader({
+  title,
+  insetTop,
+  onBack,
+}: {
+  title: string;
+  insetTop: number;
+  onBack: () => void;
+}) {
+  const t = useTheme();
+  return (
+    <View
+      style={{
+        paddingTop: insetTop,
+        backgroundColor: t.color.bg,
+      }}
+    >
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: space.sm,
+          paddingHorizontal: space.md,
+          paddingVertical: space.sm,
+        }}
+      >
+        <Pressable
+          onPress={onBack}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          style={{ flexDirection: "row", alignItems: "center" }}
+        >
+          <Ionicons name="chevron-back" size={26} color={t.color.accent} />
+        </Pressable>
+        <Text style={{ ...type.heading, fontSize: 17, color: t.color.text }}>
+          {title}
+        </Text>
+      </View>
+    </View>
   );
 }

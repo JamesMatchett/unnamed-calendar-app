@@ -32,7 +32,13 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: t.color.bg },
         }}
       >
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        {/* The tab group has no header of its own, but its title is what the
+            back button on any pushed screen reads. Without one it falls back to
+            the route name and says "(tabs)". */}
+        <Stack.Screen
+          name="(tabs)"
+          options={{ headerShown: false, title: "Home" }}
+        />
         <Stack.Screen name="people" options={{ presentation: "modal" }} />
         <Stack.Screen name="activity" options={{ presentation: "modal" }} />
         <Stack.Screen name="friends" options={{ presentation: "modal" }} />

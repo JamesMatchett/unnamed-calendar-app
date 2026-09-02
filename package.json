@@ -2,15 +2,16 @@
   "name": "uca",
   "version": "0.0.0",
   "private": true,
-  "description": "UCA monorepo. See Architecture.md §3.1 for the packages/apps split.",
+  "description": "UCA monorepo. See Architecture.md \u00a73.1 for the packages/apps split.",
   "workspaces": [
     "src/packages/*",
     "src/apps/*"
   ],
   "scripts": {
     "build:core": "npm run build --workspace @uca/core",
+    "mobile": "npm run start --workspace @uca/mobile",
+    "start": "npm run start --workspace @uca/mobile",
     "test:core": "npm test --workspace @uca/core",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "mobile": "npm run start --workspace @uca/mobile"
+    "typecheck": "npm run typecheck --workspaces --if-present"
   }
 }
