@@ -1,4 +1,5 @@
 import { Stack } from "expo-router";
+import * as ScreenOrientation from "expo-screen-orientation";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -14,6 +15,10 @@ export default function RootLayout() {
   // the possibility of an unopened database.
   useEffect(() => {
     getDb();
+    // Portrait everywhere by default. The day screen unlocks rotation for
+    // itself and re-locks on the way out, so landscape is an affordance on one
+    // screen rather than something every screen must be designed for.
+    void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
   }, []);
 
   return (
@@ -28,6 +33,14 @@ export default function RootLayout() {
         }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="people" options={{ presentation: "modal" }} />
+        <Stack.Screen name="activity" options={{ presentation: "modal" }} />
+        <Stack.Screen name="friends" options={{ presentation: "modal" }} />
+        <Stack.Screen name="calendar/new" options={{ presentation: "modal" }} />
+        <Stack.Screen
+          name="calendar/[calendarId]/event/new"
+          options={{ presentation: "modal" }}
+        />
       </Stack>
     </SafeAreaProvider>
   );

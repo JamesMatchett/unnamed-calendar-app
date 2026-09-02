@@ -18,11 +18,129 @@ const day = (offset: number, hour: number, minute = 0): string => {
 
 const isoDate = (offset: number): string => day(offset, 12).slice(0, 10);
 
+/**
+ * Each area seeds independently. A single "is the database empty?" check means
+ * that adding fixtures later never reaches anyone who already ran the app —
+ * they get new empty tables and assume the feature is broken.
+ */
 export function seedIfEmpty(db: SQLite.SQLiteDatabase): void {
-  const row = db.getFirstSync<{ n: number }>(
-    "SELECT COUNT(*) AS n FROM calendars",
+  seedCalendars(db);
+  seedInbox(db);
+  seedPeople(db);
+}
+
+function seedPeople(db: SQLite.SQLiteDatabase): void {
+  if (count(db, "directory") > 0) return;
+
+  // Some of these share calendars with the current user and some do not — the
+  // point of search is finding the ones who do not.
+  const people: [string, string, string, string][] = [
+    [CURRENT_USER_ID, "james", "James", "james@example.com"],
+    ["01JC0USERPRIYA0000000000", "priya", "Priya Raman", "priya@example.com"],
+    ["01JC0USERLUKE00000000000", "luke", "Luke Bennett", "luke@example.com"],
+    ["01JC0USERGLENN0000000000", "glenn", "Glenn Ferreira", "glenn@example.com"],
+    ["01JC0USERMAYA00000000000", "maya", "Maya Okonkwo", "maya@example.com"],
+    ["01JC0USERTOM000000000000", "tomh", "Tom Hargreaves", "tom.h@example.com"],
+    ["01JC0USERSOFIA0000000000", "sofia", "Sofia Almeida", "sofia@example.com"],
+    ["01JC0USERDANNY0000000000", "dan", "Danny Whelan", "danny@example.com"],
+  ];
+
+  db.withTransactionSync(() => {
+    for (const [id, handle, name, email] of people) {
+      db.runSync(
+        "INSERT INTO directory (user_id, handle, display_name, email) VALUES (?,?,?,?)",
+        [id, handle, name, email],
+      );
+    }
+
+    // A friendship that predates any shared calendar, an outgoing request and an
+    // incoming one — so all three states are visible without having to create
+    // them first.
+    const friends: [string, string, string][] = [
+      ["01JC0USERMAYA00000000000", "accepted", day(-200, 12)],
+      ["01JC0USERTOM000000000000", "pending_out", day(-2, 15)],
+      ["01JC0USERSOFIA0000000000", "pending_in", day(-1, 20)],
+    ];
+
+    for (const [uid, status, since] of friends) {
+      db.runSync(
+        "INSERT INTO friends (user_id, status, grants, since) VALUES (?,?,'none',?)",
+        [uid, status, since],
+      );
+    }
+  });
+}
+
+function count(db: SQLite.SQLiteDatabase, table: string): number {
+  return (
+    db.getFirstSync<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table}`)?.n ?? 0
   );
-  if ((row?.n ?? 0) > 0) return;
+}
+
+function seedInbox(db: SQLite.SQLiteDatabase): void {
+  if (count(db, "notifications") > 0 || count(db, "pending_invites") > 0) return;
+
+  db.withTransactionSync(() => {
+    // Invites waiting for an answer — the People surface.
+    db.runSync(
+      `INSERT INTO pending_invites (calendar_id, calendar_name, calendar_mode, start_date,
+         end_date, event_count, member_count, invited_by_name, invited_at, state)
+       VALUES (?,?,?,?,?,?,?,?,?, 'pending')`,
+      [
+        "01JC0CALGLASTO0000000000",
+        "Glastonbury 2027",
+        "bounded",
+        isoDate(280),
+        isoDate(284),
+        9,
+        6,
+        "Priya",
+        day(-1, 18),
+      ],
+    );
+
+    db.runSync(
+      `INSERT INTO pending_invites (calendar_id, calendar_name, calendar_mode, start_date,
+         end_date, event_count, member_count, invited_by_name, invited_at, state)
+       VALUES (?,?,?,?,?,?,?,?,?, 'pending')`,
+      [
+        "01JC0CALSUNDAY00000000000",
+        "Sunday roasts",
+        "continuous",
+        null,
+        null,
+        3,
+        4,
+        "Glenn",
+        day(-3, 12),
+      ],
+    );
+
+    type Notif = [string, string, string | null, string, string, string, string | null, string | null];
+    const notifs: Notif[] = [
+      // kind, id, read_at, created, calendar_id, calendar_name, actor_name, event_title
+      ["invite_pending", "n1", null, day(-1, 18), "01JC0CALGLASTO0000000000", "Glastonbury 2027", "Priya", null],
+      ["invite_pending", "n2", null, day(-3, 12), "01JC0CALSUNDAY00000000000", "Sunday roasts", "Glenn", null],
+      ["event_added", "n3", null, day(-1, 9), "01JC0CALLISBON0000000000", "Lisbon, October", "Luke", "Tram 28 and the viewpoints"],
+      ["event_added", "n4", null, day(-2, 14), "01JC0CALLONDON0000000000", "London things", "Priya", "Jockstrap at EartH"],
+      ["suggestion_received", "n5", null, day(-2, 16), "01JC0CALLISBON0000000000", "Lisbon, October", "Glenn", "Fado night in Alfama"],
+      ["event_cancelled", "n6", day(-4, 8), day(-5, 11), "01JC0CALLONDON0000000000", "London things", "Priya", "Pub quiz"],
+      ["rsvp_nudge", "n7", day(-4, 8), day(-4, 7), "01JC0CALLISBON0000000000", "Lisbon, October", "Priya", "Dinner at Time Out Market"],
+    ];
+
+    for (const [kind, id, readAt, createdAt, cid, cname, actor, title] of notifs) {
+      db.runSync(
+        `INSERT INTO notifications (notification_id, kind, created_at, read_at,
+           calendar_id, calendar_name, event_id, event_title, actor_id, actor_name)
+         VALUES (?,?,?,?,?,?,NULL,?,NULL,?)`,
+        [id, kind, createdAt, readAt, cid, cname, title, actor],
+      );
+    }
+  });
+}
+
+function seedCalendars(db: SQLite.SQLiteDatabase): void {
+  if (count(db, "calendars") > 0) return;
 
   db.withTransactionSync(() => {
     db.runSync(
@@ -107,22 +225,6 @@ export function seedIfEmpty(db: SQLite.SQLiteDatabase): void {
     };
 
     const events: EventSeed[] = [
-      {
-        id: "01JC0EVTFLIGHT0000000000",
-        cid: "01JC0CALLISBON0000000000",
-        title: "Flights land",
-        desc: "Priya and Luke are on the earlier one.",
-        start: day(12, 15, 40),
-        end: null,
-        tz: "Europe/Lisbon",
-        precision: "datetime",
-        loc: "Humberto Delgado Airport",
-        addr: "Alameda das Comunidades Portuguesas, Lisboa",
-        tickets: 0,
-        url: null,
-        by: CURRENT_USER_ID,
-        rrule: null,
-      },
       {
         id: "01JC0EVTDINNER0000000000",
         cid: "01JC0CALLISBON0000000000",
@@ -245,6 +347,23 @@ export function seedIfEmpty(db: SQLite.SQLiteDatabase): void {
           day(-20, 9),
           e.rrule,
         ],
+      );
+    }
+
+    // Arrival and departure for the Lisbon trip. Deliberately staggered: two
+    // people already there, one landing mid-trip, one who has not said.
+    const availability: [string, string | null, string | null][] = [
+      [CURRENT_USER_ID, day(12, 15, 40), day(15, 11, 0)],
+      ["01JC0USERPRIYA0000000000", day(12, 9, 15), day(15, 11, 0)],
+      ["01JC0USERLUKE00000000000", day(13, 18, 30), day(15, 20, 0)],
+      ["01JC0USERGLENN0000000000", null, null],
+    ];
+
+    for (const [uid, arrives, departs] of availability) {
+      db.runSync(
+        `INSERT INTO availability (calendar_id, user_id, arrives_at, departs_at, updated_at)
+         VALUES ('01JC0CALLISBON0000000000',?,?,?,?)`,
+        [uid, arrives, departs, day(-10, 9)],
       );
     }
 

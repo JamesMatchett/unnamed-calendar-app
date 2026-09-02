@@ -45,7 +45,7 @@ Nothing else in the project depends on this being done.
 
 - **`src/packages/core`** — branded ULID ids, the time triple, every key builder, all item
   shapes, and the authorisation and RSVP-resolution rules. Typechecks clean under `strict` +
-  `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes`, and `npm test` runs 13 node:test
+  `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes`, and `npm test` runs 22 node:test
   assertions covering the rules subtle enough to be reimplemented wrongly. No runtime
   dependency beyond `ulid`.
 
@@ -53,6 +53,25 @@ Nothing else in the project depends on this being done.
   vertical slice (Calendars → Calendar → Day → Event, plus Agenda) on a real SQLite mirror
   with seeded fixtures, one-tap RSVP writing through a mutation queue, light and dark
   themes. Typechecks clean; `expo export` bundles for iOS, Android and web.
+
+- **Inbox and People** — two header affordances on tab roots: left is **People**, a
+  destination (derived connections + pending calendar invites); right is **Activity**, a feed
+  (events, suggestions, cancellations). The split lives in `@uca/core`
+  (`surfaceFor`, `isActionable`) so the surfaces cannot disagree. **Badges count only what is
+  waiting on you**, never unread news.
+- **Landscape day view** — rotating the phone on a day screen swaps the list for an hour
+  grid with side-by-side overlaps, a now-line, and an untimed strip for `date`/`tbc` events.
+  Rotation is unlocked *only* on that screen; the app is portrait-locked everywhere else, so
+  no other screen has to be designed for landscape. The column-packing algorithm lives in
+  `@uca/core` (`layoutDay`) because the web day/week view will need the same one, and that
+  is where the tests are.
+
+- **Friends prototype** — search (handle / name / email), "Add friend" on suggestions, and a
+  Manage friends screen with incoming, outgoing and accepted. Local only: a `directory` table
+  stands in for the discovery API, and only the current user's `friends` rows exist. Shapes
+  follow §7.3 so swapping queries for API calls is contained. Per-friend visibility (§7.4) is
+  deliberately **absent** — inert until free/busy exists, and a dead toggle would pollute any
+  judgement of whether the screen works.
 
 ### Unblocked next artefacts
 
@@ -82,6 +101,12 @@ this app in a browser.
 5. **The name.**
 
 ## Conventions
+
+- **No em dashes in user-facing copy** (decision, Sept 2026). Labels, hints, empty states,
+  alert bodies and button text use a comma, a colon or a full stop instead. Code comments and
+  the design documents are unaffected. A quick check:
+  `grep -rn "—" src/apps/mobile/app src/apps/mobile/src --include=*.tsx --include=*.ts | grep -v "^\s*//"`
+
 
 - **Decisions are folded into Architecture.md immediately** and logged in §14 with a section
   pointer. Cross-references use `§n.n` and are expected to resolve — there is a check for it:
@@ -130,6 +155,26 @@ Ordered roughly by how expensive they are to discover late.
 13. **Cognito is likely the largest single line item** at scale — three to ten times the whole
     compute and storage bill. Keep auth behind an interface (§3.2, §10).
 
+## The friends reversal (Sept 2026)
+
+Decision 8 — derived connections, no friends graph — was **reversed** partway through the
+build. A friends graph is now v2, because free/busy sharing concerns two people who may share
+no calendar at all, so the relationship has to exist independently. §7.3 and §7.4 carry the
+design; decisions 29–32 log it.
+
+Three things worth carrying forward:
+
+- **The derived-connections work survives.** It becomes the suggestion and ranking layer
+  under the friends search box, which is what stops a friends feature opening on an empty
+  screen.
+- **Free/busy depends on native calendar import**, and import is far cheaper than two-way
+  sync — read-only device access, no duplicate detection, no recurrence reconciliation. The
+  order is import → friends → free/busy, and it is not negotiable: free/busy from UCA events
+  alone reports you free during a day of meetings.
+- **`full` visibility is deferred past v2 on purpose.** Even `busy` leaks patterns of life.
+  If it ships it needs a permanently visible indicator, revocation that is silent and
+  immediate, and no way for the other person to prevent withdrawal.
+
 ## Frontend and tooling traps
 
 Found while building the app, and all of them cost time to diagnose.
@@ -140,9 +185,13 @@ Found while building the app, and all of them cost time to diagnose.
    Expo Go is fetched by the Expo CLI and is not App Store gated, so `press i` works fine.
    For a physical device you need a development build (`npx expo run:ios`, or EAS Build),
    which needs Xcode locally or an Apple Developer account for device installs.
-2. **`@uca/core` must be BUILT before the app can import it.** The package resolves to
-   `dist/`, so `npm run build:core` precedes `npm run mobile`. Skipping it produces a module
-   resolution error that looks like a broken workspace.
+2. **Metro reads `@uca/core` from SOURCE, not `dist/`** — deliberately, via a
+   `resolveRequest` alias in `metro.config.js`. Before that, editing core and reloading gave
+   you the *old* core against *new* app code, and the symptom was an undefined export at
+   runtime nowhere near the cause. Core keeps `.js` extensions on relative imports (Node's
+   ESM loader needs them for Lambda later), so the resolver rewrites them to `.ts`.
+   `npm run build:core` is still needed for typechecking and for the eventual Lambda bundles,
+   but no longer for running the app.
 3. **Metro needs explicit monorepo wiring.** `watchFolders`, `nodeModulesPaths` and
    `disableHierarchicalLookup` in `metro.config.js`. Without them, importing `@uca/core`
    fails with an unhelpful "module not found" that reads like a typo.
@@ -155,7 +204,11 @@ Found while building the app, and all of them cost time to diagnose.
 6. **`node --test` needs a glob, not a directory** — `node --test "test/*.test.mjs"`.
    Passing `test/` makes it try to execute the directory as a file.
 7. **`expo-sqlite`'s synchronous API does not work on web** — see the section above.
-8. **Plain `git status` from a sandboxed shell can strand `.git/index.lock`.** It takes the
+8. **Backticks inside a SQL template literal silently end the string.** The schema lives in a
+   TypeScript template literal, so a backtick in a SQL *comment* terminates it and the error
+   surfaces dozens of lines later as a nonsense syntax error. Never use backticks in
+   `schema.ts` comments.
+9. **Plain `git status` from a sandboxed shell can strand `.git/index.lock`.** It takes the
    index lock to refresh, and if that shell cannot delete files the lock survives, after
    which every git command fails with "Another git process seems to be running". Use
    `git --no-optional-locks status`, which does not take the lock. To recover, `mv` the lock

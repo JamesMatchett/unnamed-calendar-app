@@ -1,19 +1,25 @@
+import { Ionicons } from "@expo/vector-icons";
+import { dayBoundsIn } from "@uca/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useMemo, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { useMemo } from "react";
+import { Pressable, ScrollView, Text, View } from "react-native";
 
 import { DayPills } from "@/components/DayPills";
+import { DayPresenceNote } from "@/components/DayPresenceNote";
 import { EventRow } from "@/components/EventRow";
 import { AvatarStack, Card, EmptyState, Muted } from "@/components/ui";
+import type { CalendarRow } from "@/db/repo";
 import {
   getCalendar,
   listEvents,
   listMembers,
   listRsvpsForCalendar,
+  myMembership,
+  presenceForDay,
 } from "@/db/repo";
-import { dayKey, formatDateRange } from "@/lib/format";
+import { dayKey, formatDateRange, formatDayShort } from "@/lib/format";
 import { useQuery } from "@/lib/useQuery";
-import { space, type, useTheme } from "@/theme";
+import { radius, space, type, useTheme } from "@/theme";
 
 /**
  * The calendar screen: name, description, date range, a day selector, the member
@@ -23,14 +29,16 @@ import { space, type, useTheme } from "@/theme";
 export default function CalendarScreen() {
   const t = useTheme();
   const router = useRouter();
-  const { calendarId } = useLocalSearchParams<{ calendarId: string }>();
+  const { calendarId, created } = useLocalSearchParams<{
+    calendarId: string;
+    created?: string;
+  }>();
 
   const calendar = useQuery(`calendar:${calendarId}`, () => getCalendar(calendarId));
   const events = useQuery(`events:${calendarId}`, () => listEvents(calendarId));
   const members = useQuery(`members:${calendarId}`, () => listMembers(calendarId));
   const rsvps = useQuery(`rsvps:${calendarId}`, () => listRsvpsForCalendar(calendarId));
-
-  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const me = useQuery(`me:${calendarId}`, () => myMembership(calendarId));
 
   const tz = calendar?.default_tz ?? "Europe/London";
 
@@ -60,18 +68,36 @@ export default function CalendarScreen() {
 
   if (!calendar) return <EmptyState title="Not found" body="This calendar is no longer available." />;
 
+  const canAdd =
+    me?.role === "owner" || calendar.allow_member_events === 1;
+
   const range = formatDateRange(
     calendar.start_date ?? undefined,
     calendar.end_date ?? undefined,
   );
 
-  const visible = selectedDay
-    ? events.filter((e) => dayKey(e.start_utc, tz) === selectedDay)
-    : events;
-
   return (
     <>
-      <Stack.Screen options={{ title: calendar.name }} />
+      <Stack.Screen
+        options={{
+          title: calendar.name,
+          headerRight: () => (
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: "/calendar/[calendarId]/settings",
+                  params: { calendarId },
+                })
+              }
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Calendar settings"
+            >
+              <Ionicons name="settings-outline" size={21} color={t.color.text} />
+            </Pressable>
+          ),
+        }}
+      />
       <ScrollView contentContainerStyle={{ paddingVertical: space.lg, gap: space.lg }}>
         <View style={{ paddingHorizontal: space.lg, gap: space.sm }}>
           <Text style={{ ...type.title, color: t.color.text }}>{calendar.name}</Text>
@@ -85,6 +111,26 @@ export default function CalendarScreen() {
             {members.length === 1 ? "person" : "people"}
           </Muted>
         </View>
+
+        {created === "1" ? (
+          /* Creation is not finished until there is something in the calendar
+             and somebody else in it (§3.5). A brand-new calendar therefore says
+             what happens next rather than presenting an empty room. */
+          <View style={{ paddingHorizontal: space.lg }}>
+            <Card style={{ gap: space.sm, borderColor: t.color.accent }}>
+              <Text style={{ ...type.label, color: t.color.accent }}>
+                Two things left
+              </Text>
+              <Text style={{ ...type.body, color: t.color.text }}>
+                Add the first thing so there's something to look at, then invite
+                the others.
+              </Text>
+              <Muted>
+                An empty calendar nobody else is in doesn't do much.
+              </Muted>
+            </Card>
+          </View>
+        ) : null}
 
         <View style={{ paddingHorizontal: space.lg }}>
           <Card style={{ flexDirection: "row", alignItems: "center", gap: space.md }}>
@@ -104,42 +150,147 @@ export default function CalendarScreen() {
                 paddingHorizontal: space.lg,
               }}
             >
-              {selectedDay ? "Showing one day" : "Jump to a day"}
+              Jump to a day
             </Text>
             <DayPills
               days={days}
               tz={tz}
-              selected={selectedDay}
+              selected={null}
               counts={counts}
-              onSelect={(d) => {
-                setSelectedDay(d);
+              onSelect={(d) =>
                 router.push({
                   pathname: "/calendar/[calendarId]/day/[date]",
                   params: { calendarId, date: d },
-                });
-              }}
+                })
+              }
             />
           </View>
         ) : null}
 
-        <View style={{ paddingHorizontal: space.lg, gap: space.sm }}>
+        <View style={{ paddingHorizontal: space.lg, gap: space.lg }}>
           <Text style={{ ...type.label, color: t.color.textMuted }}>
-            {selectedDay ? "That day" : "Upcoming"}
+            Upcoming
           </Text>
 
-          {visible.length === 0 ? (
+          {days.length === 0 ? (
             <EmptyState
               title="Nothing planned yet"
-              body="Add the first thing — a dinner, a flight, a vague intention to go to the beach."
+              body="Add the first thing: a dinner, a flight, a vague intention to go to the beach."
               actionLabel="Add an event"
+              onAction={() => router.push(addEventHref(calendarId))}
             />
           ) : (
-            visible.map((e) => (
-              <EventRow key={e.event_id} event={e} members={members} rsvps={rsvps} />
+            days.map((d) => (
+              <DaySection
+                key={d}
+                calendarId={calendarId}
+                date={d}
+                tz={tz}
+                collectAvailability={calendar.collect_availability === 1}
+                travelMode={calendar.travel_mode}
+                events={events.filter((e) => dayKey(e.start_utc, tz) === d)}
+                members={members}
+                rsvps={rsvps}
+              />
             ))
           )}
         </View>
+
       </ScrollView>
+
+      {canAdd ? (
+        <Pressable
+          onPress={() => router.push(addEventHref(calendarId))}
+          accessibilityRole="button"
+          accessibilityLabel="Add an event"
+          style={{
+            position: "absolute",
+            right: space.lg,
+            bottom: space.xl,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: space.sm,
+            paddingHorizontal: space.xl,
+            paddingVertical: space.md,
+            borderRadius: radius.pill,
+            backgroundColor: t.color.accent,
+            shadowColor: "#000",
+            shadowOpacity: 0.18,
+            shadowRadius: 12,
+            shadowOffset: { width: 0, height: 4 },
+            elevation: 4,
+          }}
+        >
+          <Ionicons name="add" size={19} color="#fff" />
+          <Text style={{ ...type.label, color: "#fff" }}>Add</Text>
+        </Pressable>
+      ) : null}
     </>
+  );
+}
+
+const addEventHref = (calendarId: string) =>
+  ({
+    pathname: "/calendar/[calendarId]/event/new",
+    params: { calendarId },
+  }) as const;
+
+/**
+ * One day in the calendar's list: the date, who is coming or going, then what is
+ * planned. Days with no events still appear when someone arrives or leaves —
+ * "nothing planned, but Luke lands at 18:30" is exactly the sort of thing the
+ * list exists to tell you, and it is why arrivals used to be fake events.
+ */
+function DaySection({
+  calendarId,
+  date,
+  tz,
+  collectAvailability,
+  travelMode,
+  events,
+  members,
+  rsvps,
+}: {
+  calendarId: string;
+  date: string;
+  tz: string;
+  collectAvailability: boolean;
+  travelMode: CalendarRow["travel_mode"];
+  events: ReturnType<typeof listEvents>;
+  members: ReturnType<typeof listMembers>;
+  rsvps: ReturnType<typeof listRsvpsForCalendar>;
+}) {
+  const t = useTheme();
+  const bounds = dayBoundsIn(date, tz);
+  const presence = useQuery(`presence:${calendarId}:${date}`, () =>
+    presenceForDay(calendarId, bounds.dayStart, bounds.dayEnd),
+  );
+
+  const movement =
+    collectAvailability &&
+    (presence.arrivingToday.length > 0 || presence.leavingToday.length > 0);
+
+  if (events.length === 0 && !movement) return null;
+
+  return (
+    <View style={{ gap: space.sm }}>
+      <Text style={{ ...type.label, color: t.color.text }}>
+        {formatDayShort(date, tz)}
+      </Text>
+
+      {collectAvailability ? (
+        <DayPresenceNote presence={presence} tz={tz} travelMode={travelMode} />
+      ) : null}
+
+      {events.map((e) => (
+        <EventRow key={e.event_id} event={e} members={members} rsvps={rsvps} />
+      ))}
+
+      {events.length === 0 ? (
+        <Text style={{ ...type.caption, color: t.color.textMuted }}>
+          Nothing planned.
+        </Text>
+      ) : null}
+    </View>
   );
 }

@@ -81,6 +81,22 @@ export interface IdentityItem extends BaseItem {
 
 export type CalendarMode = "bounded" | "continuous";
 
+/**
+ * How people get to this calendar's thing. Purely presentational — it changes
+ * the icon on arrivals and departures — but it lives on the calendar because a
+ * road trip and a flight abroad are different enough that a plane on every
+ * arrival reads as wrong for one of them.
+ */
+export type TravelMode = "plane" | "train" | "car" | "boat" | "walk";
+
+export const TRAVEL_MODES: readonly TravelMode[] = [
+  "plane",
+  "train",
+  "car",
+  "boat",
+  "walk",
+];
+
 export interface CalendarItem extends BaseItem {
   readonly entityType: "calendar";
   readonly calendarId: CalendarId;
@@ -93,9 +109,17 @@ export interface CalendarItem extends BaseItem {
   /** Events default to this, not the phone's zone (§3.5). */
   readonly defaultTz: TimeZoneId;
   readonly collectAvailability: boolean;
+  /** Only meaningful when `collectAvailability` is set. Defaults to plane. */
+  readonly travelMode: TravelMode;
   /** Default true. Every joiner is approved, with no exceptions (§7.1). */
   readonly requireApproval: boolean;
   readonly allowMemberInvites: boolean;
+  /**
+   * Default true — the Brief's premise is that friends submit events. Turning it
+   * off makes the calendar curated rather than collaborative, which suits a
+   * promoter or a tightly-run trip.
+   */
+  readonly allowMemberEvents: boolean;
   readonly sourceFestId?: FestivalId;
   /** Rotatable secret in the read-only ICS feed URL (§5.7). */
   readonly icsToken: string;

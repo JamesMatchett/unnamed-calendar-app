@@ -311,6 +311,22 @@ number of events created, and an empty shared calendar is a dead one. Minimum vi
 - **Duplicate detection** — two people will add the same gig, and it is the most common
   annoyance in shared calendars. Similar title plus overlapping time triggers "Sam already
   added something like this". Runs against local SQLite: free, and works offline.
+- **Open an `.ics` file** — register the app as a handler for `text/calendar` so it appears
+  in the share sheet when someone taps a calendar attachment in Mail or a browser. Choose a
+  calendar, land on the same pre-filled form.
+
+**One draft, several sources.** Manual entry, natural language, a pasted link, an opened
+`.ics`, and eventually native calendar import all end in the *same* pre-populated event form.
+Building that form as one screen with several entry points — rather than a bespoke flow per
+source — is what keeps the fifth source cheap. `.ics` in particular is close to free once it
+exists: the mapping is direct (`SUMMARY`→title, `DTSTART`/`DTEND`→the time triple,
+`LOCATION`, `URL`→ticket link, `RRULE`→recurrence), and it is a manual, one-file version of
+the import in §7.4.
+
+Registering the handler is app-config work rather than native code: `CFBundleDocumentTypes`
+plus `LSSupportsOpeningDocumentsInPlace` on iOS, an intent filter for `text/calendar` on
+Android. Parse defensively — a real `.ics` may carry several `VEVENT`s and a `VTIMEZONE`, and
+files in the wild are frequently malformed.
 
 Events default to the **calendar's** timezone, not the phone's (`defaultTz`) — a holiday in
 Spain should not silently schedule in UK time.
@@ -477,6 +493,7 @@ defaultTz                                    # events default to the calendar's 
 collectAvailability: bool                    # the Brief's arrival/departure toggle
 requireApproval: bool                        # default true — see §7.1
 allowMemberInvites: bool                     # may non-owners invite / mint links?
+allowMemberEvents: bool                      # default true — off makes it curated
 sourceFestId?                                # §6.1
 icsToken                                     # §5.6, rotatable
 status: 'active' | 'deleted'                  # 30-day restorable soft delete, §8.5
@@ -1053,7 +1070,7 @@ broken links, no reprocessing.
 
 ---
 
-## 7. Invites and QR codes
+## 7. Invites, connections and people
 
 The QR encodes a compact **signed** token — `{cid, role, exp, nonce}`, signed with an
 asymmetric KMS key (or an HMAC from Parameter Store if you prefer simplicity). The public
@@ -1118,23 +1135,102 @@ Known limitation: Apple's Hide My Email issues a per-app relay address, so an
 email-addressed invite will not match unless the inviter knows the address that user
 actually signed up with. §7.2 is the answer to that.
 
-### 7.2 Connections, derived rather than built
+### 7.2 Connections, derived — the v1 mechanism
 
-Inviting by user id sidesteps the email-matching problem entirely — which argues for a
-friends list, except a real one means friend requests, accept/reject, blocking, discovery
-and probably contact-book upload, the last of which is its own GDPR exercise since it
-processes data about people who never consented.
+> **Superseded for v2 by §7.3.** A real friends graph *is* being built, because free/busy
+> sharing (§7.6) needs a relationship that exists independently of any shared calendar.
+> Derived connections remain the v1 behaviour and, importantly, become the **suggestion and
+> ranking layer** underneath the friends graph rather than being thrown away.
 
 The graph already exists implicitly: **anyone you have shared a calendar with**. That yields
-a "people you have planned with" list with no social graph, no requests and no compliance
-exposure — and a better experience, since nobody enjoys sending friend requests.
+a "people you have planned with" list with no social graph, no requests, and no compliance
+exposure — and it costs nothing, because the client already holds every calendar it belongs
+to in SQLite, member lists included. It is a local SQL query with no backend at all.
 
-It also costs nothing to build. The client already holds every calendar it belongs to in
-SQLite, member lists included, so the list is a **local SQL query with no backend at all**.
-If a real friends feature is ever wanted, this is what it grows out of rather than a second
-competing concept.
+That property is why it survives the reversal. A friends feature whose search box opens
+empty is a cold-start problem; one that opens already listing the people you have actually
+been places with is not. §7.3 uses it exactly that way.
 
-### 7.3 The inbox
+### 7.3 The friends graph (v2)
+
+**Decision reversed, Sept 2026.** §7.2 argued that derived connections were enough. They are
+not, once the product wants to answer *"when are we both free for a coffee?"* — that question
+concerns two people who may share no calendar at all, so the relationship has to exist on its
+own.
+
+**Shape**
+
+```
+PK = USER#{ownerId}   SK = FRIEND#{otherId}
+    status: 'pending' | 'accepted'
+    since
+    grants: 'none' | 'busy' | 'full'      # what OWNER lets OTHER see (§7.4)
+
+PK = USER#{targetId}  SK = FRIENDREQ#{fromId}   # inbox item, People surface (§7.5)
+PK = HANDLE#{lowercased}  SK = META             # username uniqueness
+```
+
+One item per direction, each holding what its **owner grants**. Reading "what may I see of
+them?" is a single `GetItem` in *their* partition — deliberately, because it keeps the
+authority for a disclosure with the person disclosing rather than mirrored into the viewer's
+data where it could drift.
+
+**Discovery is a single search box** over three inputs, with suggestions ahead of results:
+
+| Input | Notes |
+|---|---|
+| `@handle` | Usernames, unique and lowercased. Needs a reserved list, a change policy (rate-limited, old handle held for a period so a released handle cannot be used to impersonate), and an "@" that is genuinely the identifier rather than decoration |
+| Email or phone | Stored and matched as a hash, never plaintext. Requires a **"who can find me"** setting, since findable-by-phone-number is not something to default on without asking |
+| Suggestions | People you already share a calendar with, ranked by shared calendars and by how many events you have both been Going to. Recency matters more than volume — someone you saw last week beats someone you saw twenty times in 2024 |
+
+The ranking signal is the derived-connections query of §7.2, which is why that work is not
+wasted.
+
+### 7.4 Personal availability and visibility (v2)
+
+This is the feature the graph exists for, and it introduces something the app does not
+currently have: **a personal, cross-calendar view of one person's commitments.**
+
+**It depends on native calendar import, and that dependency is the sequencing constraint.**
+Free/busy computed only from UCA events would report you free on a Tuesday afternoon you have
+spent in meetings, and a "when are we free?" feature that is wrong a third of the time is
+worse than none. So import comes first (decision, Sept 2026).
+
+Usefully, **import for free/busy is far cheaper than two-way sync.** It needs read access to
+the device's calendars and nothing more — no duplicate detection, no recurrence-exception
+reconciliation, none of the swamp described in §5.7. It populates a busy index and stops:
+
+```
+PK = USER#{uid}   SK = BUSY#{startUtc}#{id}
+    endUtc, source: 'uca' | 'device', opaque: bool
+```
+
+Blocks carry **no titles** at the `busy` visibility level — the index stores what it must and
+the API returns only intervals. Mutual availability is then an intersection of complements
+over a window, computed client-side from blocks the viewer is entitled to.
+
+**Three visibility levels, granted per friend, per direction:**
+
+| Grant | What they see |
+|---|---|
+| `none` | Nothing. The default for a new friend |
+| `busy` | Intervals only — no titles, no locations, no attendees |
+| `full` | The personal calendar, with titles and locations |
+
+Asymmetry is the point: what you show someone is unrelated to what they show you, and the UI
+must make *what they can see of you* the prominent fact rather than the reverse.
+
+**`full` is the highest-risk permission in the product** and is deferred past the rest
+(decision, Sept 2026). Even `busy` leaks patterns of life — when you are home, when you are
+away, when you are reliably out. Titles and locations are another order of magnitude, and
+partner-level calendar access is a well-documented vector in controlling relationships. If it
+ships, three things are not optional: a **permanently visible indicator** of who can see what,
+**revocation that takes effect silently and immediately** (no "X can no longer see your
+calendar" notification that turns withdrawal into a confrontation), and **no lock-in** — a
+grant is never something another person can prevent you retracting. Design for that case from
+the start rather than discovering it in a support ticket.
+
+### 7.5 The inbox
 
 Pending invites, suggestions awaiting your approval, approve/reject outcomes and join
 notifications currently have nowhere to live. "Everything awaiting my attention across all
@@ -1146,7 +1242,7 @@ It is nearly free. The Stream consumer already fanning out push notifications (�
 events that were already generating a push, and you get a durable inbox that agrees across a
 user's devices. `lastReadNotifAt` on the profile gives you the badge.
 
-### 7.4 One UX wrinkle worth pre-empting
+### 7.6 One UX wrinkle worth pre-empting
 
 `requireApproval` defaulting to true adds friction at precisely the moment the QR is meant
 to delight: someone scans the code while standing next to the owner, and then waits. The fix is
@@ -1412,7 +1508,7 @@ Choose the Cognito tier deliberately, and keep auth behind an interface so you c
 6. **Festivals** — one source end to end (Skiddle or Ticketmaster), bundles, the
    copy-into-calendar flow from §6.1. Legal review *before* this step, per §6.4.
 7. **Push notifications and the inbox** — Stream fan-out to SNS/Pinpoint, writing
-   `NOTIF#` items in the same pass (§7.3). Derived connections list (§7.2) comes free with it.
+   `NOTIF#` items in the same pass (§7.5). Derived connections list (§7.2) comes free with it.
 8. **Availability toggle** — arrival/departure per §4.2, trivially additive by then.
 9. Later, together: **promoter self-service** and the **public catalogue + SEO** (§6.4).
    Deferred by decision; they ship as a pair, since the promoter relationships are what make
@@ -1464,7 +1560,7 @@ a decision from an assumption.
 | 5 | Promoter surface and public SEO catalogue deferred past v1, shipping as a pair | §6.4, §6.5 |
 | 6 | Artist entity kept in v1 as ULID + alias item; entity resolution deferred | §6.6 |
 | 7 | One rotating share link per calendar, plus addressed pending invites | §7.1 |
-| 8 | Connections derived from shared calendars; no friends graph | §7.2 |
+| 8 | ~~Connections derived; no friends graph~~ **Reversed** — see 29 | §7.2, §7.3 |
 | 9 | `requireApproval` default true, **no exceptions** — even the owner's own invitees | §7.1 |
 | 10 | No public or discoverable calendars | §4.3 |
 | 11 | Suggestions stored as per-field diffs; the **event author alone** approves | §8.1 |
@@ -1485,6 +1581,14 @@ a decision from an assumption.
 | 26 | v1 website is a thin acquisition surface only, not a planning surface | §13 |
 | 27 | User id is a self-minted ULID, not Cognito's `sub`; no identity pool | §3.2 |
 | 28 | Terraform for infrastructure, with Lambda code deployed separately by CI | §3.6 |
+| 29 | Real friends graph in v2, with @handles; derived connections become its ranking layer | §7.3 |
+| 30 | Discovery is one search box: handle, hashed email/phone, and mutual-calendar suggestions | §7.3 |
+| 31 | Free/busy sharing needs native calendar **import** first — import only, not two-way sync | §7.4 |
+| 32 | Per-friend, per-direction visibility: `none` / `busy` / `full`; `full` deferred past v2 | §7.4 |
+| 33 | Two header surfaces: People is a destination, Activity is a feed; badges count only what awaits you | §3.5, §7.5 |
+| 34 | Landscape day view on the day screen only; app portrait-locked elsewhere | §3.5 |
+| 35 | One pre-filled event draft with several sources: manual, natural language, pasted link, opened `.ics`, native import | §3.5 |
+| 36 | `allowMemberEvents` (default true) — contributing and editing someone else's contribution are separate permissions | §4.3, §8.1 |
 
 ---
 

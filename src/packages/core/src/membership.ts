@@ -26,6 +26,21 @@ export const isOwner = (m: MembershipItem | undefined | null): boolean =>
 export const canManageRoles = isOwner;
 
 /**
+ * Adding events. Owners always can; members can unless the calendar has been set
+ * to curated (§4.3, `allowMemberEvents`).
+ *
+ * This is a different question from editing an existing event: contributing to a
+ * calendar and changing someone else's contribution are separate permissions.
+ */
+export const canCreateEvent = (
+  calendar: Pick<CalendarItem, "allowMemberEvents">,
+  actor: MembershipItem | undefined | null,
+): boolean => {
+  if (!isActiveMember(actor)) return false;
+  return isOwner(actor) || calendar.allowMemberEvents;
+};
+
+/**
  * Direct edits. Owners may change anything; the author may change their own.
  * Everyone else goes through a suggestion — and when the author has disabled
  * suggestions, other members can neither suggest nor edit.

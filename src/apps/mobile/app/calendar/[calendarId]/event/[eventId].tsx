@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import type { RsvpStatus } from "@uca/core";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
@@ -15,6 +16,7 @@ import {
 } from "@/db/repo";
 import { CURRENT_USER_ID } from "@/db/seed";
 import { formatDayHeading, formatEventTime } from "@/lib/format";
+import { openMap } from "@/lib/maps";
 import { useQuery } from "@/lib/useQuery";
 import { radius, space, type, useTheme } from "@/theme";
 
@@ -97,12 +99,39 @@ export default function EventScreen() {
         ) : null}
 
         {event.location_name ? (
-          <Card style={{ gap: 2 }}>
-            <Text style={{ ...type.label, color: t.color.text }}>
-              {event.location_name}
-            </Text>
-            {event.location_address ? <Muted>{event.location_address}</Muted> : null}
-          </Card>
+          <Pressable
+            onPress={() => {
+              void openMap({
+                name: event.location_name,
+                address: event.location_address,
+              });
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${event.location_name} in maps`}
+          >
+            <Card
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: space.md,
+              }}
+            >
+              <Ionicons name="location-outline" size={20} color={t.color.accent} />
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={{ ...type.label, color: t.color.text }}>
+                  {event.location_name}
+                </Text>
+                {event.location_address ? (
+                  <Muted>{event.location_address}</Muted>
+                ) : null}
+              </View>
+              <Ionicons
+                name="chevron-forward"
+                size={17}
+                color={t.color.textMuted}
+              />
+            </Card>
+          </Pressable>
         ) : null}
 
         {event.tickets_required === 1 ? (

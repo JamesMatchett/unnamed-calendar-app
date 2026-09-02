@@ -66,3 +66,23 @@ export function dayKey(instant: string, tz: string): string {
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "01";
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
+
+/** Just the clock, in the given zone — "18:30". */
+export function formatClock(instant: string, tz: string): string {
+  return new Date(instant).toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: tz,
+  });
+}
+
+/** "Mon 14 Oct" — compact enough for a day divider. */
+export function formatDayShort(iso: string, tz: string): string {
+  return new Date(`${iso}T12:00:00.000Z`).toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    timeZone: tz,
+  });
+}

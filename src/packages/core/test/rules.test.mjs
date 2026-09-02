@@ -125,3 +125,19 @@ test("every RSVP has one key shape, series default included", () => {
   assert.equal(SK.rsvp("E1", SERIES_DEFAULT, "U1"), "RSVP#E1#-#U1");
   assert.equal(SK.rsvp("E1", OCC, "U1"), `RSVP#E1#${OCC}#U1`);
 });
+
+test("members can add events unless the calendar is curated", async () => {
+  const { canCreateEvent } = await import("../dist/index.js");
+  const member = { status: "active", role: "member", userId: "U1" };
+  const owner = { status: "active", role: "owner", userId: "U2" };
+
+  assert.equal(canCreateEvent({ allowMemberEvents: true }, member), true);
+  assert.equal(canCreateEvent({ allowMemberEvents: false }, member), false);
+  // Turning it off restricts members, never owners.
+  assert.equal(canCreateEvent({ allowMemberEvents: false }, owner), true);
+  // And a departed member cannot add regardless.
+  assert.equal(
+    canCreateEvent({ allowMemberEvents: true }, { status: "left", role: "member" }),
+    false,
+  );
+});

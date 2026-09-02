@@ -1,13 +1,16 @@
-import { Link } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { Link, useRouter } from "expo-router";
 import { Pressable, ScrollView, Text, View } from "react-native";
 
 import { AvatarStack, Card, EmptyState } from "@/components/ui";
 import { listCalendars, listEvents, listMembers } from "@/db/repo";
 import { formatDateRange } from "@/lib/format";
 import { useQuery } from "@/lib/useQuery";
-import { space, type, useTheme } from "@/theme";
+import { radius, space, type, useTheme } from "@/theme";
 
 export default function CalendarsScreen() {
+  const t = useTheme();
+  const router = useRouter();
   const calendars = useQuery("calendars", () => listCalendars());
 
   if (calendars.length === 0) {
@@ -16,6 +19,7 @@ export default function CalendarsScreen() {
         title="No calendars yet"
         body="A calendar is a shared space for a trip, a festival, or just what everyone's up to this month."
         actionLabel="Create one"
+        onAction={() => router.push("/calendar/new")}
       />
     );
   }
@@ -24,7 +28,10 @@ export default function CalendarsScreen() {
   const continuous = calendars.filter((c) => c.mode === "continuous");
 
   return (
-    <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.xl }}>
+    <View style={{ flex: 1 }}>
+      <ScrollView
+        contentContainerStyle={{ padding: space.lg, paddingBottom: 96, gap: space.xl }}
+      >
       {bounded.length > 0 ? (
         <Section title="Trips and dates">
           {bounded.map((c) => (
@@ -40,7 +47,36 @@ export default function CalendarsScreen() {
           ))}
         </Section>
       ) : null}
-    </ScrollView>
+      </ScrollView>
+
+      {/* Creating is the action this screen exists to make easy, so it stays
+          reachable without scrolling to the bottom of a long list. */}
+      <Pressable
+        onPress={() => router.push("/calendar/new")}
+        accessibilityRole="button"
+        accessibilityLabel="New calendar"
+        style={{
+          position: "absolute",
+          right: space.lg,
+          bottom: space.xl,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: space.sm,
+          paddingHorizontal: space.xl,
+          paddingVertical: space.md,
+          borderRadius: radius.pill,
+          backgroundColor: t.color.accent,
+          shadowColor: "#000",
+          shadowOpacity: 0.18,
+          shadowRadius: 12,
+          shadowOffset: { width: 0, height: 4 },
+          elevation: 4,
+        }}
+      >
+        <Ionicons name="add" size={19} color="#fff" />
+        <Text style={{ ...type.label, color: "#fff" }}>New</Text>
+      </Pressable>
+    </View>
   );
 }
 

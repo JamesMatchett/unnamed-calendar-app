@@ -21,7 +21,9 @@ npm start
 npm run mobile
 ```
 
-`prestart` builds `@uca/core` first, because the app imports it from `dist/`.
+Metro resolves `@uca/core` to its **TypeScript source**, so editing core hot-reloads exactly
+like editing app code — no build step, and no chance of running new app code against a stale
+`dist/`. `npm run build:core` remains for typechecking and the eventual Lambda bundles.
 
 Then press `i` for the iOS simulator (needs Xcode) or `a` for Android. **Scanning
 the QR with App Store Expo Go will not work** — the store build lags this SDK.

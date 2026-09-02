@@ -81,10 +81,24 @@ without promoter relationships is the version most likely to end in a takedown.
 
 **Also in v2.0, unrelated to the catalogue:**
 
+- **Native calendar import** — read-only, device-side. Much cheaper than two-way sync (no
+  duplicate detection, no recurrence reconciliation) and the prerequisite for everything
+  below it
+- **Friends** — `@handles`, requests, one search box over handle / hashed email or phone /
+  suggestions ranked by shared calendars and mutual attendance
+- **Open an `.ics` file** — the app appears as a handler for calendar attachments; pick a
+  calendar and land on a pre-filled event form. Cheap once the draft form exists, and shares
+  its parsing with native import
+- **Free/busy sharing and mutual availability** — "when are we both free for a coffee?",
+  granted per friend and per direction, intervals only with no titles
 - **Email/password authentication** — removes the "lose your Google account, lose your
   calendars" trade
 - **A real web planning surface** — month grid, side-by-side calendars, keyboard navigation.
   Only worth building once there is desktop traffic to justify it
+
+The three availability items are strictly ordered: import, then friends, then free/busy.
+Free/busy computed from UCA events alone would report you free during a day of meetings, and
+a "when are we free?" feature that is wrong a third of the time is worse than not having one.
 
 **Exit criteria:** organic search delivering installs.
 
@@ -96,10 +110,11 @@ Not scheduled. Listed so the reasons for deferral are not lost.
 
 | Feature | Why it waits |
 |---|---|
-| **Two-way native calendar sync** | Duplicate detection, recurrence exceptions and per-provider quirks make this a swamp. One-way plus manual import covers most of the value. May need a custom native module beyond `expo-calendar` |
 | **Live in-app updates** | Push plus sync-on-foreground is sufficient. Revisit with AppSync or IoT Core if collaborative editing becomes central |
 | **Comments on events** | Deliberate non-goal for now. Only if it becomes clear groups want the discussion *in* the app rather than in the chat |
 | **Plus-ones on RSVPs** | Complicates every "who's going" surface for a real but narrow case |
+| **Full personal calendar sharing** | Partner-level access to titles and locations. Deferred past v2 deliberately: even free/busy leaks patterns of life, and full access is a documented vector in controlling relationships. Needs a permanently visible indicator of who can see what, silent immediate revocation, and no lock-in — see §7.4 |
+| **Two-way native calendar sync** | Distinct from the read-only import in v2.0. This is the swamp: duplicate detection, recurrence exceptions, per-provider quirks |
 | **Public / discoverable calendars** | Needs its own visibility model and privacy design — attendance would become effectively public |
 | **Offline device-to-device sharing** | Needs BLE / Multipeer / Nearby. Signed offline-validating invites already deliver most of the perceived benefit |
 | **Analytics surface** | DynamoDB is poor at ad-hoc queries; needs the S3 export and Athena path in §4.6 |
