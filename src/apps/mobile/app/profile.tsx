@@ -32,7 +32,7 @@ export default function ProfileScreen() {
   const [name, setName] = useState(profile.displayName);
   const [handle, setHandle] = useState(profile.handle);
 
-  const trimmedHandle = handle.trim().replace(/^@+/, "");
+  const trimmedHandle = handle.trim().replace(/^[&@]+/, "");
   const handleTaken =
     trimmedHandle.length > 0 && !handleAvailable(trimmedHandle);
 
@@ -56,7 +56,26 @@ export default function ProfileScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "Your profile", presentation: "modal" }} />
+      {/* Settings in the corner, the same gear as everywhere else. Profile and
+          Settings are neighbours in people's heads even though the split is
+          real: this is who you are, that is how the app behaves. The row lower
+          down still links there for anyone reading top to bottom. */}
+      <Stack.Screen
+        options={{
+          title: "Your profile",
+          presentation: "modal",
+          headerRight: () => (
+            <Pressable
+              onPress={() => router.push("/settings")}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="App settings"
+            >
+              <Ionicons name="settings-outline" size={22} color={t.color.text} />
+            </Pressable>
+          ),
+        }}
+      />
       <ScrollView
         contentContainerStyle={{ padding: space.lg, gap: space.xl }}
         keyboardShouldPersistTaps="handled"
@@ -132,12 +151,13 @@ export default function ProfileScreen() {
           hint={
             handleTaken
               ? "That one is taken. Try another."
-              : "How friends find you. Letters, numbers and dots."
+              : "How friends find you: &jamesm. Letters, numbers and dots."
           }
         >
-          {/* The @ is part of the field furniture, not of the value: it can
+          {/* The & is part of the field furniture, not of the value: it can
               never be deleted, and the handle we store and compare never
-              carries it. Anything typed with one is quietly cleaned. */}
+              carries it. Anything typed with a sigil is quietly cleaned, "@"
+              included, because that is what fingers do by habit. */}
           <TextField
             value={handle}
             onChange={(next) => setHandle(next.replace(/[^A-Za-z0-9.]/g, ""))}
@@ -145,7 +165,7 @@ export default function ProfileScreen() {
             placeholder="handle"
             autoCapitalize="none"
             maxLength={20}
-            prefix="@"
+            prefix="&"
           />
         </Field>
 

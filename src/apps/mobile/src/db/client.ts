@@ -7,10 +7,11 @@ let db: SQLite.SQLiteDatabase | null = null;
 
 export function getDb(): SQLite.SQLiteDatabase {
   if (db) return db;
-  // Renamed with the app. An old uca.db is simply orphaned rather than
-  // migrated: it holds nothing but fixtures, and a rename is not a reason to
-  // write migration code for data nobody authored.
-  db = SQLite.openDatabaseSync("calder.db");
+  // The file name is deliberately not the app name: an earlier uca.db and a
+  // calder.db are simply orphaned rather than migrated, because they hold
+  // nothing but fixtures, and a rename is not a reason to write migration code
+  // for data nobody authored.
+  db = SQLite.openDatabaseSync("calenddar.db");
   db.execSync(SCHEMA);
   addMissingColumns(db);
   resetIfSchemaChanged(db);
