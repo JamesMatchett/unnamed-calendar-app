@@ -1,7 +1,11 @@
 import { Tabs } from "expo-router";
-import { Text } from "react-native";
+import { Text, View } from "react-native";
 
-import { ActivityButton, PeopleButton } from "@/components/HeaderButtons";
+import {
+  ActivityButton,
+  PeopleButton,
+  ProfileButton,
+} from "@/components/HeaderButtons";
 import { useTheme } from "@/theme";
 
 /**
@@ -28,7 +32,12 @@ export default function TabsLayout() {
           borderTopColor: t.color.border,
         },
         sceneStyle: { backgroundColor: t.color.bg },
-        headerLeft: () => <PeopleButton />,
+        headerLeft: () => (
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <ProfileButton />
+            <PeopleButton />
+          </View>
+        ),
         headerRight: () => <ActivityButton />,
       }}
     >

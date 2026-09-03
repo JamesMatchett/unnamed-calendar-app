@@ -436,11 +436,15 @@ const PERSON_SELECT = `
 `;
 
 /**
- * One search box over handle, name and email (§7.3). A leading "@" is stripped
- * so that typing the handle as people write it still matches.
+ * One search box over handle, name and email (§7.3).
+ *
+ * A leading sigil is stripped so that typing a handle the way people write it
+ * still matches. Both "&" and "@" are accepted: "&" is ours, and "@" is what
+ * fingers do by habit — refusing it would be a search that fails for a reason
+ * nobody can see.
  */
 export function searchPeople(query: string): PersonRow[] {
-  const q = query.trim().replace(/^@/, "").toLowerCase();
+  const q = query.trim().replace(/^[&@]+/, "").toLowerCase();
   if (q.length === 0) return [];
 
   return getDb().getAllSync<PersonRow>(
@@ -1458,6 +1462,218 @@ export function resolveSuggestion(
         WHERE kind = 'suggestion_received' AND event_id = ? AND read_at IS NULL`,
       [now, suggestion.event_id],
     );
+  });
+
+  notifyChanged();
+}
+
+// --- my profile ------------------------------------------------------------
+
+export interface Profile {
+  userId: string;
+  handle: string;
+  displayName: string;
+  email: string | null;
+  /** Local file URI until there is somewhere to upload it (§3.4). */
+  avatar: string | null;
+  /** Who can find me by handle, name or email when they search (§7.2). */
+  discoverable: boolean;
+  /** What a new friend gets by default, before I change it for them (§7.4). */
+  defaultGrants: FriendGrants;
+}
+
+/**
+ * Name and handle live in the directory, alongside everyone else's: they are
+ * what other people see, and keeping my own copy somewhere separate is how a
+ * rename ends up applied in one place and not the other. Avatar and the privacy
+ * choices are device-local prefs for now, because nothing syncs yet.
+ */
+export function getProfile(): Profile {
+  const db = getDb();
+  const row = db.getFirstSync<{
+    user_id: string;
+    handle: string;
+    display_name: string;
+    email: string | null;
+  }>("SELECT * FROM directory WHERE user_id = ?", [CURRENT_USER_ID]);
+
+  const avatar = db.getFirstSync<{ value: string }>(
+    "SELECT value FROM meta WHERE key = 'profile:avatar'",
+  );
+
+  const grants = db.getFirstSync<{ value: string }>(
+    "SELECT value FROM meta WHERE key = 'profile:default_grants'",
+  );
+
+  return {
+    userId: CURRENT_USER_ID,
+    handle: row?.handle ?? "you",
+    displayName: row?.display_name ?? "You",
+    email: row?.email ?? null,
+    avatar: avatar?.value ?? null,
+    discoverable: getBoolPref("discoverable", true),
+    defaultGrants: (grants?.value as FriendGrants) ?? "none",
+  };
+}
+
+export function updateProfile(changes: {
+  displayName?: string;
+  handle?: string;
+  avatar?: string | null;
+  discoverable?: boolean;
+  defaultGrants?: FriendGrants;
+}): void {
+  const db = getDb();
+
+  db.withTransactionSync(() => {
+    if (changes.displayName !== undefined || changes.handle !== undefined) {
+      const current = db.getFirstSync<{ handle: string; display_name: string }>(
+        "SELECT handle, display_name FROM directory WHERE user_id = ?",
+        [CURRENT_USER_ID],
+      );
+      db.runSync(
+        `INSERT INTO directory (user_id, handle, display_name, email)
+         VALUES (?,?,?,NULL)
+         ON CONFLICT (user_id) DO UPDATE SET handle = ?, display_name = ?`,
+        [
+          CURRENT_USER_ID,
+          changes.handle ?? current?.handle ?? "you",
+          changes.displayName ?? current?.display_name ?? "You",
+          changes.handle ?? current?.handle ?? "you",
+          changes.displayName ?? current?.display_name ?? "You",
+        ],
+      );
+
+      // My name appears against every membership as well: it is denormalised
+      // there so a calendar can be listed without reading the directory (§4.3).
+      // Renaming in one place only is how someone ends up with two names.
+      if (changes.displayName !== undefined) {
+        db.runSync("UPDATE members SET display_name = ? WHERE user_id = ?", [
+          changes.displayName,
+          CURRENT_USER_ID,
+        ]);
+      }
+    }
+
+    if (changes.avatar !== undefined) {
+      if (changes.avatar === null) {
+        db.runSync("DELETE FROM meta WHERE key = 'profile:avatar'");
+      } else {
+        db.runSync(
+          "INSERT OR REPLACE INTO meta (key, value) VALUES ('profile:avatar', ?)",
+          [changes.avatar],
+        );
+      }
+    }
+
+    if (changes.defaultGrants !== undefined) {
+      db.runSync(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES ('profile:default_grants', ?)",
+        [changes.defaultGrants],
+      );
+    }
+  });
+
+  if (changes.discoverable !== undefined) {
+    setBoolPref("discoverable", changes.discoverable);
+  }
+
+  notifyChanged();
+}
+
+/** Is this handle free? Mine does not count as taken. */
+export function handleAvailable(handle: string): boolean {
+  const row = getDb().getFirstSync<{ user_id: string }>(
+    "SELECT user_id FROM directory WHERE handle = ? COLLATE NOCASE",
+    [handle],
+  );
+  return row === null || row.user_id === CURRENT_USER_ID;
+}
+
+export interface ProfileFootprint {
+  calendars: number;
+  ownedCalendars: number;
+  soleOwnerOf: string[];
+  events: number;
+  friends: number;
+}
+
+/**
+ * What deleting the account would touch.
+ *
+ * Shown before the confirmation rather than after, because "3 calendars where
+ * you are the only owner" is the fact that changes someone's mind, and finding
+ * out afterwards is finding out too late (§8.5).
+ */
+export function profileFootprint(): ProfileFootprint {
+  const db = getDb();
+
+  const one = (sql: string, args: unknown[] = []): number =>
+    db.getFirstSync<{ n: number }>(sql, args as never)?.n ?? 0;
+
+  const soleOwner = db.getAllSync<{ name: string }>(
+    `SELECT c.name AS name
+       FROM calendars c
+       JOIN members me ON me.calendar_id = c.calendar_id
+        AND me.user_id = ? AND me.role = 'owner' AND me.status = 'active'
+      WHERE c.status = 'active'
+        AND (SELECT COUNT(*) FROM members o
+              WHERE o.calendar_id = c.calendar_id
+                AND o.role = 'owner' AND o.status = 'active') = 1
+      ORDER BY c.name`,
+    [CURRENT_USER_ID],
+  );
+
+  return {
+    calendars: one(
+      "SELECT COUNT(*) AS n FROM members WHERE user_id = ? AND status = 'active'",
+      [CURRENT_USER_ID],
+    ),
+    ownedCalendars: one(
+      "SELECT COUNT(*) AS n FROM members WHERE user_id = ? AND role = 'owner' AND status = 'active'",
+      [CURRENT_USER_ID],
+    ),
+    soleOwnerOf: soleOwner.map((r) => r.name),
+    events: one("SELECT COUNT(*) AS n FROM events WHERE created_by = ?", [
+      CURRENT_USER_ID,
+    ]),
+    friends: one(
+      "SELECT COUNT(*) AS n FROM friends WHERE status = 'accepted'",
+    ),
+  };
+}
+
+/**
+ * Delete the account, locally.
+ *
+ * Real deletion is a server job and is a PSEUDONYMISATION, not a purge (§8.5):
+ * events someone added stay, attributed to "A former member", because deleting
+ * them would tear holes in other people's calendars. This local version wipes
+ * the device and returns to a fresh state, which is the honest prototype of it.
+ */
+export function deleteMyProfile(): void {
+  const db = getDb();
+
+  db.withTransactionSync(() => {
+    for (const table of [
+      "availability",
+      "rsvps",
+      "suggestions",
+      "events",
+      "members",
+      "calendars",
+      "notifications",
+      "pending_invites",
+      "friends",
+      "directory",
+      "mutation_queue",
+      "sent_invites",
+      "invite_links",
+      "join_requests",
+      "meta",
+    ]) {
+      db.runSync(`DELETE FROM ${table}`);
+    }
   });
 
   notifyChanged();

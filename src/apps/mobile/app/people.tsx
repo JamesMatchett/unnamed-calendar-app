@@ -150,7 +150,7 @@ export default function PeopleScreen() {
           <SearchBar
             value={query}
             onChange={setQuery}
-            placeholder="Search @handle, name or email"
+            placeholder="Search &handle, name or email"
           />
 
           {/* Search only finds people who are already here, so a search that

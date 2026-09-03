@@ -44,33 +44,65 @@ export function TextField({
   placeholder,
   autoFocus,
   maxLength,
+  onBlur,
+  autoCapitalize,
+  prefix,
 }: {
   value: string;
   onChange: (next: string) => void;
   placeholder: string;
   autoFocus?: boolean;
   maxLength?: number;
+  /**
+   * For fields that SAVE rather than feed a submit button: profile name and
+   * handle are committed when the field loses focus, since there is no Done to
+   * press on a screen that has no form.
+   */
+  onBlur?: () => void;
+  autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  /**
+   * A fixed, unerasable lead-in such as "&". It sits OUTSIDE the input rather
+   * than in its value, so nobody can delete it, the stored handle never carries
+   * it, and a placeholder still reads as placeholder text.
+   */
+  prefix?: string;
 }) {
   const t = useTheme();
+
   return (
-    <TextInput
-      value={value}
-      onChangeText={onChange}
-      placeholder={placeholder}
-      placeholderTextColor={t.color.textMuted}
-      autoFocus={autoFocus}
-      maxLength={maxLength}
+    <View
       style={{
-        ...type.body,
-        color: t.color.text,
+        flexDirection: "row",
+        alignItems: "center",
         backgroundColor: t.color.surface,
         borderWidth: 1,
         borderColor: t.color.border,
         borderRadius: radius.md,
         paddingHorizontal: space.lg,
-        paddingVertical: space.md,
       }}
-    />
+    >
+      {prefix ? (
+        <Text style={{ ...type.body, color: t.color.textMuted, paddingRight: 2 }}>
+          {prefix}
+        </Text>
+      ) : null}
+      <TextInput
+        value={value}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        placeholderTextColor={t.color.textMuted}
+        autoFocus={autoFocus}
+        maxLength={maxLength}
+        onBlur={onBlur}
+        autoCapitalize={autoCapitalize}
+        style={{
+          ...type.body,
+          flex: 1,
+          color: t.color.text,
+          paddingVertical: space.md,
+        }}
+      />
+    </View>
   );
 }
 

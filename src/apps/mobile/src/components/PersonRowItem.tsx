@@ -41,7 +41,7 @@ export function PersonRowItem({
             color: contextTone === "notice" ? t.color.accent : t.color.textMuted,
           }}
         >
-          @{person.handle}
+          &{person.handle}
           {context ? ` · ${context}` : ""}
         </Text>
       </View>

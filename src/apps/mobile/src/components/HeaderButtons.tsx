@@ -1,10 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { Pressable, Text, View } from "react-native";
+import { Image, Pressable, Text, View } from "react-native";
 
-import { badgeCounts } from "@/db/repo";
+import { badgeCounts, getProfile } from "@/db/repo";
 import { useQuery } from "@/lib/useQuery";
-import { radius, space, useTheme } from "@/theme";
+import { radius, space, type, useTheme } from "@/theme";
 
 /**
  * Two header affordances, deliberately different in kind (§3.5).
@@ -64,12 +64,63 @@ export function PeopleButton() {
           ? `People, ${counts.people} waiting for you`
           : "People"
       }
-      style={{ paddingHorizontal: space.lg }}
+      style={{ paddingRight: space.lg }}
     >
       <View>
         <Ionicons name="people-outline" size={23} color={t.color.text} />
         <Badge count={counts.people} />
       </View>
+    </Pressable>
+  );
+}
+
+/**
+ * Me. Outermost on the left, with People inboard of it: you come before the
+ * people you know, and the far corner is the spot a thumb finds without looking.
+ *
+ * The avatar doubles as the affordance: a face is recognisably "you" in a way a
+ * person-shaped icon next to another person-shaped icon is not.
+ */
+export function ProfileButton() {
+  const t = useTheme();
+  const router = useRouter();
+  const profile = useQuery("profile", () => getProfile());
+
+  return (
+    <Pressable
+      onPress={() => router.push("/profile")}
+      hitSlop={10}
+      accessibilityRole="button"
+      accessibilityLabel="Your profile"
+      style={{ paddingLeft: space.lg, paddingRight: space.md }}
+    >
+      {profile.avatar ? (
+        <Image
+          source={{ uri: profile.avatar }}
+          accessibilityIgnoresInvertColors
+          style={{
+            width: 25,
+            height: 25,
+            borderRadius: 13,
+            backgroundColor: t.color.surfaceAlt,
+          }}
+        />
+      ) : (
+        <View
+          style={{
+            width: 25,
+            height: 25,
+            borderRadius: 13,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: t.color.surfaceAlt,
+          }}
+        >
+          <Text style={{ ...type.caption, fontWeight: "700", color: t.color.textMuted }}>
+            {profile.displayName.trim().charAt(0).toUpperCase() || "?"}
+          </Text>
+        </View>
+      )}
     </Pressable>
   );
 }

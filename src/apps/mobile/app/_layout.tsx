@@ -40,6 +40,7 @@ export default function RootLayout() {
           options={{ headerShown: false, title: "Home" }}
         />
         <Stack.Screen name="people" options={{ presentation: "modal" }} />
+        <Stack.Screen name="profile" options={{ presentation: "modal" }} />
         <Stack.Screen name="settings" options={{ presentation: "modal" }} />
         <Stack.Screen name="suggestion" options={{ presentation: "modal" }} />
         <Stack.Screen name="activity" options={{ presentation: "modal" }} />

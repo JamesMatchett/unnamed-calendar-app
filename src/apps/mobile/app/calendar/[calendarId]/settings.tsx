@@ -517,7 +517,7 @@ function OwnerControls({
         <SearchBar
           value={query}
           onChange={setQuery}
-          placeholder="Search @handle, name or email"
+          placeholder="Search &handle, name or email"
         />
 
         {query.trim().length > 0 ? (
