@@ -3,7 +3,7 @@
     "name": "Cal&der",
     "slug": "calder",
     "version": "0.1.0",
-    "orientation": "default",
+    "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "//scheme": "Universal links carry invite tokens straight into the app when it is installed (Architecture.md \u00a77.1, \u00a713.9).",
@@ -36,6 +36,7 @@
       "typedRoutes": true
     },
     "//plugins.expo-image-picker": "Without this the Info.plist has no NSPhotoLibraryUsageDescription, so iOS shows no Photos row for the app in Settings and a real build crashes on the first request.",
-    "//name": "Display name only. The ampersand is illegal in bundle ids, npm package names, URL schemes and domains, so every machine-readable form is 'calder'."
+    "//name": "Display name only. The ampersand is illegal in bundle ids, npm package names, URL schemes and domains, so every machine-readable form is 'calder'.",
+    "//orientation": "Portrait by default; screens that want landscape call unlockAsync themselves. Locking from the root layout instead raced the screens' own effects."
   }
 }

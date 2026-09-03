@@ -22,6 +22,14 @@ export interface ParsedEvent {
   /** HH:MM (24h), when a time could be read. */
   readonly time: string | null;
   readonly location: string | null;
+  /**
+   * How exact the timing is, when the text SAYS so — "all day", "TBC".
+   *
+   * `null` means nothing was stated, which is different from "datetime": it
+   * leaves whatever the form already had alone, so a parse never quietly
+   * overrides a choice someone made by hand.
+   */
+  readonly precision: "datetime" | "date" | "tbc" | null;
 }
 
 const WEEKDAYS = [
@@ -62,7 +70,10 @@ export function parseEventText(
   const today = todayIn(tz, now);
   const consumed: Match[] = [];
 
-  const time = matchTime(text, consumed);
+  // Precision first: "all day" contains no time, but "TBC" must be taken out of
+  // the string before the location matcher can mistake it for a place.
+  const precision = matchPrecision(text, consumed);
+  const time = precision === null ? matchTime(text, consumed) : null;
   const date = matchDate(text, today, consumed);
   const location = matchLocation(text, consumed);
 
@@ -71,7 +82,39 @@ export function parseEventText(
     date,
     time,
     location,
+    precision: precision ?? (time === null ? null : "datetime"),
   };
+}
+
+// --- precision -------------------------------------------------------------
+
+/**
+ * "all day" and "TBC" are how people write timing they cannot pin down, and both
+ * are states the app already models. Reading them from the text saves a trip to
+ * the segmented control, and — more to the point — stops the words surviving
+ * into the title, where "Beach club trip on all day" is what you get instead of
+ * "Beach club trip".
+ */
+function matchPrecision(
+  text: string,
+  consumed: Match[],
+): "date" | "tbc" | null {
+  // A leading "on"/"at" is swallowed with the phrase, or "trip on all day"
+  // leaves a dangling preposition mid-sentence.
+  const allDay = /\b(?:on\s+|for\s+)?all[\s-]?day\b/i.exec(text);
+  if (allDay) {
+    consumed.push({ start: allDay.index, end: allDay.index + allDay[0].length });
+    return "date";
+  }
+
+  // "tbc", "tba", "tbd", and the same with "time" in front of them.
+  const tbc = /\b(?:time\s+)?(?:is\s+)?tb[cad]\b\.?/i.exec(text);
+  if (tbc) {
+    consumed.push({ start: tbc.index, end: tbc.index + tbc[0].length });
+    return "tbc";
+  }
+
+  return null;
 }
 
 // --- time ------------------------------------------------------------------
@@ -188,13 +231,29 @@ function matchLocation(text: string, consumed: Match[]): string | null {
   const value = (m[1] ?? "").trim();
   if (value.length === 0) return null;
 
-  const weekdayInside = new RegExp(`\\b(${WEEKDAYS.join("|")})\\b`, "i").exec(value);
-  const trimmed = weekdayInside
-    ? value.slice(0, weekdayInside.index).trim()
+  // Stop at anything already claimed by another matcher. Without this, "at the
+  // villa, time TBC" reads the whole tail as the place: the location matcher is
+  // greedy by design, and "TBC" was consumed before it ran.
+  const valueStart = m.index + m[0].indexOf(value);
+  const claimed = consumed
+    .filter((c) => c.start > valueStart && c.start < valueStart + value.length)
+    .sort((a, b) => a.start - b.start)[0];
+
+  const upToClaimed = claimed
+    ? value.slice(0, claimed.start - valueStart)
     : value;
+
+  const weekdayInside = new RegExp(`\\b(${WEEKDAYS.join("|")})\\b`, "i").exec(
+    upToClaimed,
+  );
+  const trimmed = (
+    weekdayInside ? upToClaimed.slice(0, weekdayInside.index) : upToClaimed
+  )
+    .trim()
+    .replace(/[,;]\s*$/, "");
   if (trimmed.length === 0) return null;
 
-  consumed.push({ start, end: start + m[0].length - (value.length - trimmed.length) });
+  consumed.push({ start, end: valueStart + trimmed.length });
   return trimmed;
 }
 

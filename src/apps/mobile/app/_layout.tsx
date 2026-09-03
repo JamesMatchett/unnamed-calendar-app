@@ -1,5 +1,4 @@
 import { Stack } from "expo-router";
-import * as ScreenOrientation from "expo-screen-orientation";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -15,10 +14,12 @@ export default function RootLayout() {
   // the possibility of an unopened database.
   useEffect(() => {
     getDb();
-    // Portrait everywhere by default. The day screen unlocks rotation for
-    // itself and re-locks on the way out, so landscape is an affordance on one
-    // screen rather than something every screen must be designed for.
-    void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    // Portrait is the app-wide default, set in app.json rather than locked from
+    // here. A lock in this effect ran AFTER the screens' own effects — children
+    // mount first — so it silently undid every unlockAsync a screen had just
+    // asked for, and rotation only worked once a screen re-ran its effect. The
+    // screens that want landscape unlock for themselves and re-lock on the way
+    // out.
   }, []);
 
   return (

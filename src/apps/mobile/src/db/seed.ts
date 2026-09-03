@@ -13,7 +13,7 @@ import type * as SQLite from "expo-sqlite";
  * last month shows a trip that has already happened; changing this makes the app
  * drop the fixtures and rebuild them starting from today.
  */
-export const FIXTURE_EPOCH = "2026-09-03T01:31:07.014Z";
+export const FIXTURE_EPOCH = "2026-09-03T12:18:23.371Z";
 
 /** Stands in for the signed-in user until Cognito exists (§3.2). */
 export const CURRENT_USER_ID = "01JC0USERJAMES0000000000";

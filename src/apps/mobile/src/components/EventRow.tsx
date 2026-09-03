@@ -1,11 +1,19 @@
+import { Ionicons } from "@expo/vector-icons";
 import type { RsvpStatus } from "@calder/core";
 import { Link } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
 import type { EventRow as EventRowData, MemberRow, RsvpRow } from "@/db/repo";
 import { clearRsvp, resolveForUser, setRsvp, tallyForEvent } from "@/db/repo";
 import { CURRENT_USER_ID } from "@/db/seed";
 import { formatEventTime } from "@/lib/format";
+import { useSyncing } from "@/lib/useSyncing";
 import { radius, space, type, useTheme } from "@/theme";
 
 import { AvatarStack } from "./ui";
@@ -52,6 +60,9 @@ export function EventRow({
     .map((m) => m.display_name);
 
   const cancelled = event.status === "cancelled";
+  const mineToEdit = event.created_by === CURRENT_USER_ID;
+  const pending = event.sync_state === "pending";
+  const syncing = useSyncing();
 
   return (
     <View
@@ -63,7 +74,7 @@ export function EventRow({
         padding: space.lg,
         gap: space.sm,
         // Pending writes are shown but never block interaction (§5.6).
-        opacity: event.sync_state === "pending" ? 0.6 : 1,
+        opacity: pending ? 0.6 : 1,
       }}
     >
       <Link
@@ -102,9 +113,55 @@ export function EventRow({
                 {subtitle ? ` · ${subtitle}` : ""}
               </Text>
             </View>
-            {event.rrule ? (
-              <Text style={{ ...type.caption, color: t.color.textMuted }}>Repeats</Text>
-            ) : null}
+            {/* Two different facts, shown differently. A spinner means an
+                attempt is happening now; "Pending" means the write is queued
+                and nothing is being tried, which is the ordinary state offline.
+                Spinning at something nobody is attempting is a lie, and it is
+                the kind people learn to ignore. Either way the write is local
+                and safe (§5.6). */}
+            <View style={{ alignItems: "flex-end", gap: 4 }}>
+              {pending ? (
+                syncing ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={t.color.textMuted}
+                    accessibilityLabel="Syncing"
+                    style={{ transform: [{ scale: 0.7 }] }}
+                  />
+                ) : (
+                  <Text
+                    style={{ ...type.caption, color: t.color.textMuted }}
+                    accessibilityLabel="Waiting to sync"
+                  >
+                    Pending
+                  </Text>
+                )
+              ) : mineToEdit && !cancelled ? (
+                /* The pencil shares the corner with the sync state rather than
+                   sitting beside the title, so the row has exactly one place
+                   that reports the event's standing. They are mutually
+                   exclusive on purpose: while a write is in flight the sync
+                   state is the more urgent fact, and a pencil offering an edit
+                   on top of an unsettled write invites editing something that
+                   has not landed yet. Cancelled events show neither, since they
+                   are uncancelled rather than edited.
+
+                   Alternatives if this reads as clutter: a muted "Yours" in the
+                   meta line, or nothing at all, since the header pencil already
+                   says it where it matters. */
+                <Ionicons
+                  name="pencil"
+                  size={13}
+                  color={t.color.textMuted}
+                  accessibilityLabel="You can edit this"
+                />
+              ) : null}
+              {event.rrule ? (
+                <Text style={{ ...type.caption, color: t.color.textMuted }}>
+                  Repeats
+                </Text>
+              ) : null}
+            </View>
           </View>
         </Pressable>
       </Link>

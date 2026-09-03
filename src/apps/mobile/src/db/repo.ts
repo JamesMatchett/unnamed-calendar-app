@@ -64,6 +64,8 @@ export interface EventRow {
   created_by: string;
   rrule: string | null;
   image_key: string | null;
+  updated_by: string | null;
+  updated_at: string | null;
   sync_state: "synced" | "pending" | "failed";
 }
 
@@ -882,6 +884,11 @@ export interface NewEvent {
   locationAddress?: string | null;
   ticketsRequired: boolean;
   ticketUrl?: string | null;
+  /**
+   * A picture for the event. Local file URI for now: uploading it is the
+   * server's job (§3.4), and the client only remembers which one was chosen.
+   */
+  imageKey?: string | null;
 }
 
 export function createEvent(calendarId: string, input: NewEvent): string {
@@ -893,8 +900,9 @@ export function createEvent(calendarId: string, input: NewEvent): string {
     db.runSync(
       `INSERT INTO events (event_id, calendar_id, title, description, start_utc, end_utc,
          tz, local_wall, precision, location_name, location_address, tickets_required,
-         ticket_url, allow_suggestions, status, created_by, created_at, version, rrule, sync_state)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,'active',?,?,1,NULL,'pending')`,
+         ticket_url, allow_suggestions, status, created_by, created_at, version, rrule,
+         image_key, sync_state)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,'active',?,?,1,NULL,?,'pending')`,
       [
         eventId,
         calendarId,
@@ -911,6 +919,7 @@ export function createEvent(calendarId: string, input: NewEvent): string {
         input.ticketUrl?.trim() || null,
         CURRENT_USER_ID,
         now,
+        input.imageKey ?? null,
       ],
     );
 
@@ -1308,6 +1317,112 @@ export function listCalendarsICanPostTo(): (CalendarRow & {
   );
 }
 
+// --- editing an event (§8.1) -----------------------------------------------
+
+export interface EventEdits {
+  title: string;
+  description?: string | null;
+  startUtc: string;
+  endUtc?: string | null;
+  tz: string;
+  localWall: string;
+  precision: "datetime" | "date" | "tbc";
+  locationName?: string | null;
+  locationAddress?: string | null;
+  ticketsRequired: boolean;
+  ticketUrl?: string | null;
+  imageKey?: string | null;
+}
+
+/**
+ * Edit in place, as an owner or as the person who added it.
+ *
+ * The version moves on every edit and the change is queued, so the sync layer
+ * can order this against someone else's concurrent edit rather than having to
+ * guess (§5.3). `updated_by` is recorded because a shared calendar that appears
+ * to rearrange itself is one nobody trusts.
+ *
+ * Permission is NOT checked here: the caller knows the membership, and a
+ * repository that silently no-ops on a permission failure is how a button ends
+ * up doing nothing with no explanation. canEditEvent in @calder/core is the one
+ * rule, used by the screens to decide whether to offer the edit at all.
+ */
+export function updateEvent(eventId: string, edits: EventEdits): void {
+  const db = getDb();
+  const now = new Date().toISOString();
+
+  const event = db.getFirstSync<{ calendar_id: string }>(
+    "SELECT calendar_id FROM events WHERE event_id = ?",
+    [eventId],
+  );
+  if (!event) return;
+
+  db.withTransactionSync(() => {
+    db.runSync(
+      `UPDATE events SET
+         title = ?, description = ?, start_utc = ?, end_utc = ?, tz = ?,
+         local_wall = ?, precision = ?, location_name = ?, location_address = ?,
+         tickets_required = ?, ticket_url = ?, image_key = ?,
+         version = version + 1, updated_by = ?, updated_at = ?,
+         sync_state = 'pending'
+       WHERE event_id = ?`,
+      [
+        edits.title.trim(),
+        edits.description?.trim() || null,
+        edits.startUtc,
+        edits.endUtc ?? null,
+        edits.tz,
+        edits.localWall,
+        edits.precision,
+        edits.locationName?.trim() || null,
+        edits.locationAddress?.trim() || null,
+        edits.ticketsRequired ? 1 : 0,
+        edits.ticketUrl?.trim() || null,
+        edits.imageKey ?? null,
+        CURRENT_USER_ID,
+        now,
+        eventId,
+      ],
+    );
+
+    db.runSync(
+      `INSERT OR REPLACE INTO mutation_queue
+         (mutation_id, calendar_id, method, path, body, queued_at)
+       VALUES (?,?, 'PATCH', ?, ?, ?)`,
+      [
+        `event-edit:${eventId}`,
+        event.calendar_id,
+        `/v1/calendars/${event.calendar_id}/events/${eventId}`,
+        JSON.stringify(edits),
+        now,
+      ],
+    );
+  });
+
+  notifyChanged();
+}
+
+/**
+ * Call it off, or bring it back.
+ *
+ * Cancelling is not deleting: the event stays, struck through, because people
+ * who had already made plans around it need to see that it is off rather than
+ * find a hole where it was (§8.2).
+ */
+export function setEventCancelled(eventId: string, cancelled: boolean): void {
+  const db = getDb();
+  const now = new Date().toISOString();
+
+  db.runSync(
+    `UPDATE events SET status = ?, version = version + 1,
+       updated_by = ?, updated_at = ?, sync_state = 'pending'
+     WHERE event_id = ?`,
+    [cancelled ? "cancelled" : "active", CURRENT_USER_ID, now, eventId],
+  );
+
+  notifyChanged();
+}
+
 // --- suggestions (§8.1) ----------------------------------------------------
 
 export interface EventSuggestionRow {
@@ -1677,4 +1792,40 @@ export function deleteMyProfile(): void {
   });
 
   notifyChanged();
+}
+
+/**
+ * Members and RSVPs across several calendars at once, for the agenda, where a
+ * day's events do not all belong to the same calendar.
+ *
+ * Members are deduplicated by user: the same person can be in two of your
+ * calendars, and counting them twice would inflate every "going" tally on a
+ * screen that mixes calendars together. Nobody can RSVP to an event outside
+ * their own calendar, so the union is safe to resolve against.
+ */
+export function listMembersForCalendars(
+  calendarIds: readonly string[],
+): MemberRow[] {
+  if (calendarIds.length === 0) return [];
+  const marks = calendarIds.map(() => "?").join(",");
+
+  return getDb().getAllSync<MemberRow>(
+    `SELECT user_id, role, status, display_name
+       FROM members
+      WHERE calendar_id IN (${marks}) AND status = 'active'
+      GROUP BY user_id`,
+    [...calendarIds],
+  );
+}
+
+export function listRsvpsForCalendars(
+  calendarIds: readonly string[],
+): RsvpRow[] {
+  if (calendarIds.length === 0) return [];
+  const marks = calendarIds.map(() => "?").join(",");
+
+  return getDb().getAllSync<RsvpRow>(
+    `SELECT * FROM rsvps WHERE calendar_id IN (${marks})`,
+    [...calendarIds],
+  );
 }

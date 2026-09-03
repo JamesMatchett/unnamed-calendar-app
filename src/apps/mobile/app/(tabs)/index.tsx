@@ -1,7 +1,8 @@
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { NativeScrollEvent, NativeSyntheticEvent } from "react-native";
+import * as ScreenOrientation from "expo-screen-orientation";
 import {
   PanResponder,
   Pressable,
@@ -9,12 +10,14 @@ import {
   ScrollView,
   Text,
   View,
+  useWindowDimensions,
 } from "react-native";
 
 import { PULL, overscrollPast, pullEdge, releaseAction, topRelease } from "@calder/core";
 import type { PullEdge } from "@calder/core";
 
 import { AddEventButton } from "@/components/AddEventButton";
+import { DayTimeline } from "@/components/DayTimeline";
 import { EventRow } from "@/components/EventRow";
 import { Segmented } from "@/components/form";
 import { EmptyState, SyncBanner } from "@/components/ui";
@@ -29,11 +32,36 @@ import {
   rsvpCountsByDay,
 } from "@/db/repo";
 import { syncNow } from "@/db/sync";
+import {
+  listMembersForCalendars,
+  listRsvpsForCalendars,
+} from "@/db/repo";
 import { useQuery } from "@/lib/useQuery";
-import { formatCountdown, formatDayHeading } from "@/lib/format";
+import {
+  formatCountdown,
+  formatDayHeading,
+  formatDayShort,
+  formatEventTime,
+} from "@/lib/format";
 import { radius, space, type, useTheme } from "@/theme";
 
 type View3 = "list" | "week" | "month";
+
+type AgendaEvent = ReturnType<typeof listAgenda>[number];
+
+/**
+ * unlockAsync, NOT lockAsync(ALL): "all" includes upside-down, which an iPhone
+ * does not support, and asking for it throws rather than settling for what the
+ * device can do. Every call is caught, because a refused orientation request
+ * must never surface as an unhandled rejection, and failing to rotate is not a
+ * reason to take a screen down.
+ */
+function applyOrientation(view: View3): void {
+  void (view === "month"
+    ? ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP)
+    : ScreenOrientation.unlockAsync()
+  ).catch(() => {});
+}
 
 /**
  * Home. Everything I am doing across every calendar (access pattern 13).
@@ -52,6 +80,45 @@ export default function AgendaScreen() {
 
   const pending = useQuery("pending", () => pendingMutationCount());
   const anyEvents = useQuery("agenda-count", () => listAgenda(1).length);
+
+  const { width, height } = useWindowDimensions();
+  const landscape = width > height;
+
+  /**
+   * Rotation is allowed for Agenda and Week, and locked out of Month.
+   *
+   * Turning the phone should reveal detail, and the month grid has none left to
+   * reveal: a wide version of it is the same information with more whitespace.
+   *
+   * Applied WITHOUT a cleanup on the view change. A cleanup here re-locked
+   * portrait on every switch between Agenda and Week, so the device snapped
+   * upright and then back again — the flash of portrait you saw mid-switch. The
+   * only moment portrait must be restored is when the tab loses focus, which is
+   * what the focus effect below is for.
+   */
+  const viewRef = useRef(view);
+  viewRef.current = view;
+
+  useEffect(() => {
+    applyOrientation(view);
+  }, [view]);
+
+  /**
+   * Leaving the tab hands the phone back to everyone else upright, since the
+   * other tabs are portrait-only screens. The callback is deliberately stable:
+   * if it depended on `view` it would re-run on every switch and reintroduce
+   * exactly the flash described above.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      applyOrientation(viewRef.current);
+      return () => {
+        void ScreenOrientation.lockAsync(
+          ScreenOrientation.OrientationLock.PORTRAIT_UP,
+        ).catch(() => {});
+      };
+    }, []),
+  );
 
   if (anyEvents === 0) {
     return (
@@ -82,9 +149,9 @@ export default function AgendaScreen() {
         />
       </View>
 
-      {view === "list" ? <ListView /> : null}
+      {view === "list" ? <ListView landscape={landscape} /> : null}
       {view === "week" ? (
-        <WeekView anchor={anchor} onAnchor={setAnchor} />
+        <WeekView anchor={anchor} onAnchor={setAnchor} landscape={landscape} />
       ) : null}
       {view === "month" ? (
         <MonthView anchor={anchor} onAnchor={setAnchor} />
@@ -117,7 +184,7 @@ function useRefresh() {
 
 // --- list ------------------------------------------------------------------
 
-function ListView() {
+function ListView({ landscape }: { landscape: boolean }) {
   const t = useTheme();
   const events = useQuery("agenda", () => listAgenda());
   const countdown = useQuery("pref:countdown", () =>
@@ -132,6 +199,9 @@ function ListView() {
 
   const { refreshing, onRefresh } = useRefresh();
 
+  // Sideways: the days sit next to each other instead of under each other, so a
+  // week of plans can be compared rather than scrolled through.
+  if (landscape) return <DayColumns groups={groups} />;
 
   return (
     <ScrollView
@@ -223,9 +293,11 @@ function AgendaItem({
 function WeekView({
   anchor,
   onAnchor,
+  landscape,
 }: {
   anchor: Date;
   onAnchor: (next: Date) => void;
+  landscape: boolean;
 }) {
   const t = useTheme();
 
@@ -363,6 +435,19 @@ function WeekView({
 
   const daySwipe = useRef(horizontal((d) => step.current(d))).current;
   const weekSwipe = useRef(horizontal((d) => week.current(d))).current;
+
+  // Sideways: the hour grid for the chosen day, where a 19:00 and a 19:30 stop
+  // being two lines and start being two blocks that visibly clash.
+  if (landscape) {
+    return (
+      <LandscapeDay
+        dayIso={chosenKey}
+        events={chosen}
+        onPrev={() => step.current(-1)}
+        onNext={() => step.current(1)}
+      />
+    );
+  }
 
   return (
     <View style={{ flex: 1 }}>
@@ -810,6 +895,171 @@ function MarkRow({
       )}
     </View>
   );
+}
+
+/**
+ * The agenda, turned sideways: one column per day.
+ *
+ * Portrait stacks days, which answers "what is next". Landscape puts them side
+ * by side, which answers "which day is free" — the question you turn a phone to
+ * ask. Columns are fixed-width and scroll, because a column narrow enough to fit
+ * a whole week cannot hold a legible title.
+ */
+function DayColumns({ groups }: { groups: Map<string, AgendaEvent[]> }) {
+  const t = useTheme();
+  const router = useRouter();
+  const days = [...groups.entries()];
+
+  return (
+    <ScrollView
+      horizontal
+      contentContainerStyle={{ padding: space.lg, gap: space.md }}
+    >
+      {days.map(([dayIso, dayEvents]) => (
+        <View key={dayIso} style={{ width: 200, gap: space.sm }}>
+          <Text style={{ ...type.label, color: t.color.text }}>
+            {formatDayShort(dayIso, "UTC")}
+          </Text>
+          <ScrollView contentContainerStyle={{ gap: space.sm, paddingBottom: space.xl }}>
+            {dayEvents.map((e) => (
+              <Pressable
+                key={e.event_id}
+                onPress={() =>
+                  router.push({
+                    pathname: "/calendar/[calendarId]/event/[eventId]",
+                    params: { calendarId: e.calendar_id, eventId: e.event_id },
+                  })
+                }
+                style={{
+                  padding: space.md,
+                  gap: 2,
+                  borderRadius: radius.sm,
+                  borderWidth: 1,
+                  borderColor: t.color.border,
+                  backgroundColor: t.color.surface,
+                }}
+              >
+                <Text style={{ ...type.caption, color: t.color.textMuted }}>
+                  {formatEventTime({
+                    startUtc: e.start_utc,
+                    endUtc: e.end_utc ?? undefined,
+                    tz: e.tz,
+                    localWall: e.local_wall,
+                    precision: e.precision,
+                  })}
+                </Text>
+                <Text
+                  numberOfLines={2}
+                  style={{
+                    ...type.body,
+                    color: t.color.text,
+                    textDecorationLine:
+                      e.status === "cancelled" ? "line-through" : "none",
+                  }}
+                >
+                  {e.title}
+                </Text>
+                <Text
+                  numberOfLines={1}
+                  style={{ ...type.caption, color: t.color.textMuted }}
+                >
+                  {e.calendar_name}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      ))}
+    </ScrollView>
+  );
+}
+
+/**
+ * One day as an hour grid, reusing the calendar day screen's timeline so the two
+ * places that draw a day cannot drift apart.
+ *
+ * Members and RSVPs come from every calendar the day touches, since an agenda
+ * day is not one calendar's day.
+ */
+function LandscapeDay({
+  dayIso,
+  events,
+  onPrev,
+  onNext,
+}: {
+  dayIso: string;
+  events: readonly AgendaEvent[];
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  const t = useTheme();
+  const calendarIds = [...new Set(events.map((e) => e.calendar_id))].sort();
+  const key = calendarIds.join(",");
+
+  /**
+   * The hour grid needs ONE zone, and an agenda day can hold events from
+   * calendars in several. The commonest zone among the day's events wins, since
+   * that is the one most of the blocks would otherwise be drawn wrong in;
+   * failing that, the phone's own. A day that genuinely straddles two zones will
+   * misplace the minority by the offset, which is the honest limit of drawing
+   * one axis. Each event still shows its own time in its own zone.
+   */
+  const tz = dominantZone(events);
+
+  const members = useQuery(`members-for:${key}`, () =>
+    listMembersForCalendars(calendarIds),
+  );
+  const rsvps = useQuery(`rsvps-for:${key}`, () =>
+    listRsvpsForCalendars(calendarIds),
+  );
+
+  return (
+    <View style={{ flex: 1 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingHorizontal: space.lg,
+          paddingVertical: space.xs,
+        }}
+      >
+        <Pressable onPress={onPrev} hitSlop={12} accessibilityLabel="Previous day">
+          <Text style={{ ...type.body, color: t.color.accent }}>‹</Text>
+        </Pressable>
+        <Text style={{ ...type.label, color: t.color.textMuted }}>
+          {formatDayHeading(`${dayIso}T12:00:00.000Z`, "UTC")}
+        </Text>
+        <Pressable onPress={onNext} hitSlop={12} accessibilityLabel="Next day">
+          <Text style={{ ...type.body, color: t.color.accent }}>›</Text>
+        </Pressable>
+      </View>
+
+      <DayTimeline
+        date={dayIso}
+        tz={tz}
+        events={events}
+        members={members}
+        rsvps={rsvps}
+      />
+    </View>
+  );
+}
+
+function dominantZone(events: readonly AgendaEvent[]): string {
+  const tally = new Map<string, number>();
+  for (const e of events) tally.set(e.tz, (tally.get(e.tz) ?? 0) + 1);
+
+  let best: string | null = null;
+  let bestCount = 0;
+  for (const [zone, count] of tally) {
+    if (count > bestCount) {
+      best = zone;
+      bestCount = count;
+    }
+  }
+
+  return best ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
 }
 
 // --- month -----------------------------------------------------------------

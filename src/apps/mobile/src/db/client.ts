@@ -43,6 +43,8 @@ function addMissingColumns(database: SQLite.SQLiteDatabase): void {
     ["calendars", "cover_image", "TEXT"],
     ["events", "image_key", "TEXT"],
     ["calendars", "is_private", "INTEGER NOT NULL DEFAULT 0"],
+    ["events", "updated_by", "TEXT"],
+    ["events", "updated_at", "TEXT"],
   ];
 
   for (const [table, column, decl] of added) {

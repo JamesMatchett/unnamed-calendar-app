@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import type { RsvpStatus, TicketStatus } from "@calder/core";
-import { Link, Stack, useLocalSearchParams } from "expo-router";
+import { canEditEvent } from "@calder/core";
+import { Link, Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 
 import { Cover } from "@/components/Cover";
@@ -13,6 +14,7 @@ import {
   getEvent,
   listMembers,
   listRsvps,
+  myMembership,
   resolveForUser,
   setMyTicketStatus,
   setRsvp,
@@ -35,6 +37,7 @@ const OCCURRENCE = "-";
  */
 export default function EventScreen() {
   const t = useTheme();
+  const router = useRouter();
   const { calendarId, eventId, from } = useLocalSearchParams<{
     calendarId: string;
     eventId: string;
@@ -44,6 +47,7 @@ export default function EventScreen() {
   const event = useQuery(`event:${eventId}`, () => getEvent(eventId));
   const calendar = useQuery(`calendar:${calendarId}`, () => getCalendar(calendarId));
   const members = useQuery(`members:${calendarId}`, () => listMembers(calendarId));
+  const me = useQuery(`me:${calendarId}`, () => myMembership(calendarId));
   const rsvps = useQuery(`rsvps-event:${eventId}`, () => listRsvps(eventId));
 
   if (!event) {
@@ -76,7 +80,32 @@ export default function EventScreen() {
     <>
       {/* The calendar's name in the header, so the event is placed before you
           have read a word of it. */}
-      <Stack.Screen options={{ title: calendar?.name ?? "" }} />
+      <Stack.Screen
+        options={{
+          title: calendar?.name ?? "",
+          headerRight: () =>
+            canEditEvent({
+              createdBy: event.created_by,
+              userId: CURRENT_USER_ID,
+              role: me?.role ?? null,
+              status: event.status,
+            }) ? (
+              <Pressable
+                onPress={() =>
+                  router.push({
+                    pathname: "/calendar/[calendarId]/event/edit/[eventId]",
+                    params: { calendarId, eventId },
+                  })
+                }
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Edit this event"
+              >
+                <Ionicons name="pencil" size={20} color={t.color.accent} />
+              </Pressable>
+            ) : null,
+        }}
+      />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg }}>
         <Cover value={event.image_key} height={140} />
 

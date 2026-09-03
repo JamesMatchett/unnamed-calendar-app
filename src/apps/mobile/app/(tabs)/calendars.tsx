@@ -140,7 +140,13 @@ function CalendarCard({
             <Text style={{ ...type.heading, color: t.color.text, flex: 1 }}>
               {calendar.name}
             </Text>
-            {calendar.my_role === "owner" ? <OwnerBadge /> : null}
+            {/* Not on private calendars: they are yours by definition, and a
+                badge that is always there on a whole section says nothing. It
+                earns its place only where some calendars are yours and some are
+                not. */}
+            {calendar.my_role === "owner" && calendar.is_private !== 1 ? (
+              <OwnerBadge />
+            ) : null}
           </View>
           {calendar.description ? (
             <Text style={{ ...type.caption, color: t.color.textMuted }} numberOfLines={2}>

@@ -44,11 +44,11 @@ export default function DayScreen() {
   const landscape = width > height;
 
   useEffect(() => {
-    void ScreenOrientation.unlockAsync();
+    void ScreenOrientation.unlockAsync().catch(() => {});
     return () => {
       void ScreenOrientation.lockAsync(
         ScreenOrientation.OrientationLock.PORTRAIT_UP,
-      );
+      ).catch(() => {});
     };
   }, []);
 

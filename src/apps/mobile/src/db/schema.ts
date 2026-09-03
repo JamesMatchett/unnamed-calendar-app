@@ -73,6 +73,11 @@ CREATE TABLE IF NOT EXISTS events (
   created_by       TEXT NOT NULL,
   created_at       TEXT NOT NULL,
   version          INTEGER NOT NULL DEFAULT 1,
+  -- Who last changed it, and when. Shown on the event rather than kept for
+  -- forensics: "Priya moved this to 9pm" is the difference between a calendar
+  -- people trust and one that seems to rearrange itself (§8.1).
+  updated_by       TEXT,
+  updated_at       TEXT,
   rrule            TEXT,
   image_key        TEXT,
   -- 'synced' | 'pending' | 'failed'. Pending never blocks interaction (§5.6).

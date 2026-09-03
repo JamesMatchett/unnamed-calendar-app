@@ -61,7 +61,13 @@ export default function CalendarScreen() {
         out.push(cursor.toISOString().slice(0, 10));
         cursor.setUTCDate(cursor.getUTCDate() + 1);
       }
-      return { days: out, counts };
+
+      // Anything OUTSIDE the trip dates is added too. Building the list from
+      // the range alone silently swallowed events on any other day: they were
+      // saved, counted, and never drawn, which reads exactly like the app
+      // having lost them. A calendar must never hold an event it will not show.
+      const strays = Object.keys(counts).filter((d) => !out.includes(d));
+      return { days: [...out, ...strays].sort(), counts };
     }
 
     return { days: Object.keys(counts).sort(), counts };
@@ -201,6 +207,12 @@ export default function CalendarScreen() {
                 events={events.filter((e) => dayKey(e.start_utc, tz) === d)}
                 members={members}
                 rsvps={rsvps}
+                outsideTrip={
+                  calendar.mode === "bounded" &&
+                  !!calendar.start_date &&
+                  !!calendar.end_date &&
+                  (d < calendar.start_date || d > calendar.end_date)
+                }
               />
             ))
           )}
@@ -260,6 +272,7 @@ function DaySection({
   events,
   members,
   rsvps,
+  outsideTrip,
 }: {
   calendarId: string;
   date: string;
@@ -269,6 +282,8 @@ function DaySection({
   events: ReturnType<typeof listEvents>;
   members: ReturnType<typeof listMembers>;
   rsvps: ReturnType<typeof listRsvpsForCalendar>;
+  /** Flagged rather than hidden, so a mis-dated event is obvious and fixable. */
+  outsideTrip?: boolean;
 }) {
   const t = useTheme();
   const bounds = dayBoundsIn(date, tz);
@@ -284,9 +299,16 @@ function DaySection({
 
   return (
     <View style={{ gap: space.sm }}>
-      <Text style={{ ...type.label, color: t.color.text }}>
-        {formatDayShort(date, tz)}
-      </Text>
+      <View style={{ flexDirection: "row", alignItems: "baseline", gap: space.sm }}>
+        <Text style={{ ...type.label, color: t.color.text }}>
+          {formatDayShort(date, tz)}
+        </Text>
+        {outsideTrip ? (
+          <Text style={{ ...type.caption, color: t.color.maybe }}>
+            Outside the dates
+          </Text>
+        ) : null}
+      </View>
 
       {collectAvailability ? (
         <DayPresenceNote presence={presence} tz={tz} travelMode={travelMode} />

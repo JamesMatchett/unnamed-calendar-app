@@ -444,3 +444,27 @@ export type AnyItem =
   | FestivalSessionItem
   | ArtistItem
   | ArtistAliasItem;
+
+/**
+ * Who may edit an event outright, as opposed to suggesting a change (§8.1).
+ *
+ * Two people: whoever added it, and any owner of the calendar it sits in. An
+ * owner has to be able to fix a wrong time on someone else's event, because the
+ * alternative is a calendar nobody can correct once its author is asleep, has
+ * left the group, or simply cannot be bothered.
+ *
+ * Everyone else suggests, and a suggestion is an owner's to accept. That
+ * asymmetry is the whole point of the model: shared calendars fall apart when
+ * anyone can silently rewrite anything.
+ */
+export function canEditEvent(input: {
+  readonly createdBy: string;
+  readonly userId: string;
+  readonly role: "owner" | "member" | null;
+  /** A cancelled event is history: it is uncancelled, not edited. */
+  readonly status?: "active" | "cancelled";
+}): boolean {
+  if (input.status === "cancelled") return false;
+  if (input.role === null) return false;
+  return input.role === "owner" || input.createdBy === input.userId;
+}

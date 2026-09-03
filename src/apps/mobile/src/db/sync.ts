@@ -23,12 +23,40 @@ export interface SyncResult {
 
 let inFlight: Promise<SyncResult> | null = null;
 
+/**
+ * Whether an attempt is happening RIGHT NOW, as opposed to work being queued.
+ *
+ * The two are different facts and the UI shows them differently: a spinner
+ * means "talking to the server", while a queued write with nothing in flight is
+ * just waiting, which is the normal state on a plane. Spinning forever at
+ * something that is not being attempted is a lie.
+ */
+let syncing = false;
+const listeners = new Set<() => void>();
+
+export const isSyncing = (): boolean => syncing;
+
+export function subscribeSyncState(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => {
+    listeners.delete(fn);
+  };
+}
+
+function setSyncing(next: boolean): void {
+  if (syncing === next) return;
+  syncing = next;
+  for (const fn of listeners) fn();
+}
+
 export function syncNow(): Promise<SyncResult> {
   // Two pulls at once would double the work and can interleave badly once
   // there is a cursor to advance, so callers share one attempt.
   inFlight ??= run().finally(() => {
     inFlight = null;
+    setSyncing(false);
   });
+  setSyncing(true);
   return inFlight;
 }
 

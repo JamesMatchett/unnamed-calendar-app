@@ -13,6 +13,7 @@ import {
   TextField,
   ToggleRow,
 } from "@/components/form";
+import { Cover, CoverPlaceholder } from "@/components/Cover";
 import { Card, EmptyState, Muted } from "@/components/ui";
 import {
   createEvent,
@@ -21,6 +22,7 @@ import {
   myMembership,
 } from "@/db/repo";
 import { formatClock } from "@/lib/format";
+import { pickCoverImage } from "@/lib/pickImage";
 import { useQuery } from "@/lib/useQuery";
 import { radius, space, type, useTheme } from "@/theme";
 
@@ -55,12 +57,34 @@ export default function NewEventScreen() {
 
   const [raw, setRaw] = useState("");
   const [title, setTitle] = useState("");
-  const [date, setDate] = useState(isoDate(new Date()));
+  /**
+   * Today, unless today is not part of this calendar.
+   *
+   * A trip in October defaulting to today put every new event outside the trip,
+   * where the day list did not draw it: the event saved and vanished. Clamping
+   * into the range means the default is always a day the calendar actually has,
+   * and the picker still allows any date for the odd thing that genuinely sits
+   * outside.
+   */
+  const [date, setDate] = useState(() => {
+    const today = isoDate(new Date());
+    if (calendar?.mode !== "bounded") return today;
+    const first = calendar.start_date;
+    const last = calendar.end_date;
+    if (!first || !last) return today;
+    return today < first ? first : today > last ? last : today;
+  });
   const [time, setTime] = useState<string | null>(null);
   const [precision, setPrecision] = useState<Precision>("datetime");
   const [location, setLocation] = useState("");
   const [ticketsRequired, setTicketsRequired] = useState(false);
   const [ticketUrl, setTicketUrl] = useState("");
+  const [imageKey, setImageKey] = useState<string | null>(null);
+
+  const pickImage = async () => {
+    const picked = await pickCoverImage();
+    if (picked) setImageKey(picked);
+  };
   const [picking, setPicking] = useState<"date" | "time" | null>(null);
   const [touched, setTouched] = useState(false);
 
@@ -76,11 +100,15 @@ export default function NewEventScreen() {
     const parsed = parseEventText(next, tz);
     setTitle(parsed.title);
     if (parsed.date) setDate(parsed.date);
-    if (parsed.time) {
-      setTime(parsed.time);
-      setPrecision("datetime");
-    }
+    if (parsed.time) setTime(parsed.time);
     if (parsed.location) setLocation(parsed.location);
+
+    // Only when the text SAYS something about timing. "all day" and "TBC" are
+    // how people write it, and both are states the control already has, so
+    // typing them should move it rather than leaving the words stranded in the
+    // title. A null means nothing was said, which must not overwrite a choice
+    // made by hand.
+    if (parsed.precision) setPrecision(parsed.precision);
   };
 
   const startUtc = useMemo(
@@ -124,6 +152,7 @@ export default function NewEventScreen() {
       locationName: location || null,
       ticketsRequired,
       ticketUrl: ticketsRequired ? ticketUrl : null,
+      imageKey,
     });
     router.back();
   };
@@ -255,6 +284,36 @@ export default function NewEventScreen() {
             />
           ) : null}
         </View>
+
+
+        {/* Only ever seen on the event's own screen, never in a list: a row of
+            photographs is a feed, and a day's plans read faster as text. The
+            picture is for when you have opened the thing to decide about it. */}
+        <Field label="Picture" hintOneLine hint="Shown when someone opens the event">
+          <Pressable
+            onPress={() => void pickImage()}
+            accessibilityRole="button"
+            accessibilityLabel={imageKey ? "Change the picture" : "Choose a picture"}
+          >
+            {imageKey ? (
+              <Cover value={imageKey} height={110} />
+            ) : (
+              <CoverPlaceholder label="Choose a picture" height={110} />
+            )}
+          </Pressable>
+        </Field>
+
+        {imageKey ? (
+          <Pressable
+            onPress={() => setImageKey(null)}
+            accessibilityRole="button"
+            style={{ marginTop: -space.md }}
+          >
+            <Text style={{ ...type.caption, color: t.color.textMuted }}>
+              Remove picture
+            </Text>
+          </Pressable>
+        ) : null}
 
         <PrimaryButton label="Add to calendar" onPress={submit} disabled={!valid} />
       </ScrollView>
