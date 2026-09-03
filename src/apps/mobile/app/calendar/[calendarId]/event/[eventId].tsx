@@ -256,6 +256,7 @@ export default function EventScreen() {
         <View style={{ gap: space.sm }}>
           <Text style={{ ...type.label, color: t.color.textMuted }}>Are you going?</Text>
           <RsvpControl
+            cancelled={event.status === "cancelled"}
             value={mine.status as RsvpStatus | null}
             onChange={(next) =>
               next === null

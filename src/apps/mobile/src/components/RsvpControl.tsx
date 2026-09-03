@@ -23,6 +23,7 @@ export function RsvpControl({
   onChange,
   compact = false,
   fill = false,
+  cancelled = false,
 }: {
   value: RsvpStatus | null;
   /** `null` when the current answer is tapped again, clearing it. */
@@ -30,6 +31,13 @@ export function RsvpControl({
   compact?: boolean;
   /** Share the available width equally, so three options always fit. */
   fill?: boolean;
+  /**
+   * The event is called off, so the three options are struck through and stop
+   * responding. Hiding them instead would be worse: an answer someone already
+   * gave is part of the history of the thing, and a card that silently loses
+   * its controls reads as a rendering fault rather than a cancellation.
+   */
+  cancelled?: boolean;
 }) {
   const t = useTheme();
 
@@ -48,9 +56,12 @@ export function RsvpControl({
             // their minds, and being stuck on "Can't" because it was a mistap is
             // worse than having no answer.
             onPress={() => onChange(selected ? null : o.value)}
+            disabled={cancelled}
             accessibilityRole="button"
-            accessibilityState={{ selected }}
-            accessibilityLabel={o.long}
+            accessibilityState={{ selected, disabled: cancelled }}
+            accessibilityLabel={
+              cancelled ? `${o.long}, unavailable, event cancelled` : o.long
+            }
             hitSlop={6}
             style={{
               flex: fill ? 1 : undefined,
@@ -59,15 +70,30 @@ export function RsvpControl({
               paddingVertical: compact ? 5 : space.sm,
               borderRadius: radius.pill,
               borderWidth: 1,
-              borderColor: selected ? colorFor(o.value) : t.color.border,
-              backgroundColor: selected ? colorFor(o.value) : "transparent",
+              borderColor: cancelled
+                ? t.color.border
+                : selected
+                  ? colorFor(o.value)
+                  : t.color.border,
+              // A struck-through button on a filled background is unreadable, so
+              // a cancelled event drops the fill and keeps only the outline.
+              backgroundColor:
+                selected && !cancelled ? colorFor(o.value) : "transparent",
+              opacity: cancelled ? 0.65 : 1,
             }}
           >
             <Text
               style={{
                 ...type.caption,
                 fontWeight: selected ? "700" : "500",
-                color: selected ? "#fff" : t.color.textMuted,
+                textDecorationLine: cancelled ? "line-through" : "none",
+                color: cancelled
+                  ? selected
+                    ? colorFor(o.value)
+                    : t.color.textMuted
+                  : selected
+                    ? "#fff"
+                    : t.color.textMuted,
               }}
             >
               {compact ? o.short : o.long}

@@ -130,6 +130,7 @@ export function EventRow({
         <RsvpControl
           compact
           fill
+          cancelled={cancelled}
           value={mine.status as RsvpStatus | null}
           onChange={(next) =>
             next === null
