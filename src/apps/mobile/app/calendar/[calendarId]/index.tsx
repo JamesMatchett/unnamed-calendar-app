@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { dayBoundsIn } from "@uca/core";
+import { dayBoundsIn } from "@calder/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";

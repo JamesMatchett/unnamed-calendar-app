@@ -1,5 +1,5 @@
 /**
- * @uca/core — shared domain model.
+ * @calder/core — shared domain model.
  *
  * Imported by the Lambda handlers, the Expo app and the web app. Deliberately
  * free of AWS SDK, UI and I/O: the value is that the rules below exist exactly

@@ -1,12 +1,12 @@
 /**
- * Presentation of the time triple from @uca/core.
+ * Presentation of the time triple from @calder/core.
  *
  * Everything renders in the EVENT's timezone, not the device's. A holiday in
  * Spain shows Spanish times even while you are packing in London — which is the
  * whole reason §5.5 stores tz alongside the instant.
  */
 
-import type { EventTime } from "@uca/core";
+import type { EventTime } from "@calder/core";
 
 const time = (t: EventTime): Intl.DateTimeFormatOptions => ({
   hour: "2-digit",

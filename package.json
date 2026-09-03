@@ -1,18 +1,18 @@
 {
-  "name": "uca",
+  "name": "calder",
   "version": "0.0.0",
   "private": true,
-  "description": "UCA monorepo. See Architecture.md \u00a73.1 for the packages/apps split.",
+  "description": "Cal&der monorepo. See Architecture.md \u00a73.1 for the packages/apps split.",
   "workspaces": [
     "src/packages/*",
     "src/apps/*"
   ],
   "scripts": {
-    "build:core": "npm run build --workspace @uca/core",
-    "mobile": "npm run start --workspace @uca/mobile",
-    "reseed": "npm run reseed --workspace @uca/mobile",
-    "start": "npm run start --workspace @uca/mobile",
-    "test:core": "npm test --workspace @uca/core",
+    "build:core": "npm run build --workspace @calder/core",
+    "mobile": "npm run start --workspace @calder/mobile",
+    "reseed": "npm run reseed --workspace @calder/mobile",
+    "start": "npm run start --workspace @calder/mobile",
+    "test:core": "npm test --workspace @calder/core",
     "typecheck": "npm run typecheck --workspaces --if-present"
   }
 }

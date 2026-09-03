@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import type { TicketStatus } from "@uca/core";
+import type { TicketStatus } from "@calder/core";
 import { Pressable, Text, View } from "react-native";
 
 import { radius, space, type, useTheme } from "@/theme";

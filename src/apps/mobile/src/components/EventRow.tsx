@@ -1,4 +1,4 @@
-import type { RsvpStatus } from "@uca/core";
+import type { RsvpStatus } from "@calder/core";
 import { Link } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 

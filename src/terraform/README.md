@@ -1,6 +1,6 @@
 # Infrastructure
 
-Terraform for UCA. Design rationale is in [Architecture.md](../../Architecture.md) §3.6;
+Terraform for Cal&der. Design rationale is in [Architecture.md](../../Architecture.md) §3.6;
 this file is the operating manual.
 
 ```

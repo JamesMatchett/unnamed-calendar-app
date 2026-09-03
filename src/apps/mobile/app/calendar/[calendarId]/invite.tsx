@@ -15,7 +15,7 @@ import { useQuery } from "@/lib/useQuery";
 import { radius, space, type, useTheme } from "@/theme";
 
 /** Where a scanned or tapped invite lands. Universal links point here (§7.1). */
-const inviteUrl = (token: string) => `https://uca.app/join/${token}`;
+const inviteUrl = (token: string) => `https://calder.app/join/${token}`;
 
 /**
  * The share screen.
@@ -61,7 +61,7 @@ export default function InviteScreen() {
 
   const share = () => {
     void Share.share({
-      message: `Join ${calendar.name} on UCA: ${url}`,
+      message: `Join ${calendar.name} on Cal&der: ${url}`,
     }).catch(() => undefined);
   };
 

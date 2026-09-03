@@ -1,4 +1,4 @@
-# UCA — Project context
+# Cal&der — Project context
 
 Last updated: 2026-09-02
 
@@ -24,7 +24,7 @@ native calendars (iOS, Google, Outlook). Large promoted events — festivals wit
 stages and set times — are pulled into the app so a group can build a private shared calendar
 around one and see who is going to what.
 
-"UCA" is a placeholder name, kept deliberately (§13 of Architecture.md).
+"Cal&der" is a placeholder name, kept deliberately (§13 of Architecture.md).
 
 ## Who it is for
 

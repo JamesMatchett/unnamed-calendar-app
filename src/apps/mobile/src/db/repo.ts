@@ -12,7 +12,7 @@ import type {
   RsvpStatus,
   TicketStatus,
   TravelMode,
-} from "@uca/core";
+} from "@calder/core";
 import {
   SERIES_DEFAULT,
   classifyPresence,
@@ -23,7 +23,7 @@ import {
   surfaceFor,
   tallyRsvps,
   ulid,
-} from "@uca/core";
+} from "@calder/core";
 
 import { getDb, notifyChanged } from "./client";
 import { CURRENT_USER_ID } from "./seed";
@@ -166,7 +166,7 @@ const toAnswer = (r: RsvpRow): RsvpAnswer => ({
 });
 
 /**
- * Resolution lives in @uca/core, not here. The occurrence-beats-series-default
+ * Resolution lives in @calder/core, not here. The occurrence-beats-series-default
  * rule has to be identical on the client and in the API, and the surest way to
  * achieve that is for there to be one implementation (§5.5).
  */
@@ -314,7 +314,7 @@ function notificationsFor(surface: NotificationSurface): NotificationRow[] {
   const all = getDb().getAllSync<NotificationRow>(
     "SELECT * FROM notifications ORDER BY created_at DESC",
   );
-  // The split lives in @uca/core so the two surfaces cannot disagree.
+  // The split lives in @calder/core so the two surfaces cannot disagree.
   return all.filter((n) => surfaceFor(n.kind) === surface);
 }
 
@@ -636,7 +636,7 @@ export function listAvailability(calendarId: string): AvailabilityRow[] {
 }
 
 /**
- * Presence for one day, classified in @uca/core so the client and the future API
+ * Presence for one day, classified in @calder/core so the client and the future API
  * cannot disagree about who counts as "here".
  *
  * Members who have said nothing appear as `unknown` rather than being assumed

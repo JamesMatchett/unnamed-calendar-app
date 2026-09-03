@@ -4,7 +4,7 @@
  * a bounded trip and a continuous city calendar.
  */
 
-import type { TravelMode } from "@uca/core";
+import type { TravelMode } from "@calder/core";
 import type * as SQLite from "expo-sqlite";
 
 /**

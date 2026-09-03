@@ -1,9 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import type { DayPresence, PresenceInput, TravelMode } from "@uca/core";
+import type { DayPresence, PresenceInput, TravelMode } from "@calder/core";
 import { useState } from "react";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 
-import { groupByTravelMode, sharedTravelMode } from "@uca/core";
+import { groupByTravelMode, sharedTravelMode } from "@calder/core";
 
 import { TRAVEL_ICON } from "@/components/TravelMode";
 import { formatClock } from "@/lib/format";

@@ -11,8 +11,8 @@ import {
   View,
 } from "react-native";
 
-import { PULL, overscrollPast, pullEdge, releaseAction, topRelease } from "@uca/core";
-import type { PullEdge } from "@uca/core";
+import { PULL, overscrollPast, pullEdge, releaseAction, topRelease } from "@calder/core";
+import type { PullEdge } from "@calder/core";
 
 import { AddEventButton } from "@/components/AddEventButton";
 import { EventRow } from "@/components/EventRow";
@@ -503,7 +503,7 @@ function WeekView({
  * one slot however busy the day is.
  */
 
-/** Thresholds and the release decision live in @uca/core, where they are
+/** Thresholds and the release decision live in @calder/core, where they are
  * tested: see gestures.ts and test/gestures.test.mjs. */
 
 function EdgeHint({

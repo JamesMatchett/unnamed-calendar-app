@@ -4,8 +4,8 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { Alert, Platform, Pressable, ScrollView, Text, View } from "react-native";
 
-import type { TravelMode } from "@uca/core";
-import { zonedWallToUtc } from "@uca/core";
+import type { TravelMode } from "@calder/core";
+import { zonedWallToUtc } from "@calder/core";
 
 import { Cover, CoverPlaceholder } from "@/components/Cover";
 import { PersonRowItem } from "@/components/PersonRowItem";

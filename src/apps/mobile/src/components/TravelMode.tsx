@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import type { TravelMode } from "@uca/core";
-import { TRAVEL_MODES } from "@uca/core";
+import type { TravelMode } from "@calder/core";
+import { TRAVEL_MODES } from "@calder/core";
 import { Pressable, Text, View } from "react-native";
 
 import { radius, space, type, useTheme } from "@/theme";

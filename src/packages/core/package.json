@@ -1,8 +1,8 @@
 {
-  "name": "@uca/core",
+  "name": "@calder/core",
   "version": "0.1.0",
   "private": true,
-  "description": "Shared domain types, key builders and resolution rules for UCA. No AWS SDK, no UI, no I/O \u2014 safe to import from Lambda handlers, the mobile app and the web app alike.",
+  "description": "Shared domain types, key builders and resolution rules for Cal&der. No AWS SDK, no UI, no I/O \u2014 safe to import from Lambda handlers, the mobile app and the web app alike.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

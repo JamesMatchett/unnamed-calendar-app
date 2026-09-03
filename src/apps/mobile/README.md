@@ -1,4 +1,4 @@
-# @uca/mobile
+# @calder/mobile
 
 Expo / React Native app. SDK 57, React 19, new architecture on.
 
@@ -21,7 +21,7 @@ npm start
 npm run mobile
 ```
 
-Metro resolves `@uca/core` to its **TypeScript source**, so editing core hot-reloads exactly
+Metro resolves `@calder/core` to its **TypeScript source**, so editing core hot-reloads exactly
 like editing app code — no build step, and no chance of running new app code against a stale
 `dist/`. `npm run build:core` remains for typechecking and the eventual Lambda bundles.
 
@@ -59,7 +59,7 @@ something a screen waits on. So this is the real read path with the sync engine
 absent, not a throwaway prototype. Writes already go through `mutation_queue`,
 and the sync banner already reports its depth.
 
-Attendance resolution and every authorisation rule come from `@uca/core`, so the
+Attendance resolution and every authorisation rule come from `@calder/core`, so the
 client and the future API cannot drift apart.
 
 ## Known limitation: web

@@ -1,4 +1,4 @@
-# UCA — Proposed AWS Architecture
+# Cal&der — Proposed AWS Architecture
 
 Status: proposal / v0.2 · Last updated: 2026-09-02
 
@@ -152,7 +152,7 @@ One Cognito **user pool** and **no identity pool** — identity pools exist to v
 credentials to clients, and nothing here needs them: clients talk to API Gateway with a JWT,
 and S3 uploads use presigned URLs minted by Lambda. No hosted-UI sign-up screens either,
 though federation still needs a user pool **domain** for the OAuth redirect, so configure a
-custom one (`auth.uca.app`) — users see that hostname in the browser sheet, and the default
+custom one (`auth.calder.app`) — users see that hostname in the browser sheet, and the default
 `*.amazoncognito.com` visibly costs conversion. **Apple and Google only for v1** — no email/password (§8.6), which means no
 reset flow and no password support burden. Email/password and Microsoft are v2 candidates.
 The trade being accepted: losing access to your Google account means losing your calendars,
@@ -844,17 +844,17 @@ to show contents.
 
 Do it **on the device**:
 
-- **UCA → native**: write via EventKit (iOS) / CalendarProvider (Android), keeping a local
+- **Cal&der → native**: write via EventKit (iOS) / CalendarProvider (Android), keeping a local
   map of `{ucaEventId → nativeEventId, lastSyncedHash}`. No server involvement, no OAuth
   tokens to store, no compliance exposure.
 - **Subscribe from anywhere**: also publish a read-only **ICS feed** per calendar at
   `/ics/{cid}/{unguessableToken}.ics` — a Lambda function URL behind CloudFront with a
   60-second cache. That covers Outlook web, Google Calendar and desktop clients with almost
   no code. Revoke access by rotating the token.
-- **Native → UCA**: read the device's calendars, let the user select events, post them.
+- **Native → Cal&der**: read the device's calendars, let the user select events, post them.
 - **Two-way**: ship this last. Bidirectional calendar sync is a swamp — duplicate
   detection, recurrence exceptions, "deleted or just not synced yet?", and per-provider
-  quirks. One-way UCA → native plus manual import covers the majority of the value in a
+  quirks. One-way Cal&der → native plus manual import covers the majority of the value in a
   fraction of the effort.
 
 ---
@@ -1192,7 +1192,7 @@ This is the feature the graph exists for, and it introduces something the app do
 currently have: **a personal, cross-calendar view of one person's commitments.**
 
 **It depends on native calendar import, and that dependency is the sequencing constraint.**
-Free/busy computed only from UCA events would report you free on a Tuesday afternoon you have
+Free/busy computed only from Cal&der events would report you free on a Tuesday afternoon you have
 spent in meetings, and a "when are we free?" feature that is wrong a third of the time is
 worse than none. So import comes first (decision, Sept 2026).
 
@@ -1504,7 +1504,7 @@ Choose the Cognito tier deliberately, and keep auth behind an interface so you c
    good.
 4. **Invites and membership lifecycle** — signed QR tokens, direct invites and pending
    records (§7.1), approval queue, leaving, removal, ownership transfer (§8.4).
-5. **Native calendar export** — one-way UCA → native, plus ICS feeds.
+5. **Native calendar export** — one-way Cal&der → native, plus ICS feeds.
 6. **Festivals** — one source end to end (Skiddle or Ticketmaster), bundles, the
    copy-into-calendar flow from §6.1. Legal review *before* this step, per §6.4.
 7. **Push notifications and the inbox** — Stream fan-out to SNS/Pinpoint, writing
@@ -1541,7 +1541,7 @@ Choose the Cognito tier deliberately, and keep auth behind an interface so you c
    when installed (universal link, invite pre-populated); after a fresh install the user
    returns and taps the link again, per decision 3 in §14. It is deliberately not a planning
    surface — that arrives with the catalogue (§6.4).
-10. **The app still needs a name.** "Unnamed Calendar App" / `UCA` stands for now, by
+10. **The app still needs a name.** "Unnamed Calendar App" / `Cal&der` stands for now, by
     decision — not an oversight.
 
 ---

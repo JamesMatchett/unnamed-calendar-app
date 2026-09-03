@@ -1,4 +1,4 @@
-import { dayBoundsIn } from "@uca/core";
+import { dayBoundsIn } from "@calder/core";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";

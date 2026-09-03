@@ -1,4 +1,4 @@
-# UCA — working memory
+# Cal&der — working memory
 
 Last updated: 2026-09-02
 
@@ -56,14 +56,14 @@ Nothing else in the project depends on this being done.
 
 - **Inbox and People** — two header affordances on tab roots: left is **People**, a
   destination (derived connections + pending calendar invites); right is **Activity**, a feed
-  (events, suggestions, cancellations). The split lives in `@uca/core`
+  (events, suggestions, cancellations). The split lives in `@calder/core`
   (`surfaceFor`, `isActionable`) so the surfaces cannot disagree. **Badges count only what is
   waiting on you**, never unread news.
 - **Landscape day view** — rotating the phone on a day screen swaps the list for an hour
   grid with side-by-side overlaps, a now-line, and an untimed strip for `date`/`tbc` events.
   Rotation is unlocked *only* on that screen; the app is portrait-locked everywhere else, so
   no other screen has to be designed for landscape. The column-packing algorithm lives in
-  `@uca/core` (`layoutDay`) because the web day/week view will need the same one, and that
+  `@calder/core` (`layoutDay`) because the web day/week view will need the same one, and that
   is where the tests are.
 
 - **Friends prototype** — search (handle / name / email), "Add friend" on suggestions, and a
@@ -79,7 +79,7 @@ Nothing else in the project depends on this being done.
 2. Event creation, with natural-language entry and duplicate detection.
 3. Cognito user pool and the three Lambda trigger definitions (§3.2) — writable now,
    appliable later.
-4. The first Lambda handler and route, against `@uca/core`.
+4. The first Lambda handler and route, against `@calder/core`.
 
 ### Known limitation: expo-sqlite on web
 
@@ -98,9 +98,13 @@ this app in a browser.
 3. **Change-log retention** — 90 days assumed, never validated (§13.4).
 4. **Group size ceiling** — above roughly 500 members, "one query returns the whole calendar"
    needs pagination (§13.5).
-5. **The name.**
+5. ~~The name.~~ **Settled: Cal&der.** The ampersand is the brand mark and matches
+   `&handle`, but it is illegal in bundle ids, npm package names, URL schemes and domain
+   names, and is the query separator in URLs. So the display name is the ONLY place it
+   appears: everything machine-readable is `calder` (`app.calder.mobile`, `@calder/core`,
+   `calder://`, `calder.app`). Never "fix" a machine-readable name to match the logo.
 6. **The app-invite link is a placeholder.** "Invite someone to the app" on the People screen
-   shares `https://uca.app/get`, which does not exist. It needs a real landing page that
+   shares `https://calder.app/get`, which does not exist. It needs a real landing page that
    detects the platform and sends people to the right store, and ideally carries the
    inviter's id so the two are connected once the invited person signs up. Until then the
    share works and the link does not, which is worse than no button on the day someone
@@ -175,7 +179,7 @@ Three things worth carrying forward:
   screen.
 - **Free/busy depends on native calendar import**, and import is far cheaper than two-way
   sync — read-only device access, no duplicate detection, no recurrence reconciliation. The
-  order is import → friends → free/busy, and it is not negotiable: free/busy from UCA events
+  order is import → friends → free/busy, and it is not negotiable: free/busy from Cal&der events
   alone reports you free during a day of meetings.
 - **`full` visibility is deferred past v2 on purpose.** Even `busy` leaks patterns of life.
   If it ships it needs a permanently visible indicator, revocation that is silent and
@@ -191,7 +195,7 @@ Found while building the app, and all of them cost time to diagnose.
    Expo Go is fetched by the Expo CLI and is not App Store gated, so `press i` works fine.
    For a physical device you need a development build (`npx expo run:ios`, or EAS Build),
    which needs Xcode locally or an Apple Developer account for device installs.
-2. **Metro reads `@uca/core` from SOURCE, not `dist/`** — deliberately, via a
+2. **Metro reads `@calder/core` from SOURCE, not `dist/`** — deliberately, via a
    `resolveRequest` alias in `metro.config.js`. Before that, editing core and reloading gave
    you the *old* core against *new* app code, and the symptom was an undefined export at
    runtime nowhere near the cause. Core keeps `.js` extensions on relative imports (Node's
@@ -199,7 +203,7 @@ Found while building the app, and all of them cost time to diagnose.
    `npm run build:core` is still needed for typechecking and for the eventual Lambda bundles,
    but no longer for running the app.
 3. **Metro needs explicit monorepo wiring.** `watchFolders`, `nodeModulesPaths` and
-   `disableHierarchicalLookup` in `metro.config.js`. Without them, importing `@uca/core`
+   `disableHierarchicalLookup` in `metro.config.js`. Without them, importing `@calder/core`
    fails with an unhelpful "module not found" that reads like a typo.
 4. **`wasm` must be added to Metro's `assetExts`** or the web bundle fails to resolve
    `expo-sqlite`'s WASM build — while iOS and Android build fine. A confusing

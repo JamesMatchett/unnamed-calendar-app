@@ -1,4 +1,4 @@
-import type { RsvpStatus } from "@uca/core";
+import type { RsvpStatus } from "@calder/core";
 import { Pressable, Text, View } from "react-native";
 
 import { radius, space, type, useTheme } from "@/theme";

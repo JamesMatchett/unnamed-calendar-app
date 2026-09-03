@@ -2,11 +2,11 @@ This is a cross platform, mobile first, calendar app that allows groups of frien
 
 Friends can submit events to shared calendars, and those friends who have been invited to said shared calendar can say if they are a Going / Maybe / Not Going to the event nad suggest changes to the details of the event that the event author can approve
 
-Users should easily be able to sync events from their UCA Social calendar to their native calendar (iOS, Google Calendar, Outlook Calendar etc)
+Users should easily be able to sync events from their Cal&der Social calendar to their native calendar (iOS, Google Calendar, Outlook Calendar etc)
 
-Equally, it should be easy for users to import events from their native calendars into UCA calendar's that they've been invited to.
+Equally, it should be easy for users to import events from their native calendars into Cal&der calendar's that they've been invited to.
 
-There should be the ability to sync both calendars, if someone wishes to cross-update from their native calendar to UCA and vice versa.
+There should be the ability to sync both calendars, if someone wishes to cross-update from their native calendar to Cal&der and vice versa.
 
 If an event organiser is putting together a large event (such as a festival with many artists, stages, lineups and times) it should be possible to browse these large promoted events as a user, and create a private shared calendar among friends where you are able to pick which events you are going to and see which events within the festival they are going to (TODO - Fix the taxonomy here)
 

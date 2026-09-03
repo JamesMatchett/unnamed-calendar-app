@@ -1,4 +1,4 @@
-# UCA — major versions
+# Cal&der — major versions
 
 Last updated: 2026-09-02
 
@@ -97,7 +97,7 @@ without promoter relationships is the version most likely to end in a takedown.
   Only worth building once there is desktop traffic to justify it
 
 The three availability items are strictly ordered: import, then friends, then free/busy.
-Free/busy computed from UCA events alone would report you free during a day of meetings, and
+Free/busy computed from Cal&der events alone would report you free during a day of meetings, and
 a "when are we free?" feature that is wrong a third of the time is worse than not having one.
 
 **Exit criteria:** organic search delivering installs.

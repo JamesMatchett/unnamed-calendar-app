@@ -1,6 +1,6 @@
 // Executable statements of the rules that are subtle enough to be reimplemented
 // wrongly. Run with `npm test` (builds first). No test framework: node:test is
-// built in, and @uca/core deliberately carries no dev dependencies beyond tsc.
+// built in, and @calder/core deliberately carries no dev dependencies beyond tsc.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";

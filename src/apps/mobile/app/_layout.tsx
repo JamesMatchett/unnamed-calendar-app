@@ -61,7 +61,7 @@ export default function RootLayout() {
           name="calendar/[calendarId]/settings"
           options={{ title: "Calendar settings" }}
         />
-        {/* Where universal links land: uca.app/join/<token> (§7.1). */}
+        {/* Where universal links land: calder.app/join/<token> (§7.1). */}
         <Stack.Screen name="join/[token]" options={{ presentation: "modal" }} />
       </Stack>
     </SafeAreaProvider>

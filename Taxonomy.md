@@ -2,7 +2,7 @@ Event - A time delimitted gathering of people at a location, that may require ti
 
 Calendar - A collection of events, potentially itself set between two time boundaries, used to capture events that occur on the same Holiday, Festival, Trip, Weeekend. Can also be a continuous calendar to capture events as they appear. In the context of this app, a calendar is a space where users can invite other users to add events, add their attendance to events and more. 
 
-App Calendar - Used specifically to refer to calendars within the UCA App.
+App Calendar - Used specifically to refer to calendars within the Cal&der App.
 
 Native Calendar - Used specifically to refer to someone's existing calendars they may use (Such as the iOS Native Calendar or Google Calendar for example)
 

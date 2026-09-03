@@ -1,4 +1,4 @@
-# @uca/core
+# @calder/core
 
 Shared domain model: types, key builders and the rules that must not be
 implemented twice.

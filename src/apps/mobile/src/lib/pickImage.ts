@@ -48,8 +48,8 @@ export async function pickCoverImage(): Promise<string | null> {
  * specific toggle are the private App-Prefs ones, which App Review rejects.
  *
  * Two caveats worth knowing when this looks like it is not working:
- *   - In Expo Go the photo permission belongs to EXPO GO, not to UCA, so the
- *     link goes to Expo Go's page. A dev build or TestFlight build shows UCA's.
+ *   - In Expo Go the photo permission belongs to EXPO GO, not to Cal&der, so the
+ *     link goes to Expo Go's page. A dev build or TestFlight build shows Cal&der's.
  *   - The page only lists a Photos row once the app has actually asked, and only
  *     if NSPhotoLibraryUsageDescription is set. That string comes from the
  *     expo-image-picker config plugin in app.json.
@@ -64,8 +64,8 @@ function explainRefusal(): void {
 }
 
 /**
- * In Expo Go the permission belongs to EXPO GO, not to UCA: there is no UCA
- * entry in Settings to open, so iOS drops you at the top level. Saying "UCA's
+ * In Expo Go the permission belongs to EXPO GO, not to Cal&der: there is no Cal&der
+ * entry in Settings to open, so iOS drops you at the top level. Saying "Cal&der's
  * own page" there would be a straightforward lie, and the person would hunt for
  * a row that does not exist. Development builds do not have this problem.
  */
@@ -74,10 +74,10 @@ const inExpoGo =
 
 function directions(): string {
   if (inExpoGo) {
-    return "You're running in Expo Go, so the permission belongs to Expo Go rather than UCA. In Settings, go to Privacy & Security, then Photos, then Expo Go.";
+    return "You're running in Expo Go, so the permission belongs to Expo Go rather than Cal&der. In Settings, go to Privacy & Security, then Photos, then Expo Go.";
   }
 
   return Platform.OS === "ios"
-    ? "Settings will open on UCA's own page. Tap Photos, then choose Full Access or Limited Access."
-    : "Settings will open on UCA's own page. Tap Permissions, then Photos and videos, and choose Allow.";
+    ? "Settings will open on Cal&der's own page. Tap Photos, then choose Full Access or Limited Access."
+    : "Settings will open on Cal&der's own page. Tap Permissions, then Photos and videos, and choose Allow.";
 }

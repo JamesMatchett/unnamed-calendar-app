@@ -5,7 +5,7 @@
  * reads from here, always, and sync is a background writer (Architecture.md
  * §5.6). That is why the app works identically with the server stubbed out.
  *
- * The shape deliberately mirrors the DynamoDB items in @uca/core rather than
+ * The shape deliberately mirrors the DynamoDB items in @calder/core rather than
  * being normalised for SQL convenience: a change arriving from the change log
  * must map to exactly one row without interpretation.
  */
@@ -118,7 +118,7 @@ CREATE TABLE IF NOT EXISTS mutation_queue (
 );
 
 -- The inbox (§7.3). Written by the stream fan-out in production; seeded here.
--- One table, two surfaces: @uca/core decides which by kind, so People and
+-- One table, two surfaces: @calder/core decides which by kind, so People and
 -- Activity can never disagree about where something belongs.
 CREATE TABLE IF NOT EXISTS notifications (
   notification_id TEXT PRIMARY KEY NOT NULL,

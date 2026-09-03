@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { addDays, todayIn } from "@uca/core";
+import { addDays, todayIn } from "@calder/core";
 import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 

@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import type { RsvpStatus, TicketStatus } from "@uca/core";
+import type { RsvpStatus, TicketStatus } from "@calder/core";
 import { Link, Stack, useLocalSearchParams } from "expo-router";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 

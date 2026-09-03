@@ -17,7 +17,7 @@ import { TravelModePicker } from "@/components/TravelMode";
 import { Muted } from "@/components/ui";
 import { pickCoverImage } from "@/lib/pickImage";
 import { createCalendar } from "@/db/repo";
-import type { TravelMode } from "@uca/core";
+import type { TravelMode } from "@calder/core";
 
 import { describeZone, deviceTimeZone, offsetLabel } from "@/lib/timezones";
 import { space, type, useTheme } from "@/theme";

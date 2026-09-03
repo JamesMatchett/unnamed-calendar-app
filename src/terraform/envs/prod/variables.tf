@@ -1,7 +1,7 @@
 variable "project" {
   description = "Short project prefix used in resource names."
   type        = string
-  default     = "uca"
+  default     = "calder"
 }
 
 variable "environment" {

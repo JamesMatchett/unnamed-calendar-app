@@ -50,14 +50,14 @@ export default function PeopleScreen() {
 
   /**
    * The OS share sheet rather than an in-app invite form: the person being
-   * invited is not in UCA, so the only way to reach them is whatever the two of
+   * invited is not in Cal&der, so the only way to reach them is whatever the two of
    * them already use. Anything we built here would be a worse WhatsApp.
    */
   const inviteToApp = async () => {
     try {
       await Share.share({
         message:
-          "Come and plan things with me on UCA: https://uca.app/get",
+          "Come and plan things with me on Cal&der: https://calder.app/get",
       });
     } catch {
       // Dismissing the sheet is not a failure, and there is nothing useful to
@@ -183,7 +183,7 @@ export default function PeopleScreen() {
                   accessibilityRole="button"
                 >
                   <Text style={{ ...type.label, color: t.color.accent }}>
-                    Invite them to UCA
+                    Invite them to Cal&der
                   </Text>
                 </Pressable>
               </Card>

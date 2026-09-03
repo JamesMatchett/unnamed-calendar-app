@@ -1,6 +1,6 @@
 // Monorepo wiring. Metro does not follow workspace symlinks out of the app
 // directory by default, so it must be told where the repo root is and which
-// node_modules folders to resolve from. Without this, importing @uca/core fails
+// node_modules folders to resolve from. Without this, importing @calder/core fails
 // with an unhelpful "module not found" that looks like a typo.
 const { getDefaultConfig } = require("expo/metro-config");
 const path = require("node:path");
@@ -23,7 +23,7 @@ config.resolver.disableHierarchicalLookup = true;
 // Android build fine — a confusing platform-specific break.
 config.resolver.assetExts.push("wasm");
 
-// Resolve @uca/core to its TypeScript SOURCE rather than its build output.
+// Resolve @calder/core to its TypeScript SOURCE rather than its build output.
 //
 // Otherwise the package only updates when `tsc` runs, which happens in the app's
 // `prestart` — so editing core and reloading gives you the OLD core against NEW
@@ -38,7 +38,7 @@ const defaultResolve = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   const resolve = defaultResolve ?? context.resolveRequest;
 
-  if (moduleName === "@uca/core") {
+  if (moduleName === "@calder/core") {
     return resolve(context, path.join(coreSrc, "index.ts"), platform);
   }
 

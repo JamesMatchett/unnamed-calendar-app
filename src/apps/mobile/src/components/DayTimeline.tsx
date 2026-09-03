@@ -1,4 +1,4 @@
-import { layoutDay, minutesInDay } from "@uca/core";
+import { layoutDay, minutesInDay } from "@calder/core";
 import { Link } from "expo-router";
 import { useEffect, useRef } from "react";
 import { Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";

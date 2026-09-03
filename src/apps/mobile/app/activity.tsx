@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import type { NotificationKind } from "@uca/core";
-import { isActionable } from "@uca/core";
+import type { NotificationKind } from "@calder/core";
+import { isActionable } from "@calder/core";
 import { Stack, useRouter } from "expo-router";
 import { useEffect } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";

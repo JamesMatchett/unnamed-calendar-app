@@ -1,5 +1,5 @@
 {
-  "name": "@uca/mobile",
+  "name": "@calder/mobile",
   "version": "0.1.0",
   "private": true,
   "main": "expo-router/entry",
@@ -15,7 +15,7 @@
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
     "@react-native-community/datetimepicker": "9.1.0",
-    "@uca/core": "*",
+    "@calder/core": "*",
     "expo": "~57.0.19",
     "expo-constants": "~57.0.17",
     "expo-image-picker": "~57.0.15",

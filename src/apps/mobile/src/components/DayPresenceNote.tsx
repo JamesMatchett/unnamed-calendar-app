@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import type { DayPresence, TravelMode } from "@uca/core";
-import { groupByTravelMode } from "@uca/core";
+import type { DayPresence, TravelMode } from "@calder/core";
+import { groupByTravelMode } from "@calder/core";
 import { Text, View } from "react-native";
 
 import { TRAVEL_ICON } from "@/components/TravelMode";
