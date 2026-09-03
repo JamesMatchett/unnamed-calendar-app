@@ -11,12 +11,11 @@ import {
   TextField,
   ToggleRow,
 } from "@/components/form";
-import * as ImagePicker from "expo-image-picker";
-
 import { Cover, CoverPlaceholder } from "@/components/Cover";
 import { TimeZonePicker } from "@/components/TimeZonePicker";
 import { TravelModePicker } from "@/components/TravelMode";
 import { Muted } from "@/components/ui";
+import { pickCoverImage } from "@/lib/pickImage";
 import { createCalendar } from "@/db/repo";
 import type { TravelMode } from "@uca/core";
 
@@ -57,23 +56,11 @@ export default function NewCalendarScreen() {
   const [isPrivate, setIsPrivate] = useState(false);
   const [coverImage, setCoverImage] = useState<string | null>(null);
 
-  /**
-   * The picked image stays a local file URI: uploading it is the server's job,
-   * and the client's job is only to remember which one was chosen.
-   */
   const pickCover = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsEditing: true,
-      aspect: [2, 1],
-      quality: 0.8,
-    });
-    const picked = result.assets?.[0]?.uri;
-    if (!result.canceled && picked) setCoverImage(picked);
+    const picked = await pickCoverImage();
+    if (picked) setCoverImage(picked);
   };
+
   const [zonePickerOpen, setZonePickerOpen] = useState(false);
 
   const today = new Date();
@@ -126,34 +113,6 @@ export default function NewCalendarScreen() {
             maxLength={60}
           />
         </Field>
-
-        {/* Optional, and below the name on purpose: a picture is a nice-to-have,
-            and putting it above the one required field would suggest otherwise. */}
-        <Field label="Cover picture">
-          {coverImage ? (
-            <Cover value={coverImage} height={120} />
-          ) : (
-            <CoverPlaceholder label="Optional" height={120} />
-          )}
-        </Field>
-
-        <View style={{ flexDirection: "row", gap: space.lg, marginTop: -space.md }}>
-          <Pressable onPress={() => void pickCover()} accessibilityRole="button">
-            <Text style={{ ...type.caption, color: t.color.accent }}>
-              {coverImage ? "Change picture" : "Choose a picture"}
-            </Text>
-          </Pressable>
-          {coverImage ? (
-            <Pressable
-              onPress={() => setCoverImage(null)}
-              accessibilityRole="button"
-            >
-              <Text style={{ ...type.caption, color: t.color.textMuted }}>
-                Remove
-              </Text>
-            </Pressable>
-          ) : null}
-        </View>
 
         <Field
           label="Does it have dates?"
@@ -209,6 +168,48 @@ export default function NewCalendarScreen() {
             ) : null}
           </View>
         ) : null}
+
+        {/* Last of the three, on purpose: the name and the dates decide what the
+            calendar IS, and a picture is decoration. Anything optional sitting
+            above a question that shapes the rest of the form invites people to
+            stop and fiddle with it first. */}
+        <Field label="Cover picture">
+          {/* The empty frame IS the button. A big obvious placeholder that does
+              nothing when tapped, with the only working control a small link
+              underneath, is a trap people fall into every time. */}
+          <Pressable
+            onPress={() => void pickCover()}
+            accessibilityRole="button"
+            accessibilityLabel={
+              coverImage ? "Change the cover picture" : "Choose a cover image"
+            }
+          >
+            {coverImage ? (
+              <Cover value={coverImage} height={120} />
+            ) : (
+              <CoverPlaceholder label="Choose a cover image" height={120} />
+            )}
+          </Pressable>
+        </Field>
+
+        <View style={{ flexDirection: "row", gap: space.lg, marginTop: -space.md }}>
+          <Pressable onPress={() => void pickCover()} accessibilityRole="button">
+            <Text style={{ ...type.caption, color: t.color.accent }}>
+              {coverImage ? "Change picture" : "Choose a picture"}
+            </Text>
+          </Pressable>
+          {coverImage ? (
+            <Pressable
+              onPress={() => setCoverImage(null)}
+              accessibilityRole="button"
+            >
+              <Text style={{ ...type.caption, color: t.color.textMuted }}>
+                Remove
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+
 
         <Field
           label="What time zone are you on?"

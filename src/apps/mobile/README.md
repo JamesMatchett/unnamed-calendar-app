@@ -80,3 +80,11 @@ Two ways out, when web matters:
 
 Neither is urgent: v1's website is a thin acquisition surface (§13.9), not this
 app running in a browser.
+Starting project at /Users/jamesm/GitHub/unnamed-calendar-app/src/apps/mobile
+Expo Autolinking module resolution enabled
+Starting Metro Bundler
+
+warning: Bundler cache is empty, rebuilding (this may take a minute)
+Waiting on http://localhost:8081
+
+Logs for your project will appear below.

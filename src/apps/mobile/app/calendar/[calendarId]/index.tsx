@@ -293,7 +293,13 @@ function DaySection({
       ) : null}
 
       {events.map((e) => (
-        <EventRow key={e.event_id} event={e} members={members} rsvps={rsvps} />
+        <EventRow
+                  key={e.event_id}
+                  event={e}
+                  members={members}
+                  rsvps={rsvps}
+                  from="calendar"
+                />
       ))}
 
       {events.length === 0 ? (

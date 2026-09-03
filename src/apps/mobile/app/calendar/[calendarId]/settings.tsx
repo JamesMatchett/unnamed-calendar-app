@@ -7,8 +7,6 @@ import { Alert, Platform, Pressable, ScrollView, Text, View } from "react-native
 import type { TravelMode } from "@uca/core";
 import { zonedWallToUtc } from "@uca/core";
 
-import * as ImagePicker from "expo-image-picker";
-
 import { Cover, CoverPlaceholder } from "@/components/Cover";
 import { PersonRowItem } from "@/components/PersonRowItem";
 import { TripDatePicker } from "@/components/TripDatePicker";
@@ -36,6 +34,7 @@ import {
 } from "@/db/repo";
 import { CURRENT_USER_ID } from "@/db/seed";
 import { formatClock } from "@/lib/format";
+import { pickCoverImage } from "@/lib/pickImage";
 import { useQuery } from "@/lib/useQuery";
 import { radius, space, type, useTheme } from "@/theme";
 
@@ -302,24 +301,9 @@ function OwnerControls({
     listJoinRequests(calendarId),
   );
 
-  /**
-   * The picked image stays a local file URI. Uploading it somewhere is the
-   * server's job; the client's job is to remember which image was chosen.
-   */
   const pickCover = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsEditing: true,
-      aspect: [2, 1],
-      quality: 0.8,
-    });
-    const picked = result.assets?.[0]?.uri;
-    if (!result.canceled && picked) {
-      updateCalendar(calendarId, { coverImage: picked });
-    }
+    const picked = await pickCoverImage();
+    if (picked) updateCalendar(calendarId, { coverImage: picked });
   };
 
   const alreadyIn = new Set(members.map((m) => m.user_id));
@@ -358,11 +342,22 @@ function OwnerControls({
     <>
       <View style={{ gap: space.sm }}>
         <Text style={{ ...type.label, color: t.color.textMuted }}>Cover</Text>
-        {calendar.cover_image ? (
-          <Cover value={calendar.cover_image} height={120} />
-        ) : (
-          <CoverPlaceholder label="No cover yet" height={120} />
-        )}
+        {/* The frame itself is the button, the same as on the create screen:
+            a large obvious image that ignores taps sends people hunting for the
+            small link underneath. */}
+        <Pressable
+          onPress={() => void pickCover()}
+          accessibilityRole="button"
+          accessibilityLabel={
+            calendar.cover_image ? "Change the cover" : "Choose a cover image"
+          }
+        >
+          {calendar.cover_image ? (
+            <Cover value={calendar.cover_image} height={120} />
+          ) : (
+            <CoverPlaceholder label="Choose a cover image" height={120} />
+          )}
+        </Pressable>
         <View style={{ flexDirection: "row", gap: space.lg }}>
           <Pressable onPress={() => void pickCover()} accessibilityRole="button">
             <Text style={{ ...type.caption, color: t.color.accent }}>

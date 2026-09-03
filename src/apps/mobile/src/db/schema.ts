@@ -230,6 +230,32 @@ CREATE TABLE IF NOT EXISTS join_requests (
   PRIMARY KEY (calendar_id, user_id)
 );
 
+-- Proposed changes to an event, from someone who is not its owner (§8.1).
+-- Stored as the fields being changed rather than a whole event, so a diff is
+-- what the data IS rather than something reconstructed for display, and two
+-- suggestions touching different fields do not clobber one another.
+CREATE TABLE IF NOT EXISTS suggestions (
+  suggestion_id TEXT PRIMARY KEY NOT NULL,
+  event_id      TEXT NOT NULL,
+  calendar_id   TEXT NOT NULL,
+  suggested_by  TEXT NOT NULL,
+  suggested_by_name TEXT NOT NULL,
+  created_at    TEXT NOT NULL,
+  note          TEXT,
+  -- JSON object of field -> proposed value. Only the fields being changed.
+  changes       TEXT NOT NULL,
+  -- The event version the suggestion was written against, so an owner editing
+  -- underneath it can be spotted rather than silently overwritten.
+  base_version  INTEGER NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending','accepted','rejected')),
+  resolved_at   TEXT,
+  FOREIGN KEY (event_id) REFERENCES events(event_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_suggestions_event
+  ON suggestions (event_id, status);
+
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY NOT NULL,
   value TEXT NOT NULL

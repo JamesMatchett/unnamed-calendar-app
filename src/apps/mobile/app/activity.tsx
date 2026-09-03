@@ -108,6 +108,16 @@ function Row({ item }: { item: NotificationRow }) {
   const router = useRouter();
 
   const go = () => {
+    // A suggestion is a question, so it opens the answer screen rather than the
+    // calendar it happened in.
+    if (item.kind === "suggestion_received" && item.event_id) {
+      router.push({
+        pathname: "/suggestion",
+        params: { eventId: item.event_id },
+      });
+      return;
+    }
+
     if (item.calendar_id) {
       router.push({
         pathname: "/calendar/[calendarId]",

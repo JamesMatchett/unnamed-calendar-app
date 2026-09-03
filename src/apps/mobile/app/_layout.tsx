@@ -40,6 +40,8 @@ export default function RootLayout() {
           options={{ headerShown: false, title: "Home" }}
         />
         <Stack.Screen name="people" options={{ presentation: "modal" }} />
+        <Stack.Screen name="settings" options={{ presentation: "modal" }} />
+        <Stack.Screen name="suggestion" options={{ presentation: "modal" }} />
         <Stack.Screen name="activity" options={{ presentation: "modal" }} />
         <Stack.Screen name="friends" options={{ presentation: "modal" }} />
         <Stack.Screen name="calendar/new" options={{ presentation: "modal" }} />
@@ -50,6 +52,13 @@ export default function RootLayout() {
         <Stack.Screen
           name="calendar/[calendarId]/invite"
           options={{ presentation: "modal" }}
+        />
+        {/* Registered here, not only via <Stack.Screen> inside the screen:
+            an unregistered route keeps the file path as its header title,
+            which is what "calendar/[calendarId]/settings" across the top was. */}
+        <Stack.Screen
+          name="calendar/[calendarId]/settings"
+          options={{ title: "Calendar settings" }}
         />
         {/* Where universal links land: uca.app/join/<token> (§7.1). */}
         <Stack.Screen name="join/[token]" options={{ presentation: "modal" }} />

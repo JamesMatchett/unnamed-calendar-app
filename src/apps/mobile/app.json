@@ -22,10 +22,19 @@
     },
     "plugins": [
       "expo-router",
-      "expo-screen-orientation"
+      "expo-screen-orientation",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "UCA uses your photos so you can put a cover picture on a calendar.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "//plugins.expo-image-picker": "Without this the Info.plist has no NSPhotoLibraryUsageDescription, so iOS shows no Photos row for the app in Settings and a real build crashes on the first request."
   }
 }

@@ -9,6 +9,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
+    "reseed": "node scripts/reseed.mjs",
     "build:core": "cd ../../packages/core && npm run build"
   },
   "dependencies": {

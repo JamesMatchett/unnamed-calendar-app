@@ -20,3 +20,4 @@ export * from "./presence.js";
 export * from "./zones.js";
 export * from "./parse.js";
 export * from "./sync.js";
+export * from "./gestures.js";

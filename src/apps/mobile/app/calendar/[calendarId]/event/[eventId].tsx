@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import type { RsvpStatus, TicketStatus } from "@uca/core";
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Link, Stack, useLocalSearchParams } from "expo-router";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 
 import { Cover } from "@/components/Cover";
@@ -35,9 +35,10 @@ const OCCURRENCE = "-";
  */
 export default function EventScreen() {
   const t = useTheme();
-  const { calendarId, eventId } = useLocalSearchParams<{
+  const { calendarId, eventId, from } = useLocalSearchParams<{
     calendarId: string;
     eventId: string;
+    from?: string;
   }>();
 
   const event = useQuery(`event:${eventId}`, () => getEvent(eventId));
@@ -73,7 +74,9 @@ export default function EventScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "" }} />
+      {/* The calendar's name in the header, so the event is placed before you
+          have read a word of it. */}
+      <Stack.Screen options={{ title: calendar?.name ?? "" }} />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg }}>
         <Cover value={event.image_key} height={140} />
 
@@ -107,6 +110,52 @@ export default function EventScreen() {
             <Muted>Times shown in {event.tz}</Muted>
           ) : null}
         </View>
+
+        {/* Reached from the agenda, an event arrives with no context about where
+            it came from: the same five-a-side means something different in a
+            London calendar than in a stag weekend. Naming the calendar and
+            making it a way in beats making people go back and hunt for it.
+            Arriving FROM that calendar, the link is a journey already made, so
+            the caller says so and it is dropped. */}
+        {calendar && from !== "calendar" ? (
+          <Link
+            href={{
+              pathname: "/calendar/[calendarId]",
+              params: { calendarId },
+            }}
+            asChild
+          >
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel={`Go to ${calendar.name}`}
+            >
+              <Card
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: space.md,
+                }}
+              >
+                <Ionicons
+                  name="calendar-outline"
+                  size={20}
+                  color={t.color.accent}
+                />
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={{ ...type.label, color: t.color.text }}>
+                    {calendar.name}
+                  </Text>
+                  <Muted>Go to this calendar</Muted>
+                </View>
+                <Ionicons
+                  name="chevron-forward"
+                  size={17}
+                  color={t.color.textMuted}
+                />
+              </Card>
+            </Pressable>
+          </Link>
+        ) : null}
 
         {event.description ? (
           <Text style={{ ...type.body, color: t.color.text }}>{event.description}</Text>

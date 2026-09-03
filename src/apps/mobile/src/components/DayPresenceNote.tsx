@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import type { DayPresence, TravelMode } from "@uca/core";
-import { sharedTravelMode } from "@uca/core";
+import { groupByTravelMode } from "@uca/core";
 import { Text, View } from "react-native";
 
 import { TRAVEL_ICON } from "@/components/TravelMode";
@@ -53,28 +53,55 @@ export function DayPresenceNote({
       .join(", ");
   };
 
-  const parts = [
-    phrase(arriving, arriving.length === 1 ? "arrives" : "arrive", "arrivesAt"),
-    phrase(leaving, leaving.length === 1 ? "leaves" : "leave", "departsAt"),
-  ].filter(Boolean);
+  /**
+   * One line per way of travelling, when they differ.
+   *
+   * "James @ 12:00, Priya @ 12:00, Luke @ 21:00" behind a single aeroplane is
+   * wrong twice over: Priya is on a train, and the line implies one departure
+   * that people are variously part of. Splitting keeps each icon honest and
+   * puts the earliest group first, so the day still reads in order.
+   */
+  const lines: { key: string; icon: TravelMode; text: string }[] = [];
+
+  if (arriving.length > 0) {
+    for (const group of groupByTravelMode(arriving, travelMode, "arrivesAt")) {
+      const text = phrase(
+        group.people,
+        group.people.length === 1 ? "arrives" : "arrive",
+        "arrivesAt",
+      );
+      if (text) lines.push({ key: `in:${group.mode}`, icon: group.mode, text });
+    }
+  }
+
+  if (leaving.length > 0) {
+    for (const group of groupByTravelMode(leaving, travelMode, "departsAt")) {
+      const text = phrase(
+        group.people,
+        group.people.length === 1 ? "leaves" : "leave",
+        "departsAt",
+      );
+      if (text) lines.push({ key: `out:${group.mode}`, icon: group.mode, text });
+    }
+  }
 
   return (
-    <View
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        gap: space.sm,
-        paddingVertical: space.xs,
-      }}
-    >
-      <Ionicons
-        name={TRAVEL_ICON[sharedTravelMode([...arriving, ...leaving], travelMode)]}
-        size={14}
-        color={t.color.accent}
-      />
-      <Text style={{ ...type.caption, color: t.color.accent, flex: 1 }}>
-        {parts.join(" · ")}
-      </Text>
+    <View style={{ gap: 2, paddingVertical: space.xs }}>
+      {lines.map((line) => (
+        <View
+          key={line.key}
+          style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}
+        >
+          <Ionicons
+            name={TRAVEL_ICON[line.icon]}
+            size={14}
+            color={t.color.accent}
+          />
+          <Text style={{ ...type.caption, color: t.color.accent, flex: 1 }}>
+            {line.text}
+          </Text>
+        </View>
+      ))}
     </View>
   );
 }

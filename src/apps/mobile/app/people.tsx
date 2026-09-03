@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Share, Text, View } from "react-native";
 
 import { PersonRowItem } from "@/components/PersonRowItem";
 import { SearchBar } from "@/components/SearchBar";
@@ -48,9 +48,41 @@ export default function PeopleScreen() {
 
   const answered = history.filter((n) => n.kind !== "invite_pending");
 
+  /**
+   * The OS share sheet rather than an in-app invite form: the person being
+   * invited is not in UCA, so the only way to reach them is whatever the two of
+   * them already use. Anything we built here would be a worse WhatsApp.
+   */
+  const inviteToApp = async () => {
+    try {
+      await Share.share({
+        message:
+          "Come and plan things with me on UCA: https://uca.app/get",
+      });
+    } catch {
+      // Dismissing the sheet is not a failure, and there is nothing useful to
+      // say about one that will not open.
+    }
+  };
+
   return (
     <>
-      <Stack.Screen options={{ title: "People", presentation: "modal" }} />
+      <Stack.Screen
+        options={{
+          title: "People",
+          presentation: "modal",
+          headerRight: () => (
+            <Pressable
+              onPress={() => router.push("/settings")}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Settings"
+            >
+              <Ionicons name="settings-outline" size={22} color={t.color.text} />
+            </Pressable>
+          ),
+        }}
+      />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.xl }}>
         <View style={{ gap: space.sm }}>
           <Text style={{ ...type.label, color: t.color.textMuted }}>
@@ -121,10 +153,39 @@ export default function PeopleScreen() {
             placeholder="Search @handle, name or email"
           />
 
+          {/* Search only finds people who are already here, so a search that
+              fails is the moment someone learns their friend is not. Offering
+              the invite right there turns a dead end into the next step, and
+              keeping it visible the rest of the time means nobody has to search
+              for a person they know is missing to find it. */}
+          <Pressable
+            onPress={() => void inviteToApp()}
+            accessibilityRole="button"
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: space.sm,
+              paddingVertical: space.xs,
+            }}
+          >
+            <Ionicons name="person-add-outline" size={15} color={t.color.accent} />
+            <Text style={{ ...type.caption, color: t.color.accent }}>
+              Invite someone to the app
+            </Text>
+          </Pressable>
+
           {searching ? (
             results.length === 0 ? (
-              <Card>
+              <Card style={{ gap: space.sm }}>
                 <Muted>Nobody matching "{query.trim()}".</Muted>
+                <Pressable
+                  onPress={() => void inviteToApp()}
+                  accessibilityRole="button"
+                >
+                  <Text style={{ ...type.label, color: t.color.accent }}>
+                    Invite them to UCA
+                  </Text>
+                </Pressable>
               </Card>
             ) : (
               <Card style={{ gap: space.lg }}>

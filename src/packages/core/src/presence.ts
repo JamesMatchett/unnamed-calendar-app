@@ -114,3 +114,62 @@ export function sharedTravelMode(
   const [only] = [...modes];
   return only ?? fallback;
 }
+
+export interface TravelGroup {
+  readonly mode: TravelMode;
+  readonly people: readonly PresenceInput[];
+  /** The earliest time in this group, or null when nobody has given one. */
+  readonly earliest: Instant | null;
+}
+
+/**
+ * Split a set of movements into one group per mode of transport.
+ *
+ * People leaving a trip do not leave together: three drive off after lunch, two
+ * catch an evening flight. One line reading "5 leave" with a single icon is a
+ * summary of nothing anyone can act on, whereas "the car goes at 14:00, the
+ * flight at 19:40" is the actual shape of the day.
+ *
+ * Ordering is by time throughout: people within a group by their own time, and
+ * the groups themselves by their earliest person, so reading down the rows is
+ * reading the day in order. A group where nobody has given a time sorts last —
+ * it cannot be placed, and guessing a position for it would be a lie.
+ *
+ * `fallback` is the calendar's mode, which covers everyone who has not chosen:
+ * not having chosen means following the group, so if the organiser changes the
+ * calendar's mode, those people move with it (§4.3).
+ */
+export function groupByTravelMode(
+  people: readonly PresenceInput[],
+  fallback: TravelMode,
+  field: "arrivesAt" | "departsAt",
+): TravelGroup[] {
+  const byMode = new Map<TravelMode, PresenceInput[]>();
+
+  for (const person of people) {
+    const mode = person.travelMode ?? fallback;
+    const bucket = byMode.get(mode);
+    if (bucket) bucket.push(person);
+    else byMode.set(mode, [person]);
+  }
+
+  const groups: TravelGroup[] = [];
+  for (const [mode, members] of byMode) {
+    const sorted = [...members].sort((a, b) => compareTimes(a[field], b[field]));
+    groups.push({
+      mode,
+      people: sorted,
+      earliest: sorted[0]?.[field] ?? null,
+    });
+  }
+
+  return groups.sort((a, b) => compareTimes(a.earliest, b.earliest));
+}
+
+/** Missing times sort last rather than first, where they would misread as "earliest". */
+function compareTimes(a: Instant | null | undefined, b: Instant | null | undefined): number {
+  if (!a && !b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+  return a < b ? -1 : a > b ? 1 : 0;
+}

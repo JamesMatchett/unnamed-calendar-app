@@ -99,6 +99,12 @@ this app in a browser.
 4. **Group size ceiling** — above roughly 500 members, "one query returns the whole calendar"
    needs pagination (§13.5).
 5. **The name.**
+6. **The app-invite link is a placeholder.** "Invite someone to the app" on the People screen
+   shares `https://uca.app/get`, which does not exist. It needs a real landing page that
+   detects the platform and sends people to the right store, and ideally carries the
+   inviter's id so the two are connected once the invited person signs up. Until then the
+   share works and the link does not, which is worse than no button on the day someone
+   actually uses it.
 
 ## Conventions
 

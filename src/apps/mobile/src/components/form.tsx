@@ -200,12 +200,21 @@ export function PrimaryButton({
   label,
   onPress,
   disabled,
+  variant = "solid",
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
+  /**
+   * "ghost" is for the second of a pair, where both options are legitimate and
+   * one is not a cancel: turning a suggestion down is an answer, so it gets a
+   * real button rather than a link tucked under the primary one.
+   */
+  variant?: "solid" | "ghost";
 }) {
   const t = useTheme();
+  const ghost = variant === "ghost";
+
   return (
     <Pressable
       onPress={onPress}
@@ -216,14 +225,24 @@ export function PrimaryButton({
         alignItems: "center",
         paddingVertical: space.lg - 2,
         borderRadius: radius.pill,
-        backgroundColor: disabled ? t.color.surfaceAlt : t.color.accent,
+        borderWidth: ghost ? 1 : 0,
+        borderColor: t.color.border,
+        backgroundColor: disabled
+          ? t.color.surfaceAlt
+          : ghost
+            ? t.color.surface
+            : t.color.accent,
       }}
     >
       <Text
         style={{
           ...type.label,
           fontSize: 16,
-          color: disabled ? t.color.textMuted : "#fff",
+          color: disabled
+            ? t.color.textMuted
+            : ghost
+              ? t.color.text
+              : "#fff",
         }}
       >
         {label}

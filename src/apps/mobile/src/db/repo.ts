@@ -1175,3 +1175,290 @@ export function answerJoinRequest(
 
   notifyChanged();
 }
+
+// --- app preferences -------------------------------------------------------
+
+/**
+ * Device-local display preferences, kept in the meta key/value table.
+ *
+ * These are not calendar state and never sync: they describe how THIS device
+ * draws things. Defaults are expressed at the read site so a missing row means
+ * "the default", which is what an upgrade from an older install looks like.
+ */
+export function getBoolPref(key: string, fallback: boolean): boolean {
+  const db = getDb();
+  const row = db.getFirstSync<{ value: string }>(
+    "SELECT value FROM meta WHERE key = ?",
+    [`pref:${key}`],
+  );
+  if (!row) return fallback;
+  return row.value === "1";
+}
+
+export function setBoolPref(key: string, value: boolean): void {
+  const db = getDb();
+  db.runSync("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", [
+    `pref:${key}`,
+    value ? "1" : "0",
+  ]);
+  notifyChanged();
+}
+
+/** Countdown beside each agenda day heading. On unless turned off. */
+export const showCountdown = (): boolean => getBoolPref("countdown", true);
+
+/**
+ * Everything I am part of between two instants, in start order.
+ *
+ * The week and month views need PAST days too (a month grid that starts empty
+ * until today would be a lie), so unlike listAgenda this is not anchored to now.
+ */
+export function listAgendaBetween(
+  fromUtc: string,
+  toUtc: string,
+): (EventRow & { calendar_name: string })[] {
+  return getDb().getAllSync<EventRow & { calendar_name: string }>(
+    `SELECT e.*, c.name AS calendar_name
+       FROM events e
+       JOIN calendars c ON c.calendar_id = e.calendar_id
+       JOIN members m ON m.calendar_id = e.calendar_id AND m.user_id = ?
+      WHERE m.status = 'active' AND e.start_utc >= ? AND e.start_utc < ?
+      ORDER BY e.start_utc`,
+    [CURRENT_USER_ID, fromUtc, toUtc],
+  );
+}
+
+export interface DayRsvpCounts {
+  going: number;
+  maybe: number;
+  not_going: number;
+  none: number;
+  /** Called off. Counted separately: my answer to it is no longer the point. */
+  cancelled: number;
+}
+
+/**
+ * My answer for every event in a range, tallied per day.
+ *
+ * The week view needs shape, not detail: how many things are on a day and how I
+ * stand on them. Doing it in one query keeps a week of dots to a single read
+ * rather than one per event, which matters because the strip redraws on every
+ * RSVP.
+ *
+ * Occurrence is the series default, matching EventRow: recurring events get
+ * per-occurrence answers when the series editor lands (§5.5).
+ */
+export function rsvpCountsByDay(
+  fromUtc: string,
+  toUtc: string,
+): Record<string, DayRsvpCounts> {
+  const rows = getDb().getAllSync<{
+    start_utc: string;
+    event_status: string;
+    status: string | null;
+  }>(
+    `SELECT e.start_utc AS start_utc, e.status AS event_status, r.status AS status
+       FROM events e
+       JOIN members m ON m.calendar_id = e.calendar_id AND m.user_id = ?
+       LEFT JOIN rsvps r
+         ON r.event_id = e.event_id AND r.user_id = ? AND r.occurrence = ?
+      WHERE m.status = 'active'
+        AND e.start_utc >= ? AND e.start_utc < ?`,
+    [CURRENT_USER_ID, CURRENT_USER_ID, SERIES_DEFAULT, fromUtc, toUtc],
+  );
+
+  // A plain object, NOT a Map: useQuery compares snapshots by JSON, and every
+  // Map serialises to "{}", so a Map here would silently never refresh after an
+  // RSVP. Same trap for Set.
+  const byDay: Record<string, DayRsvpCounts> = {};
+  for (const row of rows) {
+    const key = row.start_utc.slice(0, 10);
+    const counts = (byDay[key] ??= {
+      going: 0,
+      maybe: 0,
+      not_going: 0,
+      none: 0,
+      cancelled: 0,
+    });
+    if (row.event_status === "cancelled") counts.cancelled += 1;
+    else if (row.status === "going") counts.going += 1;
+    else if (row.status === "maybe") counts.maybe += 1;
+    else if (row.status === "not_going") counts.not_going += 1;
+    else counts.none += 1;
+  }
+  return byDay;
+}
+
+/**
+ * Calendars I am allowed to add an event to.
+ *
+ * Owners always can; members only where the owner left it open (§8.1). Doing the
+ * filter here rather than in the picker means the Add button on the agenda can
+ * never offer a destination that would then reject the event.
+ */
+export function listCalendarsICanPostTo(): (CalendarRow & {
+  my_role: "owner" | "member";
+})[] {
+  return listCalendars().filter(
+    (c) => c.my_role === "owner" || c.allow_member_events === 1,
+  );
+}
+
+// --- suggestions (§8.1) ----------------------------------------------------
+
+export interface EventSuggestionRow {
+  suggestion_id: string;
+  event_id: string;
+  calendar_id: string;
+  suggested_by: string;
+  suggested_by_name: string;
+  created_at: string;
+  note: string | null;
+  changes: string;
+  base_version: number;
+  status: "pending" | "accepted" | "rejected";
+  resolved_at: string | null;
+}
+
+/** Only the fields a suggestion is allowed to touch. */
+export type SuggestedChanges = Partial<{
+  title: string;
+  description: string | null;
+  start_utc: string;
+  end_utc: string | null;
+  location_name: string | null;
+  location_address: string | null;
+}>;
+
+export const SUGGESTABLE_FIELDS = [
+  "title",
+  "start_utc",
+  "end_utc",
+  "location_name",
+  "location_address",
+  "description",
+] as const;
+
+export function getSuggestion(suggestionId: string): EventSuggestionRow | null {
+  return getDb().getFirstSync<EventSuggestionRow>(
+    "SELECT * FROM suggestions WHERE suggestion_id = ?",
+    [suggestionId],
+  );
+}
+
+/**
+ * The open suggestion on an event, if there is one.
+ *
+ * A notification names an event rather than a suggestion, because the inbox is
+ * written by the stream fan-out and the suggestion may have been withdrawn by
+ * the time it is opened. Resolving it here means a stale tap lands on "nothing
+ * to answer" rather than a missing row.
+ */
+export function pendingSuggestionForEvent(
+  eventId: string,
+): EventSuggestionRow | null {
+  return getDb().getFirstSync<EventSuggestionRow>(
+    `SELECT * FROM suggestions
+      WHERE event_id = ? AND status = 'pending'
+      ORDER BY created_at
+      LIMIT 1`,
+    [eventId],
+  );
+}
+
+export function parseChanges(row: EventSuggestionRow): SuggestedChanges {
+  try {
+    const parsed: unknown = JSON.parse(row.changes);
+    if (parsed && typeof parsed === "object") return parsed as SuggestedChanges;
+  } catch {
+    // A suggestion whose payload will not parse is not worth crashing a screen
+    // over: it renders as "no changes" and can still be dismissed.
+  }
+  return {};
+}
+
+/**
+ * Accept or reject, in one transaction.
+ *
+ * Accepting writes ONLY the fields the suggestion carries, so an owner's own
+ * edits to other fields survive. The event version moves either way it is
+ * touched, which is what the sync layer will use to order this against
+ * concurrent edits (§5.3).
+ */
+export function resolveSuggestion(
+  suggestionId: string,
+  approve: boolean,
+): void {
+  const db = getDb();
+  const suggestion = getSuggestion(suggestionId);
+  if (!suggestion || suggestion.status !== "pending") return;
+
+  const changes = parseChanges(suggestion);
+  const now = new Date().toISOString();
+
+  db.withTransactionSync(() => {
+    if (approve) {
+      const fields = SUGGESTABLE_FIELDS.filter((f) => f in changes);
+      if (fields.length > 0) {
+        const sets = fields.map((f) => `${f} = ?`);
+        const values = fields.map((f) => changes[f] ?? null);
+
+        // local_wall is derived, not suggested: letting it drift from start_utc
+        // would show one time in the list and another on the event (§5.5).
+        if ("start_utc" in changes && changes.start_utc) {
+          sets.push("local_wall = ?");
+          values.push(changes.start_utc.slice(0, 19));
+        }
+
+        db.runSync(
+          `UPDATE events SET ${sets.join(", ")}, version = version + 1,
+             sync_state = 'pending'
+           WHERE event_id = ?`,
+          [...values, suggestion.event_id],
+        );
+      }
+    }
+
+    db.runSync(
+      "UPDATE suggestions SET status = ?, resolved_at = ? WHERE suggestion_id = ?",
+      [approve ? "accepted" : "rejected", now, suggestionId],
+    );
+
+    // The person who suggested it hears back either way. Silence on a rejected
+    // suggestion reads as the app having eaten it (§8.1).
+    const event = db.getFirstSync<{ title: string }>(
+      "SELECT title FROM events WHERE event_id = ?",
+      [suggestion.event_id],
+    );
+    const calendar = db.getFirstSync<{ name: string }>(
+      "SELECT name FROM calendars WHERE calendar_id = ?",
+      [suggestion.calendar_id],
+    );
+
+    db.runSync(
+      `INSERT INTO notifications (notification_id, kind, created_at, read_at,
+         calendar_id, calendar_name, event_id, event_title, actor_id, actor_name)
+       VALUES (?,?,?,NULL,?,?,?,?,?,?)`,
+      [
+        ulid(),
+        approve ? "suggestion_accepted" : "suggestion_rejected",
+        now,
+        suggestion.calendar_id,
+        calendar?.name ?? null,
+        suggestion.event_id,
+        event?.title ?? null,
+        suggestion.suggested_by,
+        suggestion.suggested_by_name,
+      ],
+    );
+
+    // The prompt that brought me here has been answered.
+    db.runSync(
+      `UPDATE notifications SET read_at = ?
+        WHERE kind = 'suggestion_received' AND event_id = ? AND read_at IS NULL`,
+      [now, suggestion.event_id],
+    );
+  });
+
+  notifyChanged();
+}

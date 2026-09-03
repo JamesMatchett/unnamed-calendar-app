@@ -3,7 +3,7 @@ import type { DayPresence, PresenceInput, TravelMode } from "@uca/core";
 import { useState } from "react";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 
-import { sharedTravelMode } from "@uca/core";
+import { groupByTravelMode, sharedTravelMode } from "@uca/core";
 
 import { TRAVEL_ICON } from "@/components/TravelMode";
 import { formatClock } from "@/lib/format";
@@ -38,6 +38,24 @@ const GROUPS: {
   { key: "alreadyGone", label: "Already left", icon: "log-out-outline", tone: "away" },
   { key: "unknown", label: "Haven't said", icon: "help-circle-outline", tone: "away" },
 ];
+
+interface Row {
+  id: string;
+  /** Which presence group this came from, so times and icons read correctly. */
+  key: GroupKey;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  tone: "here" | "moving" | "away";
+  people: readonly PresenceInput[];
+}
+
+const LEAVING_LABEL: Record<TravelMode, string> = {
+  plane: "Flying out",
+  train: "Leaving by train",
+  car: "Driving off",
+  boat: "Leaving by boat",
+  walk: "Leaving on foot",
+};
 
 /**
  * Roughly how many characters fit, from the measured width. A per-character
@@ -77,7 +95,31 @@ export function PresenceStrip({
     key: GroupKey;
   } | null>(null);
 
-  const groups = GROUPS.filter((g) => presence[g.key].length > 0);
+  const groups = GROUPS.filter((g) => presence[g.key].length > 0).flatMap(
+    (g): Row[] => {
+      const people = presence[g.key];
+
+      // Departures split by how people are going. Three drive off after lunch
+      // and two catch an evening flight: one line reading "5 leave" summarises
+      // that into something nobody can act on. Only worth splitting when the
+      // modes actually differ, otherwise it is the same row with a longer name.
+      if (g.key === "leavingToday") {
+        const byMode = groupByTravelMode(people, travelMode, "departsAt");
+        if (byMode.length > 1) {
+          return byMode.map((m) => ({
+            id: `leaving:${m.mode}`,
+            key: g.key,
+            label: LEAVING_LABEL[m.mode],
+            icon: TRAVEL_ICON[m.mode],
+            tone: g.tone,
+            people: m.people,
+          }));
+        }
+      }
+
+      return [{ id: g.key, key: g.key, label: g.label, icon: g.icon, tone: g.tone, people }];
+    },
+  );
   if (groups.length === 0) return null;
 
   const colour = (tone: string) =>
@@ -87,22 +129,23 @@ export function PresenceStrip({
     <>
       <Card style={{ gap: space.md }}>
         {groups.map((g) => {
-          const people = presence[g.key];
+          const people = g.people;
           const names = people.map((p) => describe(p, g.key, tz)).join(", ");
           const budget = valueWidth > 0 ? Math.floor(valueWidth / CHAR_WIDTH) : 0;
           const fits = budget > 0 && names.length <= budget;
 
           return (
             <View
-              key={g.key}
+              key={g.id}
               style={{ flexDirection: "row", alignItems: "center", gap: space.md }}
             >
               <Ionicons
                 name={
                   // Coming and going take a travel icon; being here or not is
-                  // not a mode of transport. The row shows the group's shared
-                  // mode, falling back to the calendar's when they differ.
-                  g.key === "arrivingToday" || g.key === "leavingToday"
+                  // not a mode of transport. A split departure row already
+                  // carries its own mode's icon, so only the unsplit rows need
+                  // the shared-mode fallback.
+                  g.id === "arrivingToday" || g.id === "leavingToday"
                     ? TRAVEL_ICON[sharedTravelMode(people, travelMode)]
                     : g.icon
                 }

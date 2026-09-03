@@ -4,7 +4,16 @@
  * a bounded trip and a continuous city calendar.
  */
 
+import type { TravelMode } from "@uca/core";
 import type * as SQLite from "expo-sqlite";
+
+/**
+ * Bumped by `npm run reseed`, which rewrites the line below with the current
+ * time. Fixture dates are relative to WHEN THEY WERE SEEDED, so a database from
+ * last month shows a trip that has already happened; changing this makes the app
+ * drop the fixtures and rebuild them starting from today.
+ */
+export const FIXTURE_EPOCH = "2026-09-03T00:45:52.000Z";
 
 /** Stands in for the signed-in user until Cognito exists (§3.2). */
 export const CURRENT_USER_ID = "01JC0USERJAMES0000000000";
@@ -24,24 +33,297 @@ const isoDate = (offset: number): string => day(offset, 12).slice(0, 10);
  * they get new empty tables and assume the feature is broken.
  */
 export function seedIfEmpty(db: SQLite.SQLiteDatabase): void {
+  ensureOwnPlans(db);
   seedCalendars(db);
   seedInbox(db);
   seedPeople(db);
   seedJoinable(db);
   seedJoinRequest(db);
   seedPrivate(db);
+  seedSuggestion(db);
+  seedCancelled(db);
+  seedBusyDay(db);
+  seedThisWeek(db);
 }
 
-/** One of each private case: a solo calendar and a two-person one. */
-function seedPrivate(db: SQLite.SQLiteDatabase): void {
+
+/** The id every account's own private calendar gets, until real user ids exist. */
+export const OWN_PLANS_ID = "01JC0CALSOLO000000000000";
+
+/**
+ * Everyone starts with somewhere private to put things.
+ *
+ * This is NOT a fixture: it is the app's behaviour, and the API will do the same
+ * on sign-up (§8.1). An empty Calendars tab gives a new user nowhere to add an
+ * event to, so the first thing they can do is nothing. It is created here, guarded
+ * on its own existence, so it survives a fixture reset and a user who deletes
+ * every other calendar.
+ */
+function ensureOwnPlans(db: SQLite.SQLiteDatabase): void {
   const exists = db.getFirstSync<{ n: number }>(
-    "SELECT COUNT(*) AS n FROM calendars WHERE is_private = 1",
+    "SELECT COUNT(*) AS n FROM calendars WHERE calendar_id = ?",
+    [OWN_PLANS_ID],
+  );
+  if ((exists?.n ?? 0) > 0) return;
+
+  db.withTransactionSync(() => {
+    db.runSync(
+      `INSERT INTO calendars (calendar_id, name, description, mode, default_tz,
+         collect_availability, travel_mode, require_approval, allow_member_invites,
+         allow_member_events, is_private, status, created_by, created_at, last_seq)
+       VALUES (?, 'My own plans', 'Things only I would say yes to.', 'continuous',
+               'Europe/London', 0, 'walk', 1, 0, 1, 1, 'active', ?, ?, 0)`,
+      [OWN_PLANS_ID, CURRENT_USER_ID, new Date().toISOString()],
+    );
+    db.runSync(
+      `INSERT INTO members (calendar_id, user_id, role, status, display_name, joined_at)
+       VALUES (?,?, 'owner', 'active', 'James', ?)`,
+      [OWN_PLANS_ID, CURRENT_USER_ID, new Date().toISOString()],
+    );
+  });
+}
+
+/**
+ * Something on every day of the current week.
+ *
+ * The other fixtures are shaped around particular cases (a trip, a busy day, a
+ * cancellation) and between them they leave most of this week empty, which makes
+ * the week strip and its dots look broken rather than quiet. This fills the gaps
+ * with ordinary weeknight plans, spread across the answers so every dot colour
+ * appears somewhere in the first seven days.
+ *
+ * Dev fixtures only. Guarded on its own ids, so `npm run reseed` rebuilds it
+ * relative to whatever "today" is then.
+ */
+function seedThisWeek(db: SQLite.SQLiteDatabase): void {
+  const exists = db.getFirstSync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM events WHERE event_id LIKE '01JC0EVTWEEK%'",
+  );
+  if ((exists?.n ?? 0) > 0) return;
+
+  const london = db.getFirstSync<{ calendar_id: string }>(
+    "SELECT calendar_id FROM calendars WHERE calendar_id = ?",
+    ["01JC0CALLONDON0000000000"],
+  );
+  if (!london) return;
+
+  const solo = OWN_PLANS_ID;
+
+  // offset, hour, title, where, calendar, my answer, who added it
+  const plan: [number, number, string, string, string, string | null, string][] = [
+    [0, 8, "Gym before work", "Rowans", solo, "going", CURRENT_USER_ID],
+    [0, 19, "Dinner at Brat", "Brat, Shoreditch", london.calendar_id, "going", "01JC0USERPRIYA0000000000"],
+    [0, 21, "Late film at the Rio", "Rio Cinema", london.calendar_id, null, "01JC0USERLUKE00000000000"],
+    [1, 13, "Lunch with Glenn", "Rochelle Canteen", london.calendar_id, "going", "01JC0USERGLENN0000000000"],
+    [1, 20, "Board games at Luke's", "Luke's flat", london.calendar_id, "maybe", "01JC0USERLUKE00000000000"],
+    [2, 11, "Broadway Market", "Broadway Market", london.calendar_id, null, "01JC0USERPRIYA0000000000"],
+    [2, 18, "Priya's birthday drinks", "The Culpeper", london.calendar_id, "going", "01JC0USERPRIYA0000000000"],
+    [3, 10, "Long run", "Victoria Park", solo, "going", CURRENT_USER_ID],
+    [3, 16, "Roast at the Anchor", "The Anchor", london.calendar_id, "not_going", "01JC0USERGLENN0000000000"],
+    [4, 9, "Dentist", "Hoxton Dental", solo, "going", CURRENT_USER_ID],
+    [4, 19, "Pub quiz", "The Sebright Arms", london.calendar_id, "maybe", "01JC0USERLUKE00000000000"],
+    [5, 18, "Climbing at the Castle", "Castle Climbing Centre", london.calendar_id, null, "01JC0USERLUKE00000000000"],
+    [6, 12, "Sunday lunch with Mum", "Hers", solo, "going", CURRENT_USER_ID],
+  ];
+
+  db.withTransactionSync(() => {
+    plan.forEach(([offset, hour, title, place, calendarId, answer, by], i) => {
+      const id = `01JC0EVTWEEK${String(i).padStart(12, "0")}`;
+      const start = day(offset, hour, 0);
+
+      db.runSync(
+        `INSERT INTO events (event_id, calendar_id, title, description, start_utc, end_utc,
+           tz, local_wall, precision, location_name, location_address, tickets_required,
+           ticket_url, allow_suggestions, status, created_by, created_at, version, rrule, image_key, sync_state)
+         VALUES (?,?,?,NULL,?,?, 'Europe/London', ?, 'datetime', ?, NULL, 0, NULL, 1,
+                 'active', ?, ?, 1, NULL, NULL, 'synced')`,
+        [
+          id,
+          calendarId,
+          title,
+          start,
+          day(offset, hour + 2, 0),
+          start.slice(0, 19),
+          place,
+          by,
+          day(-7, 9),
+        ],
+      );
+
+      if (answer) {
+        db.runSync(
+          `INSERT INTO rsvps (event_id, occurrence, user_id, calendar_id, status, responded_at, sync_state)
+           VALUES (?, '-', ?, ?, ?, ?, 'synced')`,
+          [id, CURRENT_USER_ID, calendarId, answer, day(-1, 9)],
+        );
+      }
+    });
+  });
+}
+
+/**
+ * A deliberately overloaded day, so the collapsed "3+" marker on the week strip
+ * and the month grid has something to collapse. Six events across one Saturday,
+ * spread over the answers, because the interesting case is not "busy" but "busy
+ * in four different states at once".
+ */
+function seedBusyDay(db: SQLite.SQLiteDatabase): void {
+  const exists = db.getFirstSync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM events WHERE event_id LIKE '01JC0EVTBUSY%'",
+  );
+  if ((exists?.n ?? 0) > 0) return;
+
+  const calendar = db.getFirstSync<{ calendar_id: string }>(
+    "SELECT calendar_id FROM calendars WHERE calendar_id = ?",
+    ["01JC0CALLONDON0000000000"],
+  );
+  if (!calendar) return;
+
+  // Far enough out that it never lands in the past, close enough to be inside
+  // the first week the agenda shows.
+  const OFFSET = 6;
+
+  const plan: [id: string, title: string, hour: number, place: string, answer: string | null][] = [
+    ["01JC0EVTBUSY1000000000000", "Coffee at Ozone", 9, "Ozone Coffee", "going"],
+    ["01JC0EVTBUSY2000000000000", "Columbia Road flowers", 11, "Columbia Road", "going"],
+    ["01JC0EVTBUSY3000000000000", "Lunch at Smoking Goat", 13, "Smoking Goat", "going"],
+    ["01JC0EVTBUSY4000000000000", "Tate Modern, Turbine Hall", 15, "Tate Modern", "maybe"],
+    ["01JC0EVTBUSY5000000000000", "Drinks at Satan's Whiskers", 19, "Satan's Whiskers", null],
+    ["01JC0EVTBUSY6000000000000", "Late set at Corsica Studios", 23, "Corsica Studios", "not_going"],
+  ];
+
+  db.withTransactionSync(() => {
+    for (const [id, title, hour, place, answer] of plan) {
+      const start = day(OFFSET, hour, 0);
+      db.runSync(
+        `INSERT INTO events (event_id, calendar_id, title, description, start_utc, end_utc,
+           tz, local_wall, precision, location_name, location_address, tickets_required,
+           ticket_url, allow_suggestions, status, created_by, created_at, version, rrule, image_key, sync_state)
+         VALUES (?,?,?,NULL,?,?, 'Europe/London', ?, 'datetime', ?, NULL, 0, NULL, 1,
+                 'active', ?, ?, 1, NULL, NULL, 'synced')`,
+        [
+          id,
+          calendar.calendar_id,
+          title,
+          start,
+          day(OFFSET, hour + 1, 0),
+          start.slice(0, 19),
+          place,
+          "01JC0USERPRIYA0000000000",
+          day(-5, 9),
+        ],
+      );
+
+      if (answer) {
+        db.runSync(
+          `INSERT INTO rsvps (event_id, occurrence, user_id, calendar_id, status, responded_at, sync_state)
+           VALUES (?, '-', ?, ?, ?, ?, 'synced')`,
+          [id, CURRENT_USER_ID, calendar.calendar_id, answer, day(-4, 9)],
+        );
+      }
+    }
+  });
+}
+
+/**
+ * One cancelled event, because "called off" is a state the whole app has to
+ * render and there was nothing exercising it: the agenda badge, the struck
+ * title and the exclusion from the dot counts were all untested by eye.
+ */
+function seedCancelled(db: SQLite.SQLiteDatabase): void {
+  const exists = db.getFirstSync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM events WHERE status = 'cancelled'",
+  );
+  if ((exists?.n ?? 0) > 0) return;
+
+  const calendar = db.getFirstSync<{ calendar_id: string }>(
+    "SELECT calendar_id FROM calendars WHERE calendar_id = ?",
+    ["01JC0CALLONDON0000000000"],
+  );
+  if (!calendar) return;
+
+  const start = day(3, 20, 0);
+  db.runSync(
+    `INSERT OR IGNORE INTO events (event_id, calendar_id, title, description, start_utc, end_utc,
+       tz, local_wall, precision, location_name, location_address, tickets_required,
+       ticket_url, allow_suggestions, status, created_by, created_at, version, rrule, image_key, sync_state)
+     VALUES (?,?,?,?,?,?, 'Europe/London', ?, 'datetime', ?, NULL, 0, NULL, 1,
+             'cancelled', ?, ?, 2, NULL, NULL, 'synced')`,
+    [
+      "01JC0EVTQUIZ0000000000000",
+      calendar.calendar_id,
+      "Pub quiz at the Dove",
+      "Called off, the quizmaster is away.",
+      start,
+      day(3, 22, 0),
+      start.slice(0, 19),
+      "The Dove",
+      "01JC0USERPRIYA0000000000",
+      day(-6, 9),
+    ],
+  );
+}
+
+/**
+ * A live suggestion on an event I own, so the approve/deny screen has something
+ * to show. It targets the Fado night because that one is mine: a suggestion on
+ * someone else's event would be theirs to answer, not mine.
+ */
+function seedSuggestion(db: SQLite.SQLiteDatabase): void {
+  const exists = db.getFirstSync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM suggestions",
+  );
+  if ((exists?.n ?? 0) > 0) return;
+
+  const event = db.getFirstSync<{ event_id: string; calendar_id: string }>(
+    "SELECT event_id, calendar_id FROM events WHERE event_id = ?",
+    ["01JC0EVTFADO000000000000"],
+  );
+  if (!event) return;
+
+  db.withTransactionSync(() => {
+    db.runSync(
+      `INSERT INTO suggestions (suggestion_id, event_id, calendar_id, suggested_by,
+         suggested_by_name, created_at, note, changes, base_version, status)
+       VALUES (?,?,?,?,?,?,?,?,1,'pending')`,
+      [
+        "01JC0SUGFADO0000000000000",
+        event.event_id,
+        event.calendar_id,
+        "01JC0USERGLENN0000000000",
+        "Glenn",
+        day(-2, 16),
+        "Second show is cheaper and we would not have to rush dinner.",
+        JSON.stringify({
+          start_utc: day(13, 21, 30),
+          end_utc: day(13, 23, 30),
+          location_name: "Clube de Fado (late show)",
+          description:
+            "Late show. Tickets are limited, grab them early.",
+        }),
+      ],
+    );
+
+    // The notification is the way in, so it has to point at the event.
+    db.runSync(
+      "UPDATE notifications SET event_id = ? WHERE notification_id = 'n5'",
+      [event.event_id],
+    );
+  });
+}
+
+/** The private case that is not automatic: a calendar shared with one person. */
+function seedPrivate(db: SQLite.SQLiteDatabase): void {
+  // Guarded on this calendar specifically, not on "any private calendar":
+  // everyone now has one of those from the moment they open the app.
+  const exists = db.getFirstSync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM calendars WHERE calendar_id = ?",
+    ["01JC0CALUSTWO00000000000"],
   );
   if ((exists?.n ?? 0) > 0) return;
 
   db.withTransactionSync(() => {
     const rows: [string, string, string, string | null][] = [
-      ["01JC0CALSOLO000000000000", "My own plans", "Things I've said yes to.", null],
       [
         "01JC0CALUSTWO00000000000",
         "Me and Priya",
@@ -265,7 +547,15 @@ function seedInbox(db: SQLite.SQLiteDatabase): void {
 }
 
 function seedCalendars(db: SQLite.SQLiteDatabase): void {
-  if (count(db, "calendars") > 0) return;
+  // Guarded on the Lisbon calendar, NOT on "are there any calendars": every
+  // account now starts with My own plans, so counting calendars would see that
+  // one and conclude the fixtures had already been seeded — leaving a database
+  // with a single empty calendar in it.
+  const exists = db.getFirstSync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM calendars WHERE calendar_id = ?",
+    ["01JC0CALLISBON0000000000"],
+  );
+  if ((exists?.n ?? 0) > 0) return;
 
   db.withTransactionSync(() => {
     db.runSync(
@@ -319,6 +609,10 @@ function seedCalendars(db: SQLite.SQLiteDatabase): void {
       ["01JC0CALLISBON0000000000", "01JC0USERPRIYA0000000000", "owner", "Priya"],
       ["01JC0CALLISBON0000000000", "01JC0USERLUKE00000000000", "member", "Luke"],
       ["01JC0CALLISBON0000000000", "01JC0USERGLENN0000000000", "member", "Glenn"],
+      // Maya shares my flight home, so the plane row has more than one name in
+      // it: a grouping where every group holds exactly one person proves
+      // nothing about grouping.
+      ["01JC0CALLISBON0000000000", "01JC0USERMAYA00000000000", "member", "Maya"],
       ["01JC0CALLONDON0000000000", CURRENT_USER_ID, "member", "James"],
       ["01JC0CALLONDON0000000000", "01JC0USERPRIYA0000000000", "owner", "Priya"],
       ["01JC0CALLONDON0000000000", "01JC0USERLUKE00000000000", "member", "Luke"],
@@ -485,18 +779,37 @@ function seedCalendars(db: SQLite.SQLiteDatabase): void {
 
     // Arrival and departure for the Lisbon trip. Deliberately staggered: two
     // people already there, one landing mid-trip, one who has not said.
-    const availability: [string, string | null, string | null][] = [
-      [CURRENT_USER_ID, day(12, 15, 40), day(15, 11, 0)],
-      ["01JC0USERPRIYA0000000000", day(12, 9, 15), day(15, 11, 0)],
-      ["01JC0USERLUKE00000000000", day(13, 18, 30), day(15, 20, 0)],
-      ["01JC0USERGLENN0000000000", null, null],
+    //
+    // Three different ways of travelling, because the departure rows group by
+    // mode and sort by each group's earliest leaver, and a trip where everyone
+    // flies exercises none of that. The last day reads train 07:30, then plane
+    // 11:00, then car 20:00 — three rows, in that order, with two names sharing
+    // the flight so the grouping has something to group.
+    //
+    // Glenn stays on the calendar's own mode (null) AND has no times, which is
+    // the other case worth being able to see: someone who has not said a thing.
+    const availability: [
+      user: string,
+      arrives: string | null,
+      departs: string | null,
+      mode: TravelMode | null,
+    ][] = [
+      [CURRENT_USER_ID, day(12, 15, 40), day(15, 11, 0), "plane"],
+      ["01JC0USERPRIYA0000000000", day(12, 9, 15), day(15, 7, 30), "train"],
+      ["01JC0USERLUKE00000000000", day(13, 18, 30), day(15, 20, 0), "car"],
+      // A later flight out than me, then the same one home. The plane row
+      // therefore shows BOTH shapes across the trip: two names with their own
+      // times on the way out, and one clause with a shared time on the way
+      // back. One fixture, both cases.
+      ["01JC0USERMAYA00000000000", day(12, 21, 5), day(15, 11, 0), "plane"],
+      ["01JC0USERGLENN0000000000", null, null, null],
     ];
 
-    for (const [uid, arrives, departs] of availability) {
+    for (const [uid, arrives, departs, mode] of availability) {
       db.runSync(
-        `INSERT INTO availability (calendar_id, user_id, arrives_at, departs_at, updated_at)
-         VALUES ('01JC0CALLISBON0000000000',?,?,?,?)`,
-        [uid, arrives, departs, day(-10, 9)],
+        `INSERT INTO availability (calendar_id, user_id, arrives_at, departs_at, travel_mode, updated_at)
+         VALUES ('01JC0CALLISBON0000000000',?,?,?,?,?)`,
+        [uid, arrives, departs, mode, day(-10, 9)],
       );
     }
 

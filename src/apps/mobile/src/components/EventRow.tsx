@@ -21,11 +21,18 @@ export function EventRow({
   members,
   rsvps,
   subtitle,
+  from,
 }: {
   event: EventRowData;
   members: readonly MemberRow[];
   rsvps: readonly RsvpRow[];
   subtitle?: string;
+  /**
+   * Where the tap came from. "calendar" means the calendar was already on
+   * screen, so the event detail can drop the link back to it rather than
+   * offering a journey the person has just made.
+   */
+  from?: "calendar";
 }) {
   const t = useTheme();
 
@@ -62,7 +69,11 @@ export function EventRow({
       <Link
         href={{
           pathname: "/calendar/[calendarId]/event/[eventId]",
-          params: { calendarId: event.calendar_id, eventId: event.event_id },
+          params: {
+            calendarId: event.calendar_id,
+            eventId: event.event_id,
+            ...(from ? { from } : {}),
+          },
         }}
         asChild
       >

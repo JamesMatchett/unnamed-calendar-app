@@ -18,7 +18,7 @@ export const TRAVEL_ICON: Record<TravelMode, keyof typeof Ionicons.glyphMap> = {
   walk: "walk-outline",
 };
 
-const LABEL: Record<TravelMode, string> = {
+export const TRAVEL_LABEL: Record<TravelMode, string> = {
   plane: "Flying",
   train: "Train",
   car: "Driving",
@@ -45,7 +45,7 @@ export function TravelModePicker({
             onPress={() => onChange(mode)}
             accessibilityRole="radio"
             accessibilityState={{ selected }}
-            accessibilityLabel={LABEL[mode]}
+            accessibilityLabel={TRAVEL_LABEL[mode]}
             style={{
               flex: 1,
               alignItems: "center",
@@ -69,7 +69,7 @@ export function TravelModePicker({
                 color: selected ? t.color.accent : t.color.textMuted,
               }}
             >
-              {LABEL[mode]}
+              {TRAVEL_LABEL[mode]}
             </Text>
           </Pressable>
         );

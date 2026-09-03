@@ -162,7 +162,12 @@ export function DayTimeline({
                 key={item.event_id}
                 href={{
                   pathname: "/calendar/[calendarId]/event/[eventId]",
-                  params: { calendarId: item.calendar_id, eventId: item.event_id },
+                  // Landscape day view: the calendar is already on screen.
+                  params: {
+                    calendarId: item.calendar_id,
+                    eventId: item.event_id,
+                    from: "calendar",
+                  },
                 }}
                 asChild
               >

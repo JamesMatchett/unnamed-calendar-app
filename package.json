@@ -10,6 +10,7 @@
   "scripts": {
     "build:core": "npm run build --workspace @uca/core",
     "mobile": "npm run start --workspace @uca/mobile",
+    "reseed": "npm run reseed --workspace @uca/mobile",
     "start": "npm run start --workspace @uca/mobile",
     "test:core": "npm test --workspace @uca/core",
     "typecheck": "npm run typecheck --workspaces --if-present"

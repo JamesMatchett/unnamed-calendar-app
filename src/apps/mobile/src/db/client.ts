@@ -1,7 +1,7 @@
 import * as SQLite from "expo-sqlite";
 
 import { SCHEMA, SCHEMA_VERSION } from "./schema";
-import { seedIfEmpty } from "./seed";
+import { FIXTURE_EPOCH, seedIfEmpty } from "./seed";
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -11,11 +11,16 @@ export function getDb(): SQLite.SQLiteDatabase {
   db.execSync(SCHEMA);
   addMissingColumns(db);
   resetIfSchemaChanged(db);
+  resetIfFixturesStale(db);
   db.runSync(
     "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)",
     [String(SCHEMA_VERSION)],
   );
   seedIfEmpty(db);
+  db.runSync(
+    "INSERT OR REPLACE INTO meta (key, value) VALUES ('fixture_epoch', ?)",
+    [FIXTURE_EPOCH],
+  );
   return db;
 }
 
@@ -61,10 +66,29 @@ function resetIfSchemaChanged(database: SQLite.SQLiteDatabase): void {
   )?.value;
 
   if (stored === undefined || Number(stored) === SCHEMA_VERSION) return;
+  clearFixtures(database);
+}
 
+/**
+ * Fixture dates are relative to the moment they were seeded, so a database left
+ * from last month shows a trip that has already happened and an agenda with
+ * nothing coming up. `npm run reseed` moves FIXTURE_EPOCH, which brings the
+ * whole set forward to today on the next reload.
+ */
+function resetIfFixturesStale(database: SQLite.SQLiteDatabase): void {
+  const stored = database.getFirstSync<{ value: string }>(
+    "SELECT value FROM meta WHERE key = 'fixture_epoch'",
+  )?.value;
+
+  if (stored === undefined || stored === FIXTURE_EPOCH) return;
+  clearFixtures(database);
+}
+
+function clearFixtures(database: SQLite.SQLiteDatabase): void {
   for (const table of [
     "availability",
     "rsvps",
+    "suggestions",
     "events",
     "members",
     "calendars",
@@ -73,6 +97,9 @@ function resetIfSchemaChanged(database: SQLite.SQLiteDatabase): void {
     "friends",
     "directory",
     "mutation_queue",
+    "sent_invites",
+    "invite_links",
+    "join_requests",
   ]) {
     database.execSync(`DELETE FROM ${table};`);
   }

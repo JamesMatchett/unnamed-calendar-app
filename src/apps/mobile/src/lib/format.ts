@@ -86,3 +86,25 @@ export function formatDayShort(iso: string, tz: string): string {
     timeZone: tz,
   });
 }
+
+/**
+ * "Today", "Tomorrow", "in 4 days" for a day heading.
+ *
+ * Counted in whole local days, not in elapsed hours: an event at 09:00 tomorrow
+ * is "Tomorrow" even though it is 14 hours away, which is how people actually
+ * read a date. Returns null for days that have already gone.
+ */
+export function formatCountdown(dayIso: string, now = new Date()): string | null {
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const [y, m, d] = dayIso.split("-").map(Number);
+  if (!y || !m || !d) return null;
+
+  const days = Math.round((Date.UTC(y, m - 1, d) - today) / 86_400_000);
+  if (days < 0) return null;
+  if (days === 0) return "Today";
+  if (days === 1) return "Tomorrow";
+  if (days < 7) return `in ${days} days`;
+  if (days < 14) return "in a week";
+  if (days < 60) return `in ${Math.round(days / 7)} weeks`;
+  return `in ${Math.round(days / 30)} months`;
+}
