@@ -1,11 +1,19 @@
 import { Ionicons } from "@expo/vector-icons";
 import { dayBoundsIn } from "@calder/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useMemo } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import * as ScreenOrientation from "expo-screen-orientation";
+import { useEffect, useMemo } from "react";
+import {
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
 
 import { Cover } from "@/components/Cover";
 import { DayPills } from "@/components/DayPills";
+import { DayBoard } from "@/components/DayBoard";
 import { DayPresenceNote } from "@/components/DayPresenceNote";
 import { EventRow } from "@/components/EventRow";
 import { AvatarStack, Card, EmptyState, Muted } from "@/components/ui";
@@ -42,6 +50,24 @@ export default function CalendarScreen() {
   const me = useQuery(`me:${calendarId}`, () => myMembership(calendarId));
 
   const tz = calendar?.default_tz ?? "Europe/London";
+
+  const { width, height } = useWindowDimensions();
+  const landscape = width > height;
+
+  /**
+   * Sideways is a different question, so it gets a different view: a board of
+   * day columns rather than one day at a time. Unlocked on the way in and put
+   * back to portrait on the way out, so the rest of the app keeps its own
+   * orientation policy.
+   */
+  useEffect(() => {
+    void ScreenOrientation.unlockAsync().catch(() => {});
+    return () => {
+      void ScreenOrientation.lockAsync(
+        ScreenOrientation.OrientationLock.PORTRAIT_UP,
+      ).catch(() => {});
+    };
+  }, []);
 
   const { days, counts } = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -82,6 +108,37 @@ export default function CalendarScreen() {
     calendar.start_date ?? undefined,
     calendar.end_date ?? undefined,
   );
+
+  if (landscape) {
+    return (
+      <>
+        <Stack.Screen options={{ title: calendar.name }} />
+        <View style={{ flex: 1, paddingTop: space.sm, gap: space.sm }}>
+          <Text
+            style={{
+              ...type.label,
+              color: t.color.textMuted,
+              paddingHorizontal: space.lg,
+            }}
+          >
+            {calendar.name}
+            {range ? ` · ${range}` : ""}
+          </Text>
+          <DayBoard
+            calendarId={calendarId}
+            today={dayKey(new Date().toISOString(), tz)}
+            rsvps={rsvps}
+            days={days.map((d) => ({
+              date: d,
+              events: events
+                .filter((e) => dayKey(e.start_utc, tz) === d)
+                .sort((a, b) => (a.start_utc < b.start_utc ? -1 : 1)),
+            }))}
+          />
+        </View>
+      </>
+    );
+  }
 
   return (
     <>
