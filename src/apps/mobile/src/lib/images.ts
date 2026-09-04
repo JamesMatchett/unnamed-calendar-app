@@ -7,10 +7,13 @@ import type { ImageSourcePropType } from "react-native";
  * file URI from the photo library ("file://..."). One column, two sources, and
  * the difference is resolved here rather than at every call site.
  *
- * The bundled images are generated abstract art rather than photographs. For
- * fixtures that is the honest choice: an obviously-illustrative cover cannot be
- * mistaken for a real photograph of a place, and there is no stock-library
- * licence hanging over the repository.
+ * The bundled images are drawn rather than photographed, by tools/covers.py.
+ * That is the honest choice for fixtures: an illustration cannot be mistaken
+ * for a real photograph of a real place, and there is no stock-library licence
+ * hanging over the repository. They do depict their subject, though - a hill of
+ * terracotta roofs, a pitch under floodlights, tents on a hillside - because
+ * the abstract gradients they replaced read as an image that had failed to
+ * load rather than as a cover.
  */
 const BUNDLED = {
   lisbon: require("../../assets/covers/lisbon.png"),

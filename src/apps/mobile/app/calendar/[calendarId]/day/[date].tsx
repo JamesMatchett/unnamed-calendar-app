@@ -144,7 +144,6 @@ export default function DayScreen() {
                 <EventRow
                   key={e.event_id}
                   event={e}
-                  members={members}
                   rsvps={rsvps}
                   from="calendar"
                 />

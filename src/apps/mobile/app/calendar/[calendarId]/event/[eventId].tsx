@@ -72,6 +72,8 @@ export default function EventScreen() {
   );
 
   const author = members.find((m) => m.user_id === event.created_by);
+  /** A calendar of one. The same rule the agenda rows use. */
+  const solo = members.length <= 1;
 
   const lookingNames = members
     .filter(
@@ -337,6 +339,11 @@ export default function EventScreen() {
           </Card>
         ) : null}
 
+        {/* A calendar of one has nobody to answer to: putting it in your own
+            calendar IS the answer, and asking again turns a note to yourself
+            into a question. Not "is it private" — a two-person private calendar
+            still has someone waiting on your reply. */}
+        {solo ? null : (
         <View style={{ gap: space.sm }}>
           <Text style={{ ...type.label, color: t.color.textMuted }}>Are you going?</Text>
           <RsvpControl
@@ -349,7 +356,9 @@ export default function EventScreen() {
             }
           />
         </View>
+        )}
 
+        {solo ? null : (
         <View style={{ gap: space.sm }}>
           <Text style={{ ...type.label, color: t.color.textMuted }}>Who's going</Text>
           <Card style={{ gap: space.md }}>
@@ -360,6 +369,7 @@ export default function EventScreen() {
             <Attendees label="No reply yet" names={noReply.map((m) => m.display_name)} color={t.color.textMuted} />
           </Card>
         </View>
+        )}
 
         {author ? <Muted>Added by {author.display_name}</Muted> : null}
       </ScrollView>

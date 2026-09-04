@@ -270,7 +270,6 @@ function AgendaItem({
   return (
     <EventRow
       event={event}
-      members={members}
       rsvps={rsvps}
       subtitle={event.calendar_name}
     />

@@ -9,8 +9,15 @@ import {
   View,
 } from "react-native";
 
-import type { EventRow as EventRowData, MemberRow, RsvpRow } from "@/db/repo";
-import { clearRsvp, resolveForUser, setRsvp, tallyForEvent } from "@/db/repo";
+import type { EventRow as EventRowData, RsvpRow } from "@/db/repo";
+import {
+  clearRsvp,
+  listMembers,
+  resolveForUser,
+  setRsvp,
+  tallyForEvent,
+} from "@/db/repo";
+import { useQuery } from "@/lib/useQuery";
 import { CURRENT_USER_ID } from "@/db/seed";
 import { formatEventTime } from "@/lib/format";
 import { useSyncing } from "@/lib/useSyncing";
@@ -26,13 +33,11 @@ import { RsvpControl } from "./RsvpControl";
  */
 export function EventRow({
   event,
-  members,
   rsvps,
   subtitle,
   from,
 }: {
   event: EventRowData;
-  members: readonly MemberRow[];
   rsvps: readonly RsvpRow[];
   subtitle?: string;
   /**
@@ -43,6 +48,20 @@ export function EventRow({
   from?: "calendar";
 }) {
   const t = useTheme();
+
+  /**
+   * The members of THIS event's calendar, resolved here rather than passed in.
+   *
+   * Screens that show several calendars at once had to hand over one list, and
+   * a union of everybody is wrong in two ways: it inflates "no reply yet" with
+   * people who were never asked, and it makes a calendar of one look like a
+   * crowd — which is why a note in your own plans was still asking whether you
+   * were going. The query is keyed per calendar, so a list of thirty events
+   * across three calendars still does three reads.
+   */
+  const members = useQuery(`members:${event.calendar_id}`, () =>
+    listMembers(event.calendar_id),
+  );
 
   // Non-recurring events have exactly one occurrence, which the series default
   // covers — the degenerate case of the same rule (§5.5).
