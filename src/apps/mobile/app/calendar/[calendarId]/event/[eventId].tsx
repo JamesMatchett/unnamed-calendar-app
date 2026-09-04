@@ -13,6 +13,7 @@ import {
   clearRsvp,
   getCalendar,
   getEvent,
+  listInvitesSentForEvent,
   listMembers,
   listRsvps,
   listSlotVotes,
@@ -74,6 +75,9 @@ export default function EventScreen() {
   const author = members.find((m) => m.user_id === event.created_by);
   /** A calendar of one. The same rule the agenda rows use. */
   const solo = members.length <= 1;
+  const sent = useQuery(`sent-invites:${eventId}`, () =>
+    listInvitesSentForEvent(eventId),
+  );
 
   const lookingNames = members
     .filter(
@@ -370,6 +374,51 @@ export default function EventScreen() {
           </Card>
         </View>
         )}
+
+        {/* Who I asked to this, and what they said. Takes the place of the
+            RSVP block on an event in my own calendar: there is nobody to answer
+            there but me, and the question is whether THEY are coming. */}
+        {sent.length > 0 ? (
+          <View style={{ gap: space.sm }}>
+            <Text style={{ ...type.label, color: t.color.textMuted }}>Invited</Text>
+            <Card style={{ gap: space.md }}>
+              {sent.map((inv) => (
+                <View
+                  key={inv.invite_id}
+                  style={{ flexDirection: "row", alignItems: "center", gap: space.md }}
+                >
+                  <Ionicons
+                    name={
+                      inv.status === "accepted"
+                        ? "checkmark-circle"
+                        : inv.status === "declined"
+                          ? "close-circle"
+                          : "time-outline"
+                    }
+                    size={18}
+                    color={
+                      inv.status === "accepted"
+                        ? t.color.going
+                        : inv.status === "declined"
+                          ? t.color.notGoing
+                          : t.color.textMuted
+                    }
+                  />
+                  <Text style={{ ...type.body, flex: 1, color: t.color.text }}>
+                    {inv.to_name}
+                  </Text>
+                  <Muted>
+                    {inv.status === "accepted"
+                      ? "Coming"
+                      : inv.status === "declined"
+                        ? "Can't make it"
+                        : "Not answered yet"}
+                  </Muted>
+                </View>
+              ))}
+            </Card>
+          </View>
+        ) : null}
 
         {author ? <Muted>Added by {author.display_name}</Muted> : null}
       </ScrollView>

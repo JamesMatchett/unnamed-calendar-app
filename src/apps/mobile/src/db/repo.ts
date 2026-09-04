@@ -29,7 +29,7 @@ import {
 import type { Appearance } from "@/theme";
 
 import { getDb, notifyChanged } from "./client";
-import { CURRENT_USER_ID } from "./seed";
+import { CURRENT_USER_ID, OWN_PLANS_ID } from "./seed";
 
 export interface CalendarRow {
   calendar_id: string;
@@ -354,7 +354,13 @@ export function badgeCounts(): { people: number; activity: number } {
       "SELECT COUNT(*) AS n FROM friends WHERE status = 'pending_in'",
     )?.n ?? 0;
 
-  return { people: invites + friendRequests, activity };
+  const eventInvites =
+    getDb().getFirstSync<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM event_invites WHERE to_user = ? AND status = 'pending'",
+      [CURRENT_USER_ID],
+    )?.n ?? 0;
+
+  return { people: invites + friendRequests + eventInvites, activity };
 }
 
 export function markSurfaceRead(surface: NotificationSurface): void {
@@ -2230,5 +2236,128 @@ export function setAppearance(value: Appearance): void {
     "INSERT OR REPLACE INTO meta (key, value) VALUES ('pref:appearance', ?)",
     [value],
   );
+  notifyChanged();
+}
+
+// --- inviting one person to one thing (§8.1) ---------------------------------
+//
+// The third way to make a plan with somebody, after a shared calendar and a
+// poll: pick a time and ask them. It is deliberately not an RSVP on an event
+// they can see, because the event is in YOUR calendar, which they cannot; the
+// invite carries a copy of what matters, and saying yes puts a copy of it in
+// theirs. Two calendars, two events, one link between them.
+
+export interface EventInviteRow {
+  invite_id: string;
+  event_id: string;
+  from_user: string;
+  from_name: string;
+  to_user: string;
+  title: string;
+  start_utc: string;
+  end_utc: string | null;
+  tz: string;
+  local_wall: string;
+  precision: "datetime" | "date" | "tbc";
+  location_name: string | null;
+  status: "pending" | "accepted" | "declined";
+  sent_at: string;
+  answered_at: string | null;
+  accepted_event_id: string | null;
+}
+
+export function sendEventInvite(eventId: string, toUser: string): string {
+  const event = getEvent(eventId);
+  if (!event) throw new Error(`no such event ${eventId}`);
+  const me = getProfile();
+  const inviteId = ulid();
+
+  getDb().runSync(
+    `INSERT INTO event_invites
+       (invite_id, event_id, from_user, from_name, to_user, title, start_utc, end_utc,
+        tz, local_wall, precision, location_name, status, sent_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'pending',?)`,
+    [
+      inviteId,
+      eventId,
+      CURRENT_USER_ID,
+      me.displayName,
+      toUser,
+      event.title,
+      event.start_utc,
+      event.end_utc,
+      event.tz,
+      event.local_wall,
+      event.precision,
+      event.location_name,
+      new Date().toISOString(),
+    ],
+  );
+  notifyChanged();
+  return inviteId;
+}
+
+/** Invitations waiting on ME, soonest first. */
+export function listEventInvitesForMe(): EventInviteRow[] {
+  return getDb().getAllSync<EventInviteRow>(
+    `SELECT * FROM event_invites
+      WHERE to_user = ? AND status = 'pending'
+      ORDER BY start_utc`,
+    [CURRENT_USER_ID],
+  );
+}
+
+/** Who I asked to one of my events, and what they said. */
+export function listInvitesSentForEvent(
+  eventId: string,
+): (EventInviteRow & { to_name: string })[] {
+  return getDb().getAllSync<EventInviteRow & { to_name: string }>(
+    `SELECT i.*, COALESCE(d.display_name, i.to_user) AS to_name
+       FROM event_invites i
+       LEFT JOIN directory d ON d.user_id = i.to_user
+      WHERE i.event_id = ? AND i.from_user = ?
+      ORDER BY i.sent_at`,
+    [eventId, CURRENT_USER_ID],
+  );
+}
+
+/**
+ * Saying yes creates the event in my own calendar; saying no records the answer
+ * and creates nothing. Either way the invite stays, because "Maya asked and I
+ * said no" is a fact the sender is owed and a fact I might want to revisit.
+ */
+export function answerEventInvite(inviteId: string, accept: boolean): void {
+  const db = getDb();
+  const invite = db.getFirstSync<EventInviteRow>(
+    "SELECT * FROM event_invites WHERE invite_id = ?",
+    [inviteId],
+  );
+  if (!invite || invite.status !== "pending") return;
+
+  const now = new Date().toISOString();
+  db.withTransactionSync(() => {
+    let copyId: string | null = null;
+    if (accept) {
+      copyId = createEvent(OWN_PLANS_ID, {
+        title: invite.title,
+        startUtc: invite.start_utc,
+        endUtc: invite.end_utc,
+        tz: invite.tz,
+        localWall: invite.local_wall,
+        precision: invite.precision,
+        locationName: invite.location_name,
+        ticketsRequired: false,
+        ticketUrl: null,
+        imageKey: null,
+        description: `With ${invite.from_name}.`,
+      });
+    }
+    db.runSync(
+      `UPDATE event_invites
+          SET status = ?, answered_at = ?, accepted_event_id = ?
+        WHERE invite_id = ?`,
+      [accept ? "accepted" : "declined", now, copyId, inviteId],
+    );
+  });
   notifyChanged();
 }

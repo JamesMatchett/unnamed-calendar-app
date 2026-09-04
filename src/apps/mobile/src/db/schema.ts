@@ -162,6 +162,34 @@ CREATE TABLE IF NOT EXISTS pending_invites (
   state            TEXT NOT NULL DEFAULT 'pending'
 );
 
+-- A direct invitation to one thing, from one person to another (§8.1).
+--
+-- Not a calendar membership and not an RSVP: the event lives in the sender's
+-- own calendar, which the invitee cannot see, so the invite CARRIES what they
+-- need to answer it. Saying yes copies it into their own calendar; the two
+-- copies are linked through accepted_event_id and otherwise lead separate lives.
+CREATE TABLE IF NOT EXISTS event_invites (
+  invite_id         TEXT PRIMARY KEY NOT NULL,
+  -- The sender's event. Absent on the invitee's side until sync exists.
+  event_id          TEXT NOT NULL,
+  from_user         TEXT NOT NULL,
+  from_name         TEXT NOT NULL,
+  to_user           TEXT NOT NULL,
+  title             TEXT NOT NULL,
+  start_utc         TEXT NOT NULL,
+  end_utc           TEXT,
+  tz                TEXT NOT NULL,
+  local_wall        TEXT NOT NULL,
+  precision         TEXT NOT NULL DEFAULT 'datetime',
+  location_name     TEXT,
+  status            TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending','accepted','declined')),
+  sent_at           TEXT NOT NULL,
+  answered_at       TEXT,
+  -- The invitee's copy, once they have said yes.
+  accepted_event_id TEXT
+);
+
 -- Stands in for the discovery API of §7.3. In production a search hits the
 -- server; here it is a local table so the interaction can be judged before any
 -- backend exists. Handles are stored lowercased — they are identifiers, not

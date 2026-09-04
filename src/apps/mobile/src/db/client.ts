@@ -111,6 +111,7 @@ function clearFixtures(database: SQLite.SQLiteDatabase): void {
     "sent_invites",
     "invite_links",
     "join_requests",
+    "event_invites",
   ]) {
     database.execSync(`DELETE FROM ${table};`);
   }

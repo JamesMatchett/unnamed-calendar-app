@@ -331,7 +331,7 @@ export function PrimaryButton({
           ? t.color.surfaceAlt
           : ghost
             ? t.color.surface
-            : t.color.accent,
+            : t.color.accentFill,
       }}
     >
       <Text
@@ -342,7 +342,7 @@ export function PrimaryButton({
             ? t.color.textMuted
             : ghost
               ? t.color.text
-              : "#fff",
+              : t.color.onAccent,
         }}
       >
         {label}

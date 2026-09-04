@@ -22,6 +22,7 @@ import { Card, EmptyState, Group, Muted } from "@/components/ui";
 import {
   createEvent,
   proposeSlot,
+  sendEventInvite,
   startPoll,
   findSimilarEvents,
   getCalendar,
@@ -77,11 +78,13 @@ export default function NewEventScreen() {
    * has already worked out a time that suits two people: dropping them here and
    * making the person type it again would throw away the only hard part.
    */
-  const { calendarId, on, at, with: withName } = useLocalSearchParams<{
+  const { calendarId, on, at, with: withName, invite } = useLocalSearchParams<{
     calendarId: string;
     on?: string;
     at?: string;
     with?: string;
+    /** Somebody to ask to this, once it exists. Their user id. */
+    invite?: string;
   }>();
 
   const calendar = useQuery(`calendar:${calendarId}`, () => getCalendar(calendarId));
@@ -306,6 +309,10 @@ export default function NewEventScreen() {
       imageKey,
     });
 
+    // Asked from a person's page: the event is theirs to accept, and it lands
+    // in their own calendar when they do.
+    if (invite) sendEventInvite(eventId, invite);
+
     if (precision === "tbc") {
       startPoll(eventId, openSuggestions ? "open" : "proposed");
       // Only times the organiser actually chose. Nothing is seeded from the
@@ -326,11 +333,26 @@ export default function NewEventScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "Add an event", presentation: "modal" }} />
+      <Stack.Screen
+        options={{
+          title: invite && withName ? `Invite ${withName}` : "Add an event",
+          presentation: "modal",
+        }}
+      />
       <ScrollView
         contentContainerStyle={{ padding: space.lg, gap: space.lg }}
         keyboardShouldPersistTaps="handled"
       >
+        {invite ? (
+          <Card style={{ flexDirection: "row", alignItems: "center", gap: space.md }}>
+            <Ionicons name="paper-plane-outline" size={18} color={t.color.accent} />
+            <Text style={{ ...type.caption, flex: 1, color: t.color.text }}>
+              This goes in your own plans and is sent to {withName ?? "them"} to
+              say yes or no to. If they say yes it lands in theirs too.
+            </Text>
+          </Card>
+        ) : null}
+
         {/* One field, not two. The name used to have its own box under this
             one, holding the same value the parser had just extracted, so there
             were two places to type a name and no way to tell which counted.
@@ -633,7 +655,11 @@ export default function NewEventScreen() {
           </Group>
         </View>
 
-        <PrimaryButton label="Add to calendar" onPress={submit} disabled={!valid} />
+        <PrimaryButton
+          label={invite ? `Send to ${withName ?? "them"}` : "Add to calendar"}
+          onPress={submit}
+          disabled={!valid}
+        />
       </ScrollView>
     </>
   );

@@ -8,7 +8,7 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { Segmented } from "@/components/form";
 import { Card, EmptyState, Group, Muted } from "@/components/ui";
 import { busyBetween, friendProfile, sharedCalendars } from "@/db/repo";
-import { CURRENT_USER_ID } from "@/db/seed";
+import { CURRENT_USER_ID, OWN_PLANS_ID } from "@/db/seed";
 import { useQuery } from "@/lib/useQuery";
 import { radius, space, type, useTheme } from "@/theme";
 
@@ -148,12 +148,14 @@ export default function CatchUpScreen() {
 
   /**
    * A suggestion is worth nothing until it is a plan, so each one goes straight
-   * into the add-event form with the time already filled in. Private calendars
-   * first: a catch-up between two people belongs in the calendar that is about
-   * those two people, not on the group trip.
+   * into the add-event form with the time already filled in.
+   *
+   * A private calendar you share is the natural home: a catch-up between two
+   * people belongs in the calendar that is about those two people, not on the
+   * group trip. Without one it becomes an invitation instead, from your own
+   * plans to theirs, which needs no calendar in common at all.
    */
-  const target =
-    shared.find((c) => c.is_private === 1) ?? shared.find((c) => c.my_role === "owner") ?? shared[0];
+  const target = shared.find((c) => c.is_private === 1) ?? null;
 
   return (
     <>
@@ -189,17 +191,23 @@ export default function CatchUpScreen() {
               <Pressable
                 key={slot.start}
                 onPress={() =>
-                  target
-                    ? router.push({
-                        pathname: "/calendar/[calendarId]/event/new",
-                        params: {
+                  router.push({
+                    pathname: "/calendar/[calendarId]/event/new",
+                    params: target
+                      ? {
                           calendarId: target.calendar_id,
                           on: slot.day,
                           at: clock(slot.start, tz),
                           with: first,
+                        }
+                      : {
+                          calendarId: OWN_PLANS_ID,
+                          on: slot.day,
+                          at: clock(slot.start, tz),
+                          with: first,
+                          invite: userId,
                         },
-                      })
-                    : router.push("/calendar/new")
+                  })
                 }
                 accessibilityRole="button"
                 accessibilityLabel={`${longDay(slot.day)} at ${clock(slot.start, tz)}, make this an event`}
@@ -223,7 +231,7 @@ export default function CatchUpScreen() {
           <Muted>
             {target
               ? `Picking one opens a new event in ${target.name}, with the time already set.`
-              : "You have no calendar in common yet, so picking one starts a calendar first."}
+              : `Picking one drafts an invitation to ${first}, with the time already set. It goes in your own plans and, if they say yes, in theirs.`}
           </Muted>
         ) : null}
 

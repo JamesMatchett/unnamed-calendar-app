@@ -13,7 +13,7 @@ import type * as SQLite from "expo-sqlite";
  * last month shows a trip that has already happened; changing this makes the app
  * drop the fixtures and rebuild them starting from today.
  */
-export const FIXTURE_EPOCH = "2026-09-04T23:05:52.000Z";
+export const FIXTURE_EPOCH = "2026-09-04T23:36:49.000Z";
 
 /** Stands in for the signed-in user until Cognito exists (§3.2). */
 export const CURRENT_USER_ID = "01JC0USERJAMES0000000000";
@@ -158,6 +158,29 @@ function seedThisWeek(db: SQLite.SQLiteDatabase): void {
         );
       }
     });
+
+    // One-to-one invitations, both directions, so both halves of the flow can
+    // be seen without sending one first. Priya has already said yes to the
+    // long run (index 7 above); Maya is asking me to coffee, which is waiting
+    // on the People tab and lands in my own plans if I say yes.
+    db.runSync(
+      `INSERT INTO event_invites
+         (invite_id, event_id, from_user, from_name, to_user, title, start_utc, end_utc,
+          tz, local_wall, precision, location_name, status, sent_at, answered_at)
+       VALUES ('01JC0INVRUN0000000000000', '01JC0EVTWEEK000000000007', ?, 'James',
+               '01JC0USERPRIYA0000000000', 'Long run', ?, ?, 'Europe/London', ?,
+               'datetime', 'Victoria Park', 'accepted', ?, ?)`,
+      [CURRENT_USER_ID, day(3, 10, 0), day(3, 12, 0), day(3, 10, 0).slice(0, 19), day(-2, 18), day(-2, 19)],
+    );
+    db.runSync(
+      `INSERT INTO event_invites
+         (invite_id, event_id, from_user, from_name, to_user, title, start_utc, end_utc,
+          tz, local_wall, precision, location_name, status, sent_at)
+       VALUES ('01JC0INVCOFFEE0000000000', '01JC0EVTMAYACOFFEE000000', '01JC0USERMAYA00000000000',
+               'Maya Okonkwo', ?, 'Coffee at Ozone', ?, ?, 'Europe/London', ?, 'datetime',
+               'Ozone, Shoreditch', 'pending', ?)`,
+      [CURRENT_USER_ID, day(2, 10, 0), day(2, 11, 0), day(2, 10, 0).slice(0, 19), day(-1, 21)],
+    );
   });
 }
 

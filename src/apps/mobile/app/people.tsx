@@ -9,7 +9,9 @@ import { Card, EmptyState, Muted } from "@/components/ui";
 import type { FriendGrants } from "@/db/repo";
 import {
   acceptFriendRequest,
+  answerEventInvite,
   answerInvite,
+  listEventInvitesForMe,
   listFriends,
   listPendingInvites,
   listPeopleNotifications,
@@ -19,7 +21,7 @@ import {
   searchPeople,
   sendFriendRequest,
 } from "@/db/repo";
-import { formatDateRange } from "@/lib/format";
+import { formatDateRange, formatEventTime } from "@/lib/format";
 import { shareAppInvite } from "@/lib/share";
 import { useQuery } from "@/lib/useQuery";
 import { radius, space, type, useTheme } from "@/theme";
@@ -39,6 +41,7 @@ export default function PeopleScreen() {
   const [query, setQuery] = useState("");
 
   const invites = useQuery("invites", () => listPendingInvites());
+  const eventInvites = useQuery("event-invites", () => listEventInvitesForMe());
   const incoming = useQuery("friends:in", () => listFriends("pending_in"));
   const outgoing = useQuery("friends:out", () => listFriends("pending_out"));
   const friends = useQuery("friends:accepted", () => listFriends("accepted"));
@@ -92,7 +95,64 @@ export default function PeopleScreen() {
             Waiting for you
           </Text>
 
-          {invites.length === 0 ? (
+          {/* One person asking you to one thing. Above the calendar invites
+              because it is dated: a coffee on Thursday goes stale in a way a
+              trip in June does not. */}
+          {eventInvites.map((inv) => (
+            <Card key={inv.invite_id} style={{ gap: space.md }}>
+              <View style={{ gap: 2 }}>
+                <Text style={{ ...type.heading, color: t.color.text }}>
+                  {inv.title}
+                </Text>
+                <Muted>
+                  {inv.from_name} asked you ·{" "}
+                  {formatEventTime({
+                    startUtc: inv.start_utc,
+                    endUtc: inv.end_utc ?? undefined,
+                    tz: inv.tz,
+                    localWall: inv.local_wall,
+                    precision: inv.precision,
+                  })}
+                  {inv.location_name ? ` · ${inv.location_name}` : ""}
+                </Muted>
+              </View>
+              <View style={{ flexDirection: "row", gap: space.sm }}>
+                <Pressable
+                  onPress={() => answerEventInvite(inv.invite_id, true)}
+                  accessibilityRole="button"
+                  style={{
+                    flex: 1,
+                    alignItems: "center",
+                    paddingVertical: space.md,
+                    borderRadius: radius.pill,
+                    backgroundColor: t.color.accentFill,
+                  }}
+                >
+                  <Text style={{ ...type.label, color: t.color.onAccent }}>
+                    I'm in
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => answerEventInvite(inv.invite_id, false)}
+                  accessibilityRole="button"
+                  style={{
+                    paddingHorizontal: space.xl,
+                    paddingVertical: space.md,
+                    borderRadius: radius.pill,
+                    borderWidth: 1,
+                    borderColor: t.color.border,
+                  }}
+                >
+                  <Text style={{ ...type.label, color: t.color.textMuted }}>
+                    Can't
+                  </Text>
+                </Pressable>
+              </View>
+              <Muted>Saying yes puts it in your own plans.</Muted>
+            </Card>
+          ))}
+
+          {invites.length === 0 && eventInvites.length === 0 ? (
             <Card>
               <Muted>No invitations right now.</Muted>
             </Card>

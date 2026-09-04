@@ -1,5 +1,5 @@
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 
@@ -16,7 +16,7 @@ import { TimeZonePicker } from "@/components/TimeZonePicker";
 import { TravelModePicker } from "@/components/TravelMode";
 import { Muted } from "@/components/ui";
 import { pickCoverImage } from "@/lib/pickImage";
-import { createCalendar } from "@/db/repo";
+import { createCalendar, inviteUser } from "@/db/repo";
 import type { TravelMode } from "@calder/core";
 
 import { describeZone, deviceTimeZone, offsetLabel } from "@/lib/timezones";
@@ -46,14 +46,24 @@ const pretty = (s: string) =>
 export default function NewCalendarScreen() {
   const t = useTheme();
   const router = useRouter();
+  /**
+   * Started from somebody's page. The calendar is private and ongoing by
+   * default, named for the two of you, and they are invited the moment it
+   * exists: a "you and me" calendar with nobody else in it is the one kind
+   * that must not open empty.
+   */
+  const { with: withUser, withName } = useLocalSearchParams<{
+    with?: string;
+    withName?: string;
+  }>();
 
-  const [name, setName] = useState("");
-  const [mode, setMode] = useState<Mode>("bounded");
+  const [name, setName] = useState(withName ? `Me and ${withName}` : "");
+  const [mode, setMode] = useState<Mode>(withUser ? "continuous" : "bounded");
   const [tz, setTz] = useState(deviceTimeZone());
   const [collectAvailability, setCollectAvailability] = useState(false);
   const [allowMemberEvents, setAllowMemberEvents] = useState(true);
   const [travelMode, setTravelMode] = useState<TravelMode>("plane");
-  const [isPrivate, setIsPrivate] = useState(false);
+  const [isPrivate, setIsPrivate] = useState(Boolean(withUser));
   const [coverImage, setCoverImage] = useState<string | null>(null);
 
   const pickCover = async () => {
@@ -84,6 +94,8 @@ export default function NewCalendarScreen() {
       collectAvailability: mode === "bounded" ? collectAvailability : false,
       ...(mode === "bounded" ? { startDate, endDate } : {}),
     });
+
+    if (withUser) inviteUser(calendarId, withUser);
 
     // Replace rather than push: backing out of a calendar you just made should
     // not land you on the form that made it.

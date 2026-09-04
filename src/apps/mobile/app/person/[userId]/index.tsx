@@ -4,7 +4,7 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 
 import { Cover, CoverPlaceholder } from "@/components/Cover";
-import { Segmented } from "@/components/form";
+import { PrimaryButton, Segmented } from "@/components/form";
 import { AvatarStack, Card, EmptyState, Group, Muted } from "@/components/ui";
 import type { FriendGrants } from "@/db/repo";
 import {
@@ -17,6 +17,7 @@ import {
   setFriendGrants,
   sharedCalendars,
 } from "@/db/repo";
+import { OWN_PLANS_ID } from "@/db/seed";
 import { formatDateRange } from "@/lib/format";
 import { useQuery } from "@/lib/useQuery";
 import { radius, space, type, useTheme } from "@/theme";
@@ -83,6 +84,7 @@ export default function PersonScreen() {
   }
 
   const friends = person.status === "accepted";
+  const first = person.display_name.split(" ")[0] ?? person.display_name;
   const theyShare = (person.shares ?? "none") as FriendGrants;
   const iShare = (person.grants ?? "none") as FriendGrants;
 
@@ -216,50 +218,36 @@ export default function PersonScreen() {
           <Muted>Only they can change what they show you.</Muted>
         </View>
 
-        {/* 2. Finding a time. */}
+        {/* 2. Making a plan with them: find a time, or name one. */}
         <View style={{ gap: space.sm }}>
-          <Pressable
+          <PrimaryButton
+            label={`Catch up with ${first}`}
+            disabled={!canSeeFreeBusy(theyShare)}
             onPress={() =>
               router.push({
                 pathname: "/person/[userId]/catch-up",
                 params: { userId },
               })
             }
-            disabled={!canSeeFreeBusy(theyShare)}
-            accessibilityRole="button"
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: space.sm,
-              paddingVertical: space.lg,
-              borderRadius: radius.md,
-              backgroundColor: canSeeFreeBusy(theyShare)
-                ? t.color.accent
-                : t.color.surfaceAlt,
-            }}
-          >
-            <Ionicons
-              name="calendar-outline"
-              size={18}
-              color={canSeeFreeBusy(theyShare) ? t.color.onAccent : t.color.textMuted}
-            />
-            <Text
-              style={{
-                ...type.label,
-                fontSize: 16,
-                color: canSeeFreeBusy(theyShare) ? t.color.onAccent : t.color.textMuted,
-              }}
-            >
-              Catch up with {person.display_name.split(" ")[0]}
-            </Text>
-          </Pressable>
-          {canSeeFreeBusy(theyShare) ? null : (
-            <Muted>
-              Finding a time needs to see when they're free, and they haven't
-              shared that. Ask them, or pick a time and invite them to it.
-            </Muted>
-          )}
+          />
+          {/* Always available, whatever they share: you do not need to see
+              somebody's calendar to ask them to something. It goes in your own
+              plans and, if they say yes, in theirs. */}
+          <PrimaryButton
+            variant="ghost"
+            label={`Pick a time and invite ${first}`}
+            onPress={() =>
+              router.push({
+                pathname: "/calendar/[calendarId]/event/new",
+                params: { calendarId: OWN_PLANS_ID, invite: userId, with: first },
+              })
+            }
+          />
+          <Muted>
+            {canSeeFreeBusy(theyShare)
+              ? "Catch up finds times you are both free. Inviting sends one time for them to say yes or no to."
+              : `Finding a time needs to see when ${first} is free, and they haven't shared that. You can still invite them to a time of your choosing.`}
+          </Muted>
         </View>
 
         {/* 3. Where you already overlap, and where they are missing. */}
@@ -352,14 +340,16 @@ export default function PersonScreen() {
             </Group>
           )}
 
-          <Pressable
-            onPress={() => router.push("/calendar/new")}
-            accessibilityRole="button"
-          >
-            <Text style={{ ...type.label, color: t.color.accent }}>
-              Start a private calendar
-            </Text>
-          </Pressable>
+          <PrimaryButton
+            variant="ghost"
+            label={`Start a private calendar with ${first}`}
+            onPress={() =>
+              router.push({
+                pathname: "/calendar/new",
+                params: { with: userId, withName: first },
+              })
+            }
+          />
         </View>
 
         {friends ? (
