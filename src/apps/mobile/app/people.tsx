@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, Share, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 
 import { PersonRowItem } from "@/components/PersonRowItem";
 import { SearchBar } from "@/components/SearchBar";
@@ -20,6 +20,7 @@ import {
   sendFriendRequest,
 } from "@/db/repo";
 import { formatDateRange } from "@/lib/format";
+import { shareAppInvite } from "@/lib/share";
 import { useQuery } from "@/lib/useQuery";
 import { radius, space, type, useTheme } from "@/theme";
 
@@ -59,20 +60,13 @@ export default function PeopleScreen() {
 
   /**
    * The OS share sheet rather than an in-app invite form: the person being
-   * invited is not in Cal&der, so the only way to reach them is whatever the two of
-   * them already use. Anything we built here would be a worse WhatsApp.
+   * invited is not in Cal&der, so the only way to reach them is whatever the two
+   * of them already use. Anything we built here would be a worse WhatsApp.
+   *
+   * Shared as a link rather than a sentence containing one, so the sheet offers
+   * the people and the messaging apps this person actually uses. See lib/share.
    */
-  const inviteToApp = async () => {
-    try {
-      await Share.share({
-        message:
-          "Come and plan things with me on Cal&der: https://calder.app/get",
-      });
-    } catch {
-      // Dismissing the sheet is not a failure, and there is nothing useful to
-      // say about one that will not open.
-    }
-  };
+  const inviteToApp = shareAppInvite;
 
   return (
     <>

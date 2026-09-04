@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useLocalSearchParams } from "expo-router";
-import { Alert, Pressable, ScrollView, Share, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import QRCode from "react-native-qrcode-svg";
 
 import { Card, EmptyState, Muted } from "@/components/ui";
@@ -11,6 +11,7 @@ import {
   myMembership,
   rotateInviteLink,
 } from "@/db/repo";
+import { shareLink } from "@/lib/share";
 import { useQuery } from "@/lib/useQuery";
 import { radius, space, type, useTheme } from "@/theme";
 
@@ -60,9 +61,11 @@ export default function InviteScreen() {
   const url = inviteUrl(current.token);
 
   const share = () => {
-    void Share.share({
-      message: `Join ${calendar.name} on Cal&der: ${url}`,
-    }).catch(() => undefined);
+    void shareLink({
+      text: `Join ${calendar.name} on Cal&der`,
+      url,
+      subject: `Join ${calendar.name} on Cal&der`,
+    });
   };
 
   const rotate = () =>
