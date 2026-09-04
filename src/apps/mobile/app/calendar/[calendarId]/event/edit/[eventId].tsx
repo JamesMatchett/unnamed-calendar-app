@@ -286,7 +286,7 @@ export default function EditEventScreen() {
           initial={{ date, time, endTime }}
           tz={tz}
           title="When is it?"
-          saveLabel="Set the time"
+          saveLabel="Set time"
           dateLabel="On"
           timeLabel="Starts"
           withTime={precision === "datetime"}
