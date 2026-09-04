@@ -6,13 +6,16 @@ import { Pressable, ScrollView, Share, Text, View } from "react-native";
 import { PersonRowItem } from "@/components/PersonRowItem";
 import { SearchBar } from "@/components/SearchBar";
 import { Card, EmptyState, Muted } from "@/components/ui";
+import type { FriendGrants } from "@/db/repo";
 import {
   acceptFriendRequest,
   answerInvite,
+  listFriends,
   listPendingInvites,
   listPeopleNotifications,
   listSuggestions,
   markSurfaceRead,
+  removeFriend,
   searchPeople,
   sendFriendRequest,
 } from "@/db/repo";
@@ -35,6 +38,9 @@ export default function PeopleScreen() {
   const [query, setQuery] = useState("");
 
   const invites = useQuery("invites", () => listPendingInvites());
+  const incoming = useQuery("friends:in", () => listFriends("pending_in"));
+  const outgoing = useQuery("friends:out", () => listFriends("pending_out"));
+  const friends = useQuery("friends:accepted", () => listFriends("accepted"));
   const suggestions = useQuery("suggestions", () => listSuggestions());
   const history = useQuery("people-notifs", () => listPeopleNotifications());
   const results = useQuery(`search:${query}`, () => searchPeople(query));
@@ -47,6 +53,9 @@ export default function PeopleScreen() {
   }, []);
 
   const answered = history.filter((n) => n.kind !== "invite_pending");
+
+  const openPerson = (userId: string) =>
+    router.push({ pathname: "/person/[userId]", params: { userId } });
 
   /**
    * The OS share sheet rather than an in-app invite form: the person being
@@ -193,12 +202,7 @@ export default function PeopleScreen() {
                   <PersonRowItem
                     key={p.user_id}
                     person={p}
-                    onPress={() =>
-                      router.push({
-                        pathname: "/person/[userId]",
-                        params: { userId: p.user_id },
-                      })
-                    }
+                    onPress={() => openPerson(p.user_id)}
                     actions={
                       p.status === "pending_in"
                         ? [
@@ -225,28 +229,91 @@ export default function PeopleScreen() {
           ) : null}
         </View>
 
+        {/* Your friends, on the screen called People.
+            They used to live behind a "Manage friends" link, which meant the
+            tab named after the people you know showed everything except them:
+            invitations, a search box and strangers to add. The roster is the
+            point of the screen, so it is on it. */}
+        {!searching && incoming.length > 0 ? (
+          <View style={{ gap: space.sm }}>
+            <Text style={{ ...type.label, color: t.color.textMuted }}>
+              Wants to connect
+            </Text>
+            <Card style={{ gap: space.lg }}>
+              {incoming.map((p) => (
+                <PersonRowItem
+                  key={p.user_id}
+                  person={p}
+                  onPress={() => openPerson(p.user_id)}
+                  actions={[
+                    {
+                      label: "Accept",
+                      tone: "primary" as const,
+                      onPress: () => acceptFriendRequest(p.user_id),
+                    },
+                    { label: "Ignore", onPress: () => removeFriend(p.user_id) },
+                  ]}
+                />
+              ))}
+            </Card>
+          </View>
+        ) : null}
+
         {!searching ? (
           <View style={{ gap: space.sm }}>
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "space-between",
-              }}
-            >
-              <Text style={{ ...type.label, color: t.color.textMuted }}>
-                People you've planned with
-              </Text>
-              <Pressable
-                onPress={() => router.push("/friends")}
-                hitSlop={8}
-                accessibilityRole="button"
-              >
-                <Text style={{ ...type.label, color: t.color.accent }}>
-                  Manage friends
-                </Text>
-              </Pressable>
-            </View>
+            <Text style={{ ...type.label, color: t.color.textMuted }}>
+              Friends{friends.length > 0 ? ` · ${friends.length}` : ""}
+            </Text>
+            {friends.length === 0 ? (
+              <Card>
+                <Muted>
+                  Nobody yet. Add someone you plan with below, or search for
+                  their &handle.
+                </Muted>
+              </Card>
+            ) : (
+              <Card style={{ gap: space.lg }}>
+                {friends.map((p) => (
+                  <PersonRowItem
+                    key={p.user_id}
+                    person={p}
+                    onPress={() => openPerson(p.user_id)}
+                    // What each person can see of you, on the row rather than
+                    // behind a settings screen (§7.4).
+                    context={grantLabel(p.grants)}
+                    contextTone={(p.grants ?? "none") === "none" ? "muted" : "notice"}
+                    actions={[{ label: "Open", onPress: () => openPerson(p.user_id) }]}
+                  />
+                ))}
+              </Card>
+            )}
+          </View>
+        ) : null}
+
+        {!searching && outgoing.length > 0 ? (
+          <View style={{ gap: space.sm }}>
+            <Text style={{ ...type.label, color: t.color.textMuted }}>Asked</Text>
+            <Card style={{ gap: space.lg }}>
+              {outgoing.map((p) => (
+                <PersonRowItem
+                  key={p.user_id}
+                  person={p}
+                  onPress={() => openPerson(p.user_id)}
+                  context="waiting for them"
+                  actions={[
+                    { label: "Cancel", onPress: () => removeFriend(p.user_id) },
+                  ]}
+                />
+              ))}
+            </Card>
+          </View>
+        ) : null}
+
+        {!searching ? (
+          <View style={{ gap: space.sm }}>
+            <Text style={{ ...type.label, color: t.color.textMuted }}>
+              People you've planned with
+            </Text>
 
             {suggestions.length === 0 ? (
               <EmptyState
@@ -266,12 +333,7 @@ export default function PeopleScreen() {
                   <PersonRowItem
                     key={p.user_id}
                     person={p}
-                    onPress={() =>
-                      router.push({
-                        pathname: "/person/[userId]",
-                        params: { userId: p.user_id },
-                      })
-                    }
+                    onPress={() => openPerson(p.user_id)}
                     context={describeOverlap(p.shared_calendars, p.mutual_events)}
                     actions={[
                       {
@@ -316,6 +378,14 @@ export default function PeopleScreen() {
     </>
   );
 }
+
+/** What this friend can see of you, in three words (§7.4). */
+const grantLabel = (g: FriendGrants | null): string =>
+  g === "full"
+    ? "sees everything"
+    : g === "busy"
+      ? "sees when you're free"
+      : "sees nothing";
 
 /**
  * Why this person is being suggested. Shared calendars alone is a weak signal —

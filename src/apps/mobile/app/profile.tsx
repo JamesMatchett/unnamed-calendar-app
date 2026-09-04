@@ -189,21 +189,18 @@ export default function ProfileScreen() {
             onPress={() => cycleGrants(profile.defaultGrants)}
           />
           <Muted>
-            You can change this for any one friend from the friends screen.
+            You can change this for any one friend on their own page.
           </Muted>
         </View>
 
         <View style={{ gap: space.sm }}>
           <Text style={{ ...type.label, color: t.color.textMuted }}>People</Text>
           <Card style={{ gap: 0 }}>
+            {/* One destination, not two: friends, requests and invitations are
+                all the same screen now. */}
             <Row
               icon="people-outline"
-              label="Friends"
-              onPress={() => router.push("/friends")}
-            />
-            <Row
-              icon="mail-outline"
-              label="Invites and requests"
+              label="Friends, invites and requests"
               onPress={() => router.push("/people")}
             />
             <Row
