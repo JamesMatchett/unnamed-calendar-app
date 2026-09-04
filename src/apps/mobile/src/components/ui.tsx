@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Children } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { radius, space, type, useTheme } from "@/theme";
@@ -19,6 +20,53 @@ export function Card({ children, style }: { children: ReactNode; style?: object 
       ]}
     >
       {children}
+    </View>
+  );
+}
+
+/**
+ * A group of related rows in one card, divided by hairlines.
+ *
+ * The form used to be a stack of separate white boxes on grey, each the same
+ * size with the same gap, which grouped nothing and gave the eye no rhythm.
+ * Related things in one card with dividers is both the platform convention and
+ * about half the visual noise for the same content.
+ *
+ * Rows are plain content: the card owns the padding, the background and the
+ * separators, so nothing inside needs its own border.
+ */
+export function Group({ children }: { children: ReactNode }) {
+  const t = useTheme();
+  const rows = Children.toArray(children).filter(Boolean);
+
+  return (
+    <View
+      style={{
+        backgroundColor: t.color.surface,
+        borderRadius: radius.md,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: t.color.border,
+        overflow: "hidden",
+      }}
+    >
+      {rows.map((row, i) => (
+        <View key={i}>
+          {i > 0 ? (
+            // Inset from the left, so the divider reads as separating rows in a
+            // list rather than slicing the card in two.
+            <View
+              style={{
+                height: StyleSheet.hairlineWidth,
+                marginLeft: space.lg,
+                backgroundColor: t.color.border,
+              }}
+            />
+          ) : null}
+          <View style={{ paddingHorizontal: space.lg, paddingVertical: space.md }}>
+            {row}
+          </View>
+        </View>
+      ))}
     </View>
   );
 }

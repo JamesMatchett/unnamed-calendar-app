@@ -13,6 +13,7 @@ import type {
   TicketStatus,
   TravelMode,
 } from "@calder/core";
+import type { SchedulingMode, SlotResponse } from "@calder/core";
 import {
   SERIES_DEFAULT,
   classifyPresence,
@@ -66,6 +67,7 @@ export interface EventRow {
   image_key: string | null;
   updated_by: string | null;
   updated_at: string | null;
+  scheduling_mode: SchedulingMode;
   sync_state: "synced" | "pending" | "failed";
 }
 
@@ -1828,4 +1830,245 @@ export function listRsvpsForCalendars(
     `SELECT * FROM rsvps WHERE calendar_id IN (${marks})`,
     [...calendarIds],
   );
+}
+
+// --- deciding when (§8.1) ---------------------------------------------------
+
+export interface SlotRow {
+  slot_id: string;
+  event_id: string;
+  calendar_id: string;
+  start_utc: string;
+  end_utc: string | null;
+  tz: string;
+  local_wall: string;
+  precision: "datetime" | "date";
+  proposed_by: string;
+  proposed_by_name: string;
+  created_at: string;
+  sync_state: "synced" | "pending" | "failed";
+}
+
+export interface SlotVoteRow {
+  slot_id: string;
+  event_id: string;
+  user_id: string;
+  response: SlotResponse;
+  responded_at: string;
+}
+
+export const listSlots = (eventId: string): SlotRow[] =>
+  getDb().getAllSync<SlotRow>(
+    "SELECT * FROM event_slots WHERE event_id = ? ORDER BY start_utc",
+    [eventId],
+  );
+
+export const listSlotVotes = (eventId: string): SlotVoteRow[] =>
+  getDb().getAllSync<SlotVoteRow>("SELECT * FROM slot_votes WHERE event_id = ?", [
+    eventId,
+  ]);
+
+/**
+ * Start asking rather than deciding.
+ *
+ * The event keeps whatever time it had: an event with no time at all cannot be
+ * placed in a list, and a poll that hides the thing being planned is worse than
+ * one with a provisional date on it. The date shows as provisional until a slot
+ * is chosen.
+ */
+export function startPoll(eventId: string, mode: SchedulingMode): void {
+  getDb().runSync(
+    `UPDATE events SET scheduling_mode = ?, version = version + 1,
+       updated_by = ?, updated_at = ?, sync_state = 'pending'
+     WHERE event_id = ?`,
+    [mode, CURRENT_USER_ID, new Date().toISOString(), eventId],
+  );
+  notifyChanged();
+}
+
+export interface NewSlot {
+  startUtc: string;
+  endUtc?: string | null;
+  tz: string;
+  localWall: string;
+  precision?: "datetime" | "date";
+}
+
+/**
+ * Add a candidate time.
+ *
+ * Duplicates are refused rather than merged: two people proposing the same
+ * evening should land on one row that both can answer, not two identical rows
+ * that split the vote between them. Returns the existing slot's id in that case,
+ * so the caller can point at it instead.
+ */
+export function proposeSlot(eventId: string, input: NewSlot): string {
+  const db = getDb();
+
+  const event = db.getFirstSync<{ calendar_id: string }>(
+    "SELECT calendar_id FROM events WHERE event_id = ?",
+    [eventId],
+  );
+  if (!event) return "";
+
+  const existing = db.getFirstSync<{ slot_id: string }>(
+    "SELECT slot_id FROM event_slots WHERE event_id = ? AND start_utc = ?",
+    [eventId, input.startUtc],
+  );
+  if (existing) return existing.slot_id;
+
+  const me = db.getFirstSync<{ display_name: string }>(
+    "SELECT display_name FROM members WHERE calendar_id = ? AND user_id = ?",
+    [event.calendar_id, CURRENT_USER_ID],
+  );
+
+  const slotId = ulid();
+  db.runSync(
+    `INSERT INTO event_slots (slot_id, event_id, calendar_id, start_utc, end_utc,
+       tz, local_wall, precision, proposed_by, proposed_by_name, created_at, sync_state)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pending')`,
+    [
+      slotId,
+      eventId,
+      event.calendar_id,
+      input.startUtc,
+      input.endUtc ?? null,
+      input.tz,
+      input.localWall,
+      input.precision ?? "datetime",
+      CURRENT_USER_ID,
+      me?.display_name ?? "You",
+      new Date().toISOString(),
+    ],
+  );
+
+  notifyChanged();
+  return slotId;
+}
+
+/** Withdraw a slot. Its votes go with it, which the foreign key handles. */
+export function removeSlot(slotId: string): void {
+  getDb().runSync("DELETE FROM event_slots WHERE slot_id = ?", [slotId]);
+  notifyChanged();
+}
+
+/**
+ * Answer one slot, or clear the answer by passing null.
+ *
+ * Clearing matters as much as answering: "I have not decided" is a real state,
+ * and someone who mis-taps "no" on a date they could actually make needs a way
+ * back that is not "say yes and hope".
+ */
+export function setSlotVote(
+  eventId: string,
+  slotId: string,
+  response: SlotResponse | null,
+): void {
+  const db = getDb();
+
+  if (response === null) {
+    db.runSync("DELETE FROM slot_votes WHERE slot_id = ? AND user_id = ?", [
+      slotId,
+      CURRENT_USER_ID,
+    ]);
+  } else {
+    db.runSync(
+      `INSERT INTO slot_votes (slot_id, event_id, user_id, response, responded_at, sync_state)
+       VALUES (?,?,?,?,?, 'pending')
+       ON CONFLICT (slot_id, user_id)
+       DO UPDATE SET response = ?, responded_at = ?, sync_state = 'pending'`,
+      [
+        slotId,
+        eventId,
+        CURRENT_USER_ID,
+        response,
+        new Date().toISOString(),
+        response,
+        new Date().toISOString(),
+      ],
+    );
+  }
+
+  notifyChanged();
+}
+
+/**
+ * Settle it: this slot becomes the event's time and the poll closes.
+ *
+ * The slots and their votes are KEPT. "Why is it on the Thursday" is a question
+ * people ask afterwards, and the answer is the poll; deleting it turns a
+ * decision everyone took part in into one that seems to have been imposed.
+ */
+export function chooseSlot(eventId: string, slotId: string): void {
+  const db = getDb();
+  const slot = db.getFirstSync<SlotRow>(
+    "SELECT * FROM event_slots WHERE slot_id = ?",
+    [slotId],
+  );
+  if (!slot) return;
+
+  const now = new Date().toISOString();
+
+  db.withTransactionSync(() => {
+    db.runSync(
+      `UPDATE events SET start_utc = ?, end_utc = ?, tz = ?, local_wall = ?,
+         precision = ?, scheduling_mode = 'fixed', version = version + 1,
+         updated_by = ?, updated_at = ?, sync_state = 'pending'
+       WHERE event_id = ?`,
+      [
+        slot.start_utc,
+        slot.end_utc,
+        slot.tz,
+        slot.local_wall,
+        slot.precision,
+        CURRENT_USER_ID,
+        now,
+        eventId,
+      ],
+    );
+
+    // Everyone who said they could make it is now going: they have already
+    // answered the only question an RSVP asks, and making them answer it twice
+    // is how a settled date collects no replies.
+    const yes = db.getAllSync<{ user_id: string }>(
+      "SELECT user_id FROM slot_votes WHERE slot_id = ? AND response = 'yes'",
+      [slotId],
+    );
+
+    for (const { user_id } of yes) {
+      db.runSync(
+        `INSERT INTO rsvps (event_id, occurrence, user_id, calendar_id, status, responded_at, sync_state)
+         VALUES (?, '-', ?, ?, 'going', ?, 'pending')
+         ON CONFLICT (event_id, occurrence, user_id) DO NOTHING`,
+        [eventId, user_id, slot.calendar_id, now],
+      );
+    }
+  });
+
+  notifyChanged();
+}
+
+/**
+ * Every place already used across my calendars, most recent first.
+ *
+ * People go back to the same dozen places, so this is the shortlist a location
+ * picker should offer before asking anyone to type. Scoped to calendars I am in,
+ * because it is a convenience built from my own history and not a directory of
+ * other people's haunts.
+ */
+export function recentPlaces(limit = 40): string[] {
+  return getDb()
+    .getAllSync<{ location_name: string }>(
+      `SELECT e.location_name AS location_name
+         FROM events e
+         JOIN members m ON m.calendar_id = e.calendar_id AND m.user_id = ?
+        WHERE m.status = 'active'
+          AND e.location_name IS NOT NULL
+          AND TRIM(e.location_name) != ''
+        GROUP BY LOWER(e.location_name)
+        ORDER BY MAX(e.start_utc) DESC
+        LIMIT ?`,
+      [CURRENT_USER_ID, limit],
+    )
+    .map((r) => r.location_name);
 }

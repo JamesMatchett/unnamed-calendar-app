@@ -21,3 +21,4 @@ export * from "./zones.js";
 export * from "./parse.js";
 export * from "./sync.js";
 export * from "./gestures.js";
+export * from "./scheduling.js";

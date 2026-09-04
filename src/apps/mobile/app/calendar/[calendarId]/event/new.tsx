@@ -1,22 +1,28 @@
 import { Ionicons } from "@expo/vector-icons";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { parseEventText, zonedWallToUtc } from "@calder/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 
 import {
-  Field,
   PrimaryButton,
   RowButton,
   Segmented,
+  SegmentedGroup,
   TextField,
   ToggleRow,
 } from "@/components/form";
-import { Cover, CoverPlaceholder } from "@/components/Cover";
-import { Card, EmptyState, Muted } from "@/components/ui";
+import { Chips } from "@/components/Chips";
+import { PlaceDialog } from "@/components/PlaceDialog";
+import type { Chip } from "@/components/Chips";
+import { Cover } from "@/components/Cover";
+import type { SlotDraft } from "@/components/SlotDialog";
+import { SlotDialog } from "@/components/SlotDialog";
+import { Card, EmptyState, Group, Muted } from "@/components/ui";
 import {
   createEvent,
+  proposeSlot,
+  startPoll,
   findSimilarEvents,
   getCalendar,
   myMembership,
@@ -28,7 +34,25 @@ import { radius, space, type, useTheme } from "@/theme";
 
 type Precision = "datetime" | "date" | "tbc";
 
+/** What the When control offers. "ask" stores as tbc plus a running poll. */
+type When = "datetime" | "date" | "ask";
+
+const WHEN_OPTIONS: { value: When; label: string }[] = [
+  { value: "datetime", label: "At a time" },
+  { value: "date", label: "All day" },
+  // "Poll" is what TBC always meant. As a label it named a state and offered
+  // nothing to do about it; as a mode it puts the date to the group and gives
+  // the event a way out of being undated. The value stays "ask" internally
+  // because that is the verb the code performs.
+  { value: "ask", label: "Poll" },
+];
+
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
+
+const nextDay = (iso: string): string =>
+  new Date(new Date(`${iso}T12:00:00.000Z`).getTime() + 86_400_000)
+    .toISOString()
+    .slice(0, 10);
 
 const prettyDate = (s: string) =>
   new Date(`${s}T12:00:00.000Z`).toLocaleDateString("en-GB", {
@@ -80,12 +104,64 @@ export default function NewEventScreen() {
   const [ticketsRequired, setTicketsRequired] = useState(false);
   const [ticketUrl, setTicketUrl] = useState("");
   const [imageKey, setImageKey] = useState<string | null>(null);
+  /**
+   * Asking turns the date into a starting point rather than a decision. The
+   * event is still created with a time — an event with no time cannot be placed
+   * in a list — and that time becomes the poll's first candidate, so people
+   * answer about a real evening rather than the abstract idea of meeting up.
+   */
+  const [openSuggestions, setOpenSuggestions] = useState(true);
+  /**
+   * Candidate times, held here until the event exists.
+   *
+   * An organiser who has picked "poll" usually has two or three evenings in
+   * mind already; making them create the event first and then go and find it to
+   * add times is a detour through a screen they have just left. Stored as local
+   * wall readings and converted on submit, exactly as the single date is.
+   */
+  const [slots, setSlots] = useState<SlotDraft[]>([]);
+
+  const [editingName, setEditingName] = useState(false);
+  const [pickingWhen, setPickingWhen] = useState(false);
+  /**
+   * Optional, and off by default.
+   *
+   * Most social plans have no end anyone would commit to — dinner finishes when
+   * it finishes — so asking for one on every event is a field people skip and a
+   * false precision when they do not. It earns its place where it matters: a
+   * gig with doors and a curfew, an hour of five-a-side, anything someone has
+   * to leave for. The landscape hour grid draws real durations from it; without
+   * one it assumes an hour, which is a guess rather than a claim.
+   */
+  const [endTime, setEndTime] = useState<string | null>(null);
+  const [pickingPlace, setPickingPlace] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<SlotDraft | null>(null);
+
+  const byTime = (a: SlotDraft, b: SlotDraft) =>
+    `${a.date}T${a.time}` < `${b.date}T${b.time}` ? -1 : 1;
+
+  const saveSlot = (draft: SlotDraft, replacing: SlotDraft | null) => {
+    const rest = slots.filter(
+      (s) =>
+        !(replacing && s.date === replacing.date && s.time === replacing.time),
+    );
+    // The same evening twice would split the vote between two identical rows,
+    // so a duplicate collapses onto the existing one rather than being added.
+    if (rest.some((s) => s.date === draft.date && s.time === draft.time)) {
+      setSlots(rest.sort(byTime));
+      return;
+    }
+    setSlots([...rest, draft].sort(byTime));
+  };
+
+  const removeSlot = (slot: SlotDraft) =>
+    setSlots(slots.filter((s) => s.date !== slot.date || s.time !== slot.time));
 
   const pickImage = async () => {
     const picked = await pickCoverImage();
     if (picked) setImageKey(picked);
   };
-  const [picking, setPicking] = useState<"date" | "time" | null>(null);
   const [touched, setTouched] = useState(false);
 
   /**
@@ -108,6 +184,10 @@ export default function NewEventScreen() {
     // typing them should move it rather than leaving the words stranded in the
     // title. A null means nothing was said, which must not overwrite a choice
     // made by hand.
+    //
+    // "TBC" lands on Ask, which is the same state with something to do about
+    // it: writing that the time is to be confirmed and then confirming it with
+    // nobody is how an event stays undated for a fortnight.
     if (parsed.precision) setPrecision(parsed.precision);
   };
 
@@ -141,11 +221,71 @@ export default function NewEventScreen() {
 
   const valid = title.trim().length > 0;
 
+  /**
+   * What the sentence yielded, as chips.
+   *
+   * Each one is tappable to overrule the parse, which is the whole reason they
+   * exist: a guess you cannot correct is worse than no guess. The name is a chip
+   * too, so the single input stays the way you write an event and there is
+   * still a way to fix a title the parser trimmed too far.
+   */
+  const chips: Chip[] = [
+    ...(title.trim()
+      ? [
+          {
+            key: "name",
+            label: title.trim(),
+            icon: "text-outline" as const,
+            onPress: () => setEditingName(true),
+          },
+        ]
+      : []),
+    ...(precision === "tbc"
+      ? []
+      : [
+          {
+            key: "date",
+            label: prettyDate(date),
+            icon: "calendar-outline" as const,
+            onPress: () => setPickingWhen(true),
+          },
+        ]),
+    ...(precision === "datetime" && time
+      ? [
+          {
+            key: "time",
+            label: time,
+            icon: "time-outline" as const,
+            onPress: () => setPickingWhen(true),
+          },
+        ]
+      : []),
+    ...(location.trim()
+      ? [
+          {
+            key: "place",
+            label: location.trim(),
+            icon: "location-outline" as const,
+            onPress: () => setPickingPlace(true),
+            onClear: () => setLocation(""),
+          },
+        ]
+      : []),
+  ];
+
   const submit = () => {
     const effectiveTime = precision === "datetime" ? (time ?? "19:00") : "12:00";
-    createEvent(calendarId, {
+    // An end before the start means they meant the small hours: a gig ending at
+    // 01:00 is the next day, not a negative event.
+    const endWall =
+      precision === "datetime" && endTime
+        ? `${endTime < effectiveTime ? nextDay(date) : date}T${endTime}:00`
+        : null;
+
+    const eventId = createEvent(calendarId, {
       title,
       startUtc: zonedWallToUtc(`${date}T${effectiveTime}:00`, tz),
+      endUtc: endWall ? zonedWallToUtc(endWall, tz) : null,
       tz,
       localWall: `${date}T${effectiveTime}:00`,
       precision,
@@ -154,6 +294,22 @@ export default function NewEventScreen() {
       ticketUrl: ticketsRequired ? ticketUrl : null,
       imageKey,
     });
+
+    if (precision === "tbc") {
+      startPoll(eventId, openSuggestions ? "open" : "proposed");
+      // Only times the organiser actually chose. Nothing is seeded from the
+      // form's own date: that would put a candidate on the poll nobody picked.
+      for (const slot of slots) {
+        const wall = `${slot.date}T${slot.time}:00`;
+        proposeSlot(eventId, {
+          startUtc: zonedWallToUtc(wall, tz),
+          tz,
+          localWall: wall,
+          precision: "datetime",
+        });
+      }
+    }
+
     router.back();
   };
 
@@ -161,20 +317,40 @@ export default function NewEventScreen() {
     <>
       <Stack.Screen options={{ title: "Add an event", presentation: "modal" }} />
       <ScrollView
-        contentContainerStyle={{ padding: space.lg, gap: space.xl }}
+        contentContainerStyle={{ padding: space.lg, gap: space.lg }}
         keyboardShouldPersistTaps="handled"
       >
-        <Field
-          label="What's happening?"
-          hint="Try: Drinks at The Crown Thursday 8pm"
-        >
+        {/* One field, not two. The name used to have its own box under this
+            one, holding the same value the parser had just extracted, so there
+            were two places to type a name and no way to tell which counted.
+            What the sentence yielded is reported as chips instead: smaller than
+            a parallel form, and every one of them is a way to overrule it. */}
+        <Group>
           <TextField
+            bare
             value={raw}
             onChange={onRawChange}
             placeholder="Dinner at Time Out Market Friday 8pm"
             autoFocus
           />
-        </Field>
+
+          {chips.length > 0 ? <Chips chips={chips} /> : null}
+
+          {editingName ? (
+            <TextField
+              bare
+              value={title}
+              onChange={(v) => {
+                setTouched(true);
+                setTitle(v);
+              }}
+              onBlur={() => setEditingName(false)}
+              placeholder="Event name"
+              autoFocus
+              maxLength={80}
+            />
+          ) : null}
+        </Group>
 
         {similar.length > 0 ? (
           /* Two people adding the same gig is the most common annoyance in a
@@ -192,128 +368,259 @@ export default function NewEventScreen() {
           </Card>
         ) : null}
 
-        <Field label="Called">
-          <TextField
-            value={title}
-            onChange={(v) => {
-              setTouched(true);
-              setTitle(v);
-            }}
-            placeholder="Event name"
-            maxLength={80}
-          />
-        </Field>
-
-        <Field label="When">
-          <Segmented<Precision>
-            value={precision}
-            onChange={(p) => {
-              setTouched(true);
-              setPrecision(p);
-            }}
-            options={[
-              { value: "datetime", label: "At a time" },
-              { value: "date", label: "All day" },
-              { value: "tbc", label: "TBC" },
-            ]}
-          />
-        </Field>
-
         <View style={{ gap: space.sm }}>
-          <RowButton
-            label="Date"
-            value={prettyDate(date)}
-            onPress={() => setPicking(picking === "date" ? null : "date")}
-          />
-          {precision === "datetime" ? (
-            <RowButton
-              label="Time"
-              value={time ? formatClock(`${startUtc}`, tz) : "Pick a time"}
-              onPress={() => setPicking(picking === "time" ? null : "time")}
-            />
-          ) : null}
+          <Text style={{ ...type.label, color: t.color.textMuted }}>When</Text>
 
-          {picking ? (
-            <DateTimePicker
-              value={new Date(startUtc)}
-              mode={picking}
-              display={Platform.OS === "ios" ? "inline" : "default"}
-              onChange={(_, selected) => {
-                if (Platform.OS !== "ios") setPicking(null);
-                if (!selected) return;
+          {/* One track, two rows. Who may suggest is not a new question: it
+              only exists because Poll was chosen, so it sits inside the same
+              control as a sub-row rather than beneath it as an equal. */}
+          <SegmentedGroup>
+            <Segmented<When>
+              bare
+              value={precision === "tbc" ? "ask" : precision}
+              onChange={(next) => {
                 setTouched(true);
-                if (picking === "date") {
-                  setDate(isoDate(selected));
-                } else {
-                  setTime(
-                    `${String(selected.getHours()).padStart(2, "0")}:${String(
-                      selected.getMinutes(),
-                    ).padStart(2, "0")}`,
-                  );
-                }
+                setPrecision(next === "ask" ? "tbc" : next);
               }}
+              options={WHEN_OPTIONS}
             />
-          ) : null}
 
-          <Muted>Times are in the calendar's zone, {tz}.</Muted>
+            {precision === "tbc" ? (
+              <Segmented<"open" | "proposed">
+                bare
+                value={openSuggestions ? "open" : "proposed"}
+                onChange={(next) => setOpenSuggestions(next === "open")}
+                options={[
+                  { value: "open", label: "Anyone can suggest" },
+                  { value: "proposed", label: "Only my options" },
+                ]}
+              />
+            ) : null}
+          </SegmentedGroup>
+
+          {precision === "tbc" ? (
+            <>
+              <Muted>
+                {openSuggestions
+                  ? "Anyone can put times forward as well as answer yours."
+                  : "Only you put times up. People answer the ones you add."}
+              </Muted>
+
+              {slots.length > 0 ? (
+                <Group>
+                  {slots.map((slot) => (
+                    <View
+                      key={`${slot.date}T${slot.time}`}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: space.md,
+                      }}
+                    >
+                      <Text style={{ ...type.body, flex: 1, color: t.color.text }}>
+                        {prettyDate(slot.date)} · {slot.time}
+                      </Text>
+                      <Pressable
+                        onPress={() => setEditing(slot)}
+                        hitSlop={10}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Change or remove ${prettyDate(slot.date)} at ${slot.time}`}
+                      >
+                        <Ionicons name="pencil" size={15} color={t.color.textMuted} />
+                      </Pressable>
+                    </View>
+                  ))}
+                </Group>
+              ) : null}
+
+              <Pressable
+                onPress={() => {
+                  setEditing(null);
+                  setDialogOpen(true);
+                }}
+                accessibilityRole="button"
+              >
+                <Text style={{ ...type.label, color: t.color.accent }}>
+                  Add an option
+                </Text>
+              </Pressable>
+
+              <SlotDialog
+                visible={dialogOpen || editing !== null}
+                initial={editing}
+                tz={tz}
+                onSave={(draft) => saveSlot(draft, editing)}
+                onRemove={editing ? () => removeSlot(editing) : undefined}
+                onClose={() => {
+                  setDialogOpen(false);
+                  setEditing(null);
+                }}
+              />
+            </>
+          ) : (
+            <>
+              {/* Both rows open the SAME dialog the chips do. They used to
+                  drive an inline picker instead, so tapping a chip unfolded a
+                  calendar further down the form with no way to dismiss it, and
+                  the screen showed two ways to set one date at once.
+
+                  The finish lives in that dialog too rather than on a row of
+                  its own: start and end are one decision, and shown here as a
+                  single "19:00 to 21:00" the form stays two lines whether or
+                  not an event has an end. */}
+              <Group>
+                <RowButton
+                  bare
+                  label="Date"
+                  value={prettyDate(date)}
+                  onPress={() => setPickingWhen(true)}
+                />
+                {precision === "datetime" ? (
+                  <RowButton
+                    bare
+                    label="Time"
+                    value={
+                      time
+                        ? endTime
+                          ? `${time} to ${endTime}${endTime < time ? " next day" : ""}`
+                          : time
+                        : "Pick a time"
+                    }
+                    onPress={() => setPickingWhen(true)}
+                  />
+                ) : null}
+              </Group>
+              <Muted>Times are in the calendar's zone, {tz}.</Muted>
+            </>
+          )}
         </View>
 
-        <Field label="Where">
-          <TextField
-            value={location}
-            onChange={(v) => {
-              setTouched(true);
-              setLocation(v);
-            }}
-            placeholder="Somewhere, or leave it blank"
-            maxLength={80}
-          />
-        </Field>
+        <SlotDialog
+          visible={pickingWhen}
+          initial={{ date, time: time ?? "19:00", endTime }}
+          tz={tz}
+          title="When is it?"
+          saveLabel="Set the time"
+          dateLabel="On"
+          timeLabel="Starts"
+          withTime={precision === "datetime"}
+          withEnd={precision === "datetime"}
+          onSave={(draft) => {
+            setTouched(true);
+            setDate(draft.date);
+            if (precision === "datetime") {
+              setTime(draft.time);
+              setEndTime(draft.endTime ?? null);
+            }
+          }}
+          onClose={() => setPickingWhen(false)}
+        />
 
+        {/* Where earns a section of its own: it is the second thing anyone
+            asks after when, and it was previously a nameless first row above a
+            tickets toggle. */}
         <View style={{ gap: space.sm }}>
-          <ToggleRow
-            label="Tickets needed"
-            value={ticketsRequired}
-            onChange={setTicketsRequired}
-          />
-          {ticketsRequired ? (
-            <TextField
-              value={ticketUrl}
-              onChange={setTicketUrl}
-              placeholder="Link to tickets"
-            />
-          ) : null}
+          <Text style={{ ...type.label, color: t.color.textMuted }}>Where</Text>
+          <Group>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: space.md }}>
+              {/* The bare field has no flex of its own — the Group normally
+                  gives it the full row — so sharing a row with the map button
+                  needs this wrapper, or the field collapses to nothing and the
+                  value it holds becomes invisible. */}
+              <View style={{ flex: 1 }}>
+                <TextField
+                  bare
+                  value={location}
+                  onChange={(v) => {
+                    setTouched(true);
+                    setLocation(v);
+                  }}
+                  placeholder="Somewhere, or leave it blank"
+                  maxLength={80}
+                />
+              </View>
+              <Pressable
+                onPress={() => setPickingPlace(true)}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Find a place"
+              >
+                <Ionicons name="map-outline" size={19} color={t.color.accent} />
+              </Pressable>
+            </View>
+          </Group>
         </View>
 
+        <PlaceDialog
+          visible={pickingPlace}
+          value={location}
+          onSelect={(place) => {
+            setTouched(true);
+            setLocation(place);
+          }}
+          onClose={() => setPickingPlace(false)}
+        />
 
-        {/* Only ever seen on the event's own screen, never in a list: a row of
-            photographs is a feed, and a day's plans read faster as text. The
-            picture is for when you have opened the thing to decide about it. */}
-        <Field label="Picture" hintOneLine hint="Shown when someone opens the event">
-          <Pressable
-            onPress={() => void pickImage()}
-            accessibilityRole="button"
-            accessibilityLabel={imageKey ? "Change the picture" : "Choose a picture"}
-          >
+        {/* Tickets and the photo: the practicalities, once when and where are
+            settled. */}
+        <View style={{ gap: space.sm }}>
+          <Text style={{ ...type.label, color: t.color.textMuted }}>Details</Text>
+          <Group>
+            <ToggleRow
+              bare
+              label="Tickets needed"
+              value={ticketsRequired}
+              onChange={setTicketsRequired}
+            />
+            {ticketsRequired ? (
+              <TextField
+                bare
+                value={ticketUrl}
+                onChange={setTicketUrl}
+                placeholder="Link to tickets"
+                autoCapitalize="none"
+              />
+            ) : null}
+
+            {/* A photo is optional decoration, so it is a row until it exists
+                rather than a grey slab competing with the fields that matter.
+                It is only ever seen on the event's own screen: a list of
+                photographs is a feed, and a day's plans read faster as text. */}
+            <Pressable
+              onPress={() => void pickImage()}
+              accessibilityRole="button"
+              accessibilityLabel={imageKey ? "Change the photo" : "Add a photo"}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <Text style={{ ...type.body, color: t.color.textMuted }}>
+                {imageKey ? "Photo" : "Add a photo"}
+              </Text>
+              <Ionicons
+                name={imageKey ? "pencil" : "image-outline"}
+                size={17}
+                color={t.color.textMuted}
+              />
+            </Pressable>
+
             {imageKey ? (
-              <Cover value={imageKey} height={110} />
-            ) : (
-              <CoverPlaceholder label="Choose a picture" height={110} />
-            )}
-          </Pressable>
-        </Field>
-
-        {imageKey ? (
-          <Pressable
-            onPress={() => setImageKey(null)}
-            accessibilityRole="button"
-            style={{ marginTop: -space.md }}
-          >
-            <Text style={{ ...type.caption, color: t.color.textMuted }}>
-              Remove picture
-            </Text>
-          </Pressable>
-        ) : null}
+              <View style={{ gap: space.sm }}>
+                <Cover value={imageKey} height={110} />
+                <Pressable
+                  onPress={() => setImageKey(null)}
+                  accessibilityRole="button"
+                >
+                  <Text style={{ ...type.caption, color: t.color.textMuted }}>
+                    Remove photo
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
+          </Group>
+        </View>
 
         <PrimaryButton label="Add to calendar" onPress={submit} disabled={!valid} />
       </ScrollView>

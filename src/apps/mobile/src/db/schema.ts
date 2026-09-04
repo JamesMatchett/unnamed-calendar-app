@@ -78,6 +78,9 @@ CREATE TABLE IF NOT EXISTS events (
   -- people trust and one that seems to rearrange itself (§8.1).
   updated_by       TEXT,
   updated_at       TEXT,
+  -- 'fixed' | 'proposed' | 'open'. Anything but fixed means the time is still
+  -- being decided and the event carries candidate slots (§8.1).
+  scheduling_mode  TEXT NOT NULL DEFAULT 'fixed',
   rrule            TEXT,
   image_key        TEXT,
   -- 'synced' | 'pending' | 'failed'. Pending never blocks interaction (§5.6).
@@ -260,6 +263,46 @@ CREATE TABLE IF NOT EXISTS suggestions (
 
 CREATE INDEX IF NOT EXISTS idx_suggestions_event
   ON suggestions (event_id, status);
+
+-- Candidate times for an event whose date is not settled.
+--
+-- Separate rows rather than a JSON blob on the event: people answer per slot,
+-- and votes have to key off something stable. A blob would also make two people
+-- adding a slot at once a lost-update, which is exactly the moment a poll is
+-- busiest.
+CREATE TABLE IF NOT EXISTS event_slots (
+  slot_id          TEXT PRIMARY KEY NOT NULL,
+  event_id         TEXT NOT NULL,
+  calendar_id      TEXT NOT NULL,
+  start_utc        TEXT NOT NULL,
+  end_utc          TEXT,
+  tz               TEXT NOT NULL,
+  local_wall       TEXT NOT NULL,
+  precision        TEXT NOT NULL DEFAULT 'datetime'
+                     CHECK (precision IN ('datetime','date')),
+  proposed_by      TEXT NOT NULL,
+  proposed_by_name TEXT NOT NULL,
+  created_at       TEXT NOT NULL,
+  sync_state       TEXT NOT NULL DEFAULT 'synced',
+  FOREIGN KEY (event_id) REFERENCES events(event_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_slots_event ON event_slots (event_id, start_utc);
+
+-- One answer per person per slot. The key includes the user, so two people
+-- answering at once can never collide (§4.4 pattern 5).
+CREATE TABLE IF NOT EXISTS slot_votes (
+  slot_id      TEXT NOT NULL,
+  event_id     TEXT NOT NULL,
+  user_id      TEXT NOT NULL,
+  response     TEXT NOT NULL CHECK (response IN ('yes','if_need_be','no')),
+  responded_at TEXT NOT NULL,
+  sync_state   TEXT NOT NULL DEFAULT 'synced',
+  PRIMARY KEY (slot_id, user_id),
+  FOREIGN KEY (slot_id) REFERENCES event_slots(slot_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_slot_votes_event ON slot_votes (event_id);
 
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY NOT NULL,

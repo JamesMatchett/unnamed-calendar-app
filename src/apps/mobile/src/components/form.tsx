@@ -46,6 +46,7 @@ export function TextField({
   maxLength,
   onBlur,
   autoCapitalize,
+  bare = false,
   prefix,
 }: {
   value: string;
@@ -60,6 +61,8 @@ export function TextField({
    */
   onBlur?: () => void;
   autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  /** Drop the box: the Group around it already provides one. */
+  bare?: boolean;
   /**
    * A fixed, unerasable lead-in such as "&". It sits OUTSIDE the input rather
    * than in its value, so nobody can delete it, the stored handle never carries
@@ -74,11 +77,15 @@ export function TextField({
       style={{
         flexDirection: "row",
         alignItems: "center",
-        backgroundColor: t.color.surface,
-        borderWidth: 1,
-        borderColor: t.color.border,
-        borderRadius: radius.md,
-        paddingHorizontal: space.lg,
+        ...(bare
+          ? null
+          : {
+              backgroundColor: t.color.surface,
+              borderWidth: 1,
+              borderColor: t.color.border,
+              borderRadius: radius.md,
+              paddingHorizontal: space.lg,
+            }),
       }}
     >
       {prefix ? (
@@ -99,7 +106,7 @@ export function TextField({
           ...type.body,
           flex: 1,
           color: t.color.text,
-          paddingVertical: space.md,
+          paddingVertical: bare ? 0 : space.md,
         }}
       />
     </View>
@@ -110,20 +117,32 @@ export function Segmented<T extends string>({
   value,
   options,
   onChange,
+  bare = false,
 }: {
   value: T;
   options: readonly { value: T; label: string }[];
   onChange: (next: T) => void;
+  /**
+   * Drop the track and its padding, so the row can sit inside a SegmentedGroup
+   * with another row. Two ordinary Segmenteds stacked read as two controls;
+   * two bare rows in one track read as one control with a second row, which is
+   * what a choice that only exists because of the row above it should look like.
+   */
+  bare?: boolean;
 }) {
   const t = useTheme();
   return (
     <View
       style={{
         flexDirection: "row",
-        padding: 3,
         gap: 3,
-        borderRadius: radius.md,
-        backgroundColor: t.color.surfaceAlt,
+        ...(bare
+          ? null
+          : {
+              padding: 3,
+              borderRadius: radius.md,
+              backgroundColor: t.color.surfaceAlt,
+            }),
       }}
     >
       {options.map((o) => {
@@ -157,16 +176,39 @@ export function Segmented<T extends string>({
   );
 }
 
+/**
+ * One track holding several Segmented rows, so a follow-up choice reads as a
+ * sub-row of the choice that revealed it rather than as a new question.
+ */
+export function SegmentedGroup({ children }: { children: ReactNode }) {
+  const t = useTheme();
+  return (
+    <View
+      style={{
+        padding: 3,
+        gap: 3,
+        borderRadius: radius.md,
+        backgroundColor: t.color.surfaceAlt,
+      }}
+    >
+      {children}
+    </View>
+  );
+}
+
 export function ToggleRow({
   label,
   hint,
   value,
   onChange,
+  bare = false,
 }: {
   label: string;
   hint?: string;
   value: boolean;
   onChange: (next: boolean) => void;
+  /** Inside a Group the card provides the box and the padding. */
+  bare?: boolean;
 }) {
   const t = useTheme();
   return (
@@ -178,11 +220,15 @@ export function ToggleRow({
         flexDirection: "row",
         alignItems: "center",
         gap: space.lg,
-        backgroundColor: t.color.surface,
-        borderWidth: 1,
-        borderColor: t.color.border,
-        borderRadius: radius.md,
-        padding: space.lg,
+        ...(bare
+          ? null
+          : {
+              backgroundColor: t.color.surface,
+              borderWidth: 1,
+              borderColor: t.color.border,
+              borderRadius: radius.md,
+              padding: space.lg,
+            }),
       }}
     >
       <View style={{ flex: 1, gap: 2 }}>
@@ -200,10 +246,20 @@ export function RowButton({
   label,
   value,
   onPress,
+  bare = false,
+  active = false,
 }: {
   label: string;
   value: string;
   onPress: () => void;
+  /** Inside a Group the card provides the box and the padding. */
+  bare?: boolean;
+  /**
+   * This row is the one the picker below is currently driving. Without it, a
+   * sheet with several rows and one shared picker gives no clue which value is
+   * about to change.
+   */
+  active?: boolean;
 }) {
   const t = useTheme();
   return (
@@ -214,16 +270,28 @@ export function RowButton({
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
-        backgroundColor: t.color.surface,
-        borderWidth: 1,
-        borderColor: t.color.border,
-        borderRadius: radius.md,
-        paddingHorizontal: space.lg,
-        paddingVertical: space.md,
+        ...(bare
+          ? null
+          : {
+              backgroundColor: t.color.surface,
+              borderWidth: 1,
+              borderColor: t.color.border,
+              borderRadius: radius.md,
+              paddingHorizontal: space.lg,
+              paddingVertical: space.md,
+            }),
       }}
     >
       <Text style={{ ...type.body, color: t.color.textMuted }}>{label}</Text>
-      <Text style={{ ...type.body, color: t.color.text }}>{value}</Text>
+      <Text
+        style={{
+          ...type.body,
+          fontWeight: active ? "700" : "400",
+          color: active ? t.color.accent : t.color.text,
+        }}
+      >
+        {value}
+      </Text>
     </Pressable>
   );
 }

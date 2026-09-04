@@ -45,6 +45,7 @@ function addMissingColumns(database: SQLite.SQLiteDatabase): void {
     ["calendars", "is_private", "INTEGER NOT NULL DEFAULT 0"],
     ["events", "updated_by", "TEXT"],
     ["events", "updated_at", "TEXT"],
+    ["events", "scheduling_mode", "TEXT NOT NULL DEFAULT 'fixed'"],
   ];
 
   for (const [table, column, decl] of added) {
@@ -94,6 +95,8 @@ function clearFixtures(database: SQLite.SQLiteDatabase): void {
   for (const table of [
     "availability",
     "rsvps",
+    "slot_votes",
+    "event_slots",
     "suggestions",
     "events",
     "members",

@@ -6,6 +6,7 @@ import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 
 import { Cover } from "@/components/Cover";
 import { RsvpControl } from "@/components/RsvpControl";
+import { SlotPoll } from "@/components/SlotPoll";
 import { TicketControl } from "@/components/TicketControl";
 import { Card, EmptyState, Muted } from "@/components/ui";
 import {
@@ -14,6 +15,8 @@ import {
   getEvent,
   listMembers,
   listRsvps,
+  listSlotVotes,
+  listSlots,
   myMembership,
   resolveForUser,
   setMyTicketStatus,
@@ -21,7 +24,7 @@ import {
   tallyForEvent,
 } from "@/db/repo";
 import { CURRENT_USER_ID } from "@/db/seed";
-import { formatDayHeading, formatEventTime } from "@/lib/format";
+import { formatClock, formatDayHeading, formatEventTime } from "@/lib/format";
 import { openMap } from "@/lib/maps";
 import { useQuery } from "@/lib/useQuery";
 import { radius, space, type, useTheme } from "@/theme";
@@ -49,6 +52,8 @@ export default function EventScreen() {
   const members = useQuery(`members:${calendarId}`, () => listMembers(calendarId));
   const me = useQuery(`me:${calendarId}`, () => myMembership(calendarId));
   const rsvps = useQuery(`rsvps-event:${eventId}`, () => listRsvps(eventId));
+  const slots = useQuery(`slots:${eventId}`, () => listSlots(eventId));
+  const slotVotes = useQuery(`slot-votes:${eventId}`, () => listSlotVotes(eventId));
 
   if (!event) {
     return <EmptyState title="Event not found" body="It may have been deleted." />;
@@ -125,15 +130,38 @@ export default function EventScreen() {
           <Text style={{ ...type.body, color: t.color.textMuted }}>
             {formatDayHeading(event.start_utc, event.tz)}
           </Text>
-          <Text style={{ ...type.body, color: t.color.text }}>
-            {formatEventTime({
-              startUtc: event.start_utc,
-              endUtc: event.end_utc ?? undefined,
-              tz: event.tz,
-              localWall: event.local_wall,
-              precision: event.precision,
-            })}
-          </Text>
+          {/* The start is the fact people act on — it decides when to leave —
+              so it carries the weight, and the end trails it in the muted
+              colour. Rendered as "20:30 – 23:00" in one size, the two times
+              looked equally important and you had to read the dash to tell
+              which was which. */}
+          {event.precision === "datetime" ? (
+            <View style={{ flexDirection: "row", alignItems: "baseline", gap: space.sm }}>
+              <Text style={{ ...type.title, fontSize: 22, color: t.color.text }}>
+                {formatClock(event.start_utc, event.tz)}
+              </Text>
+              {event.end_utc ? (
+                <Text style={{ ...type.body, color: t.color.textMuted }}>
+                  until {formatClock(event.end_utc, event.tz)}
+                  {/* A finish before the start is the small hours, and saying so
+                      is the difference between a late night and a typo. */}
+                  {event.end_utc.slice(0, 10) !== event.start_utc.slice(0, 10)
+                    ? " next day"
+                    : ""}
+                </Text>
+              ) : null}
+            </View>
+          ) : (
+            <Text style={{ ...type.body, color: t.color.text }}>
+              {formatEventTime({
+                startUtc: event.start_utc,
+                endUtc: event.end_utc ?? undefined,
+                tz: event.tz,
+                localWall: event.local_wall,
+                precision: event.precision,
+              })}
+            </Text>
+          )}
           {/* Times render in the EVENT's zone, not the phone's (§5.5). */}
           {calendar && event.tz !== calendar.default_tz ? (
             <Muted>Times shown in {event.tz}</Muted>
@@ -184,6 +212,33 @@ export default function EventScreen() {
               </Card>
             </Pressable>
           </Link>
+        ) : null}
+
+        {/* While the time is unsettled the poll IS the interaction: asking for
+            an RSVP to a date that may not happen collects answers about the
+            wrong question and has to be asked again afterwards. */}
+        {event.scheduling_mode !== "fixed" ? (
+          <SlotPoll
+            eventId={eventId}
+            mode={event.scheduling_mode}
+            slots={slots}
+            votes={slotVotes}
+            members={members}
+            canDecide={canEditEvent({
+              createdBy: event.created_by,
+              userId: CURRENT_USER_ID,
+              role: me?.role ?? null,
+              status: event.status,
+            })}
+            isEventOwner={event.created_by === CURRENT_USER_ID}
+            myRole={me?.role ?? null}
+            onAddSlot={() =>
+              router.push({
+                pathname: "/calendar/[calendarId]/event/slot/[eventId]",
+                params: { calendarId, eventId },
+              })
+            }
+          />
         ) : null}
 
         {event.description ? (

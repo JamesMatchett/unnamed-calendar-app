@@ -1,23 +1,26 @@
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { canEditEvent, zonedWallToUtc } from "@calder/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
-import { Alert, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 
 import {
   Field,
   PrimaryButton,
   RowButton,
   Segmented,
+  SegmentedGroup,
   TextField,
   ToggleRow,
 } from "@/components/form";
 import { Cover, CoverPlaceholder } from "@/components/Cover";
-import { EmptyState, Muted } from "@/components/ui";
+import { SlotDialog } from "@/components/SlotDialog";
+import { EmptyState, Group, Muted } from "@/components/ui";
 import {
   getCalendar,
   getEvent,
   myMembership,
+  proposeSlot,
+  startPoll,
   setEventCancelled,
   updateEvent,
 } from "@/db/repo";
@@ -27,7 +30,29 @@ import { pickCoverImage } from "@/lib/pickImage";
 import { useQuery } from "@/lib/useQuery";
 import { space, type, useTheme } from "@/theme";
 
+const clockIn = (instant: string, tz: string): string =>
+  new Date(instant).toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: tz,
+  });
+
+const nextDay = (iso: string): string =>
+  new Date(new Date(`${iso}T12:00:00.000Z`).getTime() + 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+
 type Precision = "datetime" | "date" | "tbc";
+
+/** Same three choices as the add form. "ask" means tbc with a poll running. */
+type When = "datetime" | "date" | "ask";
+
+const WHEN_OPTIONS: { value: When; label: string }[] = [
+  { value: "datetime", label: "At a time" },
+  { value: "date", label: "All day" },
+  { value: "ask", label: "Poll" },
+];
 
 /**
  * Edit an event (§8.1).
@@ -64,13 +89,20 @@ export default function EditEventScreen() {
     event?.local_wall?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
   );
   const [time, setTime] = useState(event?.local_wall?.slice(11, 16) ?? "19:00");
+  /** Optional. Absent means "it finishes when it finishes", not midnight. */
+  const [endTime, setEndTime] = useState<string | null>(
+    event?.end_utc ? clockIn(event.end_utc, event.tz) : null,
+  );
   const [location, setLocation] = useState(event?.location_name ?? "");
   const [ticketsRequired, setTicketsRequired] = useState(
     event?.tickets_required === 1,
   );
   const [ticketUrl, setTicketUrl] = useState(event?.ticket_url ?? "");
   const [imageKey, setImageKey] = useState<string | null>(event?.image_key ?? null);
-  const [picking, setPicking] = useState<"date" | "time" | null>(null);
+  const [pickingWhen, setPickingWhen] = useState(false);
+  const [openSuggestions, setOpenSuggestions] = useState(
+    event?.scheduling_mode !== "proposed",
+  );
 
   const pickImage = async () => {
     const picked = await pickCoverImage();
@@ -109,10 +141,39 @@ export default function EditEventScreen() {
   const wall = `${date}T${precision === "datetime" ? time : "12:00"}:00`;
 
   const save = () => {
+    /**
+     * Switching to Ask opens a poll and seeds it with the date the event
+     * already had, so there is something to answer immediately. Switching away
+     * settles the event on whatever the form now says: the slots and votes stay
+     * on record, because how a date was chosen is worth keeping (§8.1).
+     */
+    const asking = precision === "tbc";
+    if (asking && event.scheduling_mode === "fixed") {
+      startPoll(event.event_id, openSuggestions ? "open" : "proposed");
+      proposeSlot(event.event_id, {
+        startUtc: zonedWallToUtc(wall, tz),
+        tz,
+        localWall: wall,
+        precision: "datetime",
+      });
+    } else if (asking) {
+      startPoll(event.event_id, openSuggestions ? "open" : "proposed");
+    } else if (event.scheduling_mode !== "fixed") {
+      startPoll(event.event_id, "fixed");
+    }
+
+    // An end before the start belongs to the next morning: a gig finishing at
+    // 01:00 has not gone backwards.
+    const endWall =
+      precision === "datetime" && endTime
+        ? `${endTime < time ? nextDay(date) : date}T${endTime}:00`
+        : null;
+
     updateEvent(event.event_id, {
       title,
       description: description || null,
       startUtc: zonedWallToUtc(wall, tz),
+      endUtc: endWall ? zonedWallToUtc(endWall, tz) : null,
       tz,
       localWall: wall,
       precision,
@@ -159,54 +220,86 @@ export default function EditEventScreen() {
         </Field>
 
         <Field label="When">
-          <Segmented<Precision>
-            value={precision}
-            onChange={setPrecision}
-            options={[
-              { value: "datetime", label: "At a time" },
-              { value: "date", label: "All day" },
-              { value: "tbc", label: "TBC" },
-            ]}
-          />
+          <SegmentedGroup>
+            <Segmented<When>
+              bare
+              value={precision === "tbc" ? "ask" : precision}
+              onChange={(next) => setPrecision(next === "ask" ? "tbc" : next)}
+              options={WHEN_OPTIONS}
+            />
+            {precision === "tbc" ? (
+              <Segmented<"open" | "proposed">
+                bare
+                value={openSuggestions ? "open" : "proposed"}
+                onChange={(next) => setOpenSuggestions(next === "open")}
+                options={[
+                  { value: "open", label: "Anyone can suggest" },
+                  { value: "proposed", label: "Only my options" },
+                ]}
+              />
+            ) : null}
+          </SegmentedGroup>
         </Field>
 
-        <View style={{ gap: space.sm }}>
-          <RowButton
-            label="Date"
-            value={formatDayShort(date, tz)}
-            onPress={() => setPicking(picking === "date" ? null : "date")}
-          />
-          {precision === "datetime" ? (
-            <RowButton
-              label="Time"
-              value={time}
-              onPress={() => setPicking(picking === "time" ? null : "time")}
-            />
-          ) : null}
+        {precision === "tbc" ? (
+          <View style={{ gap: space.sm }}>
+            <Muted>
+              {event.scheduling_mode === "fixed"
+                ? "The date below becomes the first thing people can answer."
+                : "People are answering on the event screen."}
+            </Muted>
+          </View>
+        ) : null}
 
-          {picking ? (
-            <DateTimePicker
-              value={new Date(`${date}T${time}:00`)}
-              mode={picking}
-              display={Platform.OS === "ios" ? "spinner" : "default"}
-              onChange={(_, selected) => {
-                if (Platform.OS !== "ios") setPicking(null);
-                if (!selected) return;
-                if (picking === "date") {
-                  setDate(selected.toISOString().slice(0, 10));
-                } else {
-                  setTime(
-                    `${String(selected.getHours()).padStart(2, "0")}:${String(
-                      selected.getMinutes(),
-                    ).padStart(2, "0")}`,
-                  );
-                }
-              }}
+        {/* One sheet for the whole of when, the same one the create screen
+            opens. The picker used to unfold inline under these rows while the
+            end time had a second, identical-looking sheet of its own, which
+            left two ways to change a date on screen and no way to tell the two
+            sheets apart. */}
+        <View style={{ gap: space.sm }}>
+          <Group>
+            <RowButton
+              bare
+              label="Date"
+              value={formatDayShort(date, tz)}
+              onPress={() => setPickingWhen(true)}
             />
-          ) : null}
+            {precision === "datetime" ? (
+              <RowButton
+                bare
+                label="Time"
+                value={
+                  endTime
+                    ? `${time} to ${endTime}${endTime < time ? " next day" : ""}`
+                    : time
+                }
+                onPress={() => setPickingWhen(true)}
+              />
+            ) : null}
+          </Group>
 
           <Muted>Times are in the calendar's zone, {tz}.</Muted>
         </View>
+
+        <SlotDialog
+          visible={pickingWhen}
+          initial={{ date, time, endTime }}
+          tz={tz}
+          title="When is it?"
+          saveLabel="Set the time"
+          dateLabel="On"
+          timeLabel="Starts"
+          withTime={precision === "datetime"}
+          withEnd={precision === "datetime"}
+          onSave={(draft) => {
+            setDate(draft.date);
+            if (precision === "datetime") {
+              setTime(draft.time);
+              setEndTime(draft.endTime ?? null);
+            }
+          }}
+          onClose={() => setPickingWhen(false)}
+        />
 
         <Field label="Where">
           <TextField

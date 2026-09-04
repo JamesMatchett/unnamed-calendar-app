@@ -62,6 +62,9 @@ export function EventRow({
   const cancelled = event.status === "cancelled";
   const mineToEdit = event.created_by === CURRENT_USER_ID;
   const pending = event.sync_state === "pending";
+  // A calendar of one. Not "is it private": a two-person private calendar still
+  // has somebody to answer to.
+  const solo = members.length <= 1;
   const syncing = useSyncing();
 
   return (
@@ -170,9 +173,14 @@ export function EventRow({
         <Text style={{ ...type.caption, color: t.color.danger }}>Cancelled</Text>
       ) : null}
 
-      {/* Summary and control are stacked rather than side by side: on a phone
-          the three options plus a full attendance summary do not fit on one
-          line, and squeezing them clipped the last button off the card. */}
+      {/* Nobody RSVPs to themselves.
+          
+          On a calendar with one member, putting something in it IS the
+          decision: three buttons asking whether you are going to your own
+          dentist appointment is a question with one answer, and a summary
+          reading "nobody replied" about a party of one is worse. Attendance
+          returns the moment there is somebody else to attend with. */}
+      {solo ? null : (
       <View style={{ gap: space.sm }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
           <AvatarStack names={goingNames} />
@@ -196,6 +204,7 @@ export function EventRow({
           }
         />
       </View>
+      )}
     </View>
   );
 }
