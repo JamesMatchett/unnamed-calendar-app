@@ -85,6 +85,7 @@ export function SlotDialog({
   const overnight = endTime !== null && endTime < time;
   // The wheel edits whichever row is highlighted, so it has to be pointed at
   // that row's value.
+  const pickingTime = withTime && picking !== "date";
   const pickerValue =
     picking === "end" && endTime !== null
       ? new Date(`${date}T${endTime}:00`)
@@ -191,10 +192,15 @@ export function SlotDialog({
             ) : null}
           </Group>
 
+          {/* A wheel for a time, a grid for a date. iOS's "inline" display is a
+              month calendar: asked for a time it still draws the calendar, so
+              tapping Ends looked like it had done nothing at all. */}
           <DateTimePicker
             value={pickerValue}
-            mode={withTime && picking !== "date" ? "time" : "date"}
-            display={Platform.OS === "ios" ? "inline" : "default"}
+            mode={pickingTime ? "time" : "date"}
+            display={
+              Platform.OS !== "ios" ? "default" : pickingTime ? "spinner" : "inline"
+            }
             onChange={(_, selected) => {
               if (!selected) return;
               if (picking === "date") {
