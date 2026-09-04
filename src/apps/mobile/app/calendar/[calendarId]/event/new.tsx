@@ -26,6 +26,7 @@ import {
   startPoll,
   findSimilarEvents,
   getCalendar,
+  getProfile,
   myMembership,
 } from "@/db/repo";
 import { formatClock } from "@/lib/format";
@@ -49,6 +50,8 @@ const WHEN_OPTIONS: { value: When; label: string }[] = [
 ];
 
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
+
+const firstName = (name: string): string => name.trim().split(/\s+/)[0] ?? name;
 
 const nextDay = (iso: string): string =>
   new Date(new Date(`${iso}T12:00:00.000Z`).getTime() + 86_400_000)
@@ -92,8 +95,16 @@ export default function NewEventScreen() {
 
   const tz = calendar?.default_tz ?? "Europe/London";
 
-  const [raw, setRaw] = useState(withName ? `Catch up with ${withName}` : "");
-  const [title, setTitle] = useState(withName ? `Catch up with ${withName}` : "");
+  /**
+   * Named for both of you, not "catch up with them": the same event sits in
+   * two calendars once they say yes, and a title that reads correctly from
+   * either side is the one that does not need editing on theirs.
+   */
+  const suggested = withName
+    ? `${firstName(getProfile().displayName)} and ${withName} catch up`
+    : "";
+  const [raw, setRaw] = useState(suggested);
+  const [title, setTitle] = useState(suggested);
   /**
    * Today, unless today is not part of this calendar.
    *
