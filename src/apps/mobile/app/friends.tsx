@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { useState } from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 
@@ -117,8 +117,8 @@ export default function FriendsScreen() {
         </Section>
 
         <Muted>
-          Each line says what that person can see of you. It has no effect until
-          availability sharing arrives, but what you choose is kept.
+          Each line says what that person can see of you. Open anyone to change
+          it, find a time you are both free, or invite them to a calendar.
         </Muted>
       </ScrollView>
     </>
@@ -126,97 +126,34 @@ export default function FriendsScreen() {
 }
 
 /**
- * A friend, with what they can see of you always on the row rather than behind a
- * settings screen — one of §7.4's conditions, and the cheapest of them to honour.
+ * A friend, with what they can see of you on the row rather than behind a
+ * settings screen — one of §7.4's conditions, and the cheapest to honour.
+ *
+ * Changing it happens on their page, not here. The editor used to unfold inline
+ * on this row, which meant a friend's visibility could be set from a list that
+ * says nothing else about them; the page has the rest of the relationship
+ * around it — what they show you, what you already share, when you are both
+ * free — which is the context that makes the choice a decision rather than a
+ * toggle.
  */
 function FriendRow({ person }: { person: PersonRow }) {
-  const t = useTheme();
-  const [open, setOpen] = useState(false);
+  const router = useRouter();
   const current: FriendGrants = person.grants ?? "none";
 
-  const choose = (next: FriendGrants) => {
-    // Escalating to full calendar access is the highest-risk permission in the
-    // product (§7.4). It does not happen on a single tap.
-    if (next === "full" && current !== "full") {
-      Alert.alert(
-        `Show ${person.display_name} your full calendar?`,
-        "They'll see the titles, times and locations of everything in your calendar. You can turn this off at any time, and they won't be told.",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Show full calendar",
-            style: "destructive",
-            onPress: () => {
-              setFriendGrants(person.user_id, next);
-              setOpen(false);
-            },
-          },
-        ],
-      );
-      return;
-    }
-
-    setFriendGrants(person.user_id, next);
-    setOpen(false);
-  };
+  const open = () =>
+    router.push({
+      pathname: "/person/[userId]",
+      params: { userId: person.user_id },
+    });
 
   return (
-    <View style={{ gap: space.sm }}>
-      <PersonRowItem
-        person={person}
-        context={grantLabel(current)}
-        contextTone={current === "none" ? "muted" : "notice"}
-        actions={[
-          { label: open ? "Done" : "Change", onPress: () => setOpen(!open) },
-          { label: "Remove", onPress: () => removeFriend(person.user_id) },
-        ]}
-      />
-
-      {open ? (
-        <View
-          style={{
-            gap: space.xs,
-            padding: space.sm,
-            borderRadius: radius.sm,
-            backgroundColor: t.color.surfaceAlt,
-          }}
-        >
-          {GRANTS.map((g) => {
-            const selected = g.value === current;
-            return (
-              <Pressable
-                key={g.value}
-                onPress={() => choose(g.value)}
-                accessibilityRole="radio"
-                accessibilityState={{ selected }}
-                style={{
-                  flexDirection: "row",
-                  gap: space.sm,
-                  padding: space.sm,
-                  borderRadius: radius.sm,
-                  backgroundColor: selected ? t.color.surface : "transparent",
-                }}
-              >
-                <Ionicons
-                  name={selected ? "radio-button-on" : "radio-button-off"}
-                  size={17}
-                  color={selected ? t.color.accent : t.color.textMuted}
-                  style={{ marginTop: 1 }}
-                />
-                <View style={{ flex: 1, gap: 1 }}>
-                  <Text style={{ ...type.caption, fontWeight: "600", color: t.color.text }}>
-                    {g.label}
-                  </Text>
-                  <Text style={{ ...type.caption, color: t.color.textMuted }}>
-                    {g.detail}
-                  </Text>
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
-      ) : null}
-    </View>
+    <PersonRowItem
+      person={person}
+      onPress={open}
+      context={grantLabel(current)}
+      contextTone={current === "none" ? "muted" : "notice"}
+      actions={[{ label: "Open", onPress: open }]}
+    />
   );
 }
 

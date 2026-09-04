@@ -18,12 +18,19 @@ export function PersonRowItem({
   context,
   contextTone,
   actions,
+  onPress,
 }: {
   person: PersonRow | SuggestionRow;
   context?: string;
   /** Emphasised when the subtext is a disclosure rather than a fact (§7.4). */
   contextTone?: "muted" | "notice";
   actions: readonly Action[];
+  /**
+   * Opens this person's page. Given wherever there is one to open: a name that
+   * looks like a name should behave like a link, and the small buttons on the
+   * right are for the one action a list is about, not for navigation.
+   */
+  onPress?: () => void;
 }) {
   const t = useTheme();
 
@@ -31,7 +38,13 @@ export function PersonRowItem({
     <View style={{ flexDirection: "row", alignItems: "center", gap: space.md }}>
       <AvatarStack names={[person.display_name]} />
 
-      <View style={{ flex: 1, gap: 1 }}>
+      <Pressable
+        onPress={onPress}
+        disabled={!onPress}
+        accessibilityRole={onPress ? "button" : undefined}
+        accessibilityLabel={onPress ? `Open ${person.display_name}` : undefined}
+        style={{ flex: 1, gap: 1 }}
+      >
         <Text style={{ ...type.body, fontSize: 15, color: t.color.text }}>
           {person.display_name}
         </Text>
@@ -44,7 +57,7 @@ export function PersonRowItem({
           &{person.handle}
           {context ? ` · ${context}` : ""}
         </Text>
-      </View>
+      </Pressable>
 
       {actions.map((a) => (
         <Pressable

@@ -72,15 +72,25 @@ const prettyDate = (s: string) =>
 export default function NewEventScreen() {
   const t = useTheme();
   const router = useRouter();
-  const { calendarId } = useLocalSearchParams<{ calendarId: string }>();
+  /**
+   * `on` and `at` prefill the form. They come from the catch-up finder, which
+   * has already worked out a time that suits two people: dropping them here and
+   * making the person type it again would throw away the only hard part.
+   */
+  const { calendarId, on, at, with: withName } = useLocalSearchParams<{
+    calendarId: string;
+    on?: string;
+    at?: string;
+    with?: string;
+  }>();
 
   const calendar = useQuery(`calendar:${calendarId}`, () => getCalendar(calendarId));
   const me = useQuery(`me:${calendarId}`, () => myMembership(calendarId));
 
   const tz = calendar?.default_tz ?? "Europe/London";
 
-  const [raw, setRaw] = useState("");
-  const [title, setTitle] = useState("");
+  const [raw, setRaw] = useState(withName ? `Catch up with ${withName}` : "");
+  const [title, setTitle] = useState(withName ? `Catch up with ${withName}` : "");
   /**
    * Today, unless today is not part of this calendar.
    *
@@ -91,6 +101,7 @@ export default function NewEventScreen() {
    * outside.
    */
   const [date, setDate] = useState(() => {
+    if (on) return on;
     const today = isoDate(new Date());
     if (calendar?.mode !== "bounded") return today;
     const first = calendar.start_date;
@@ -98,7 +109,7 @@ export default function NewEventScreen() {
     if (!first || !last) return today;
     return today < first ? first : today > last ? last : today;
   });
-  const [time, setTime] = useState<string | null>(null);
+  const [time, setTime] = useState<string | null>(at ?? null);
   const [precision, setPrecision] = useState<Precision>("datetime");
   const [location, setLocation] = useState("");
   const [ticketsRequired, setTicketsRequired] = useState(false);
@@ -162,7 +173,7 @@ export default function NewEventScreen() {
     const picked = await pickCoverImage();
     if (picked) setImageKey(picked);
   };
-  const [touched, setTouched] = useState(false);
+  const [touched, setTouched] = useState(Boolean(on || at));
 
   /**
    * The parse runs on every keystroke and only fills fields the person has not

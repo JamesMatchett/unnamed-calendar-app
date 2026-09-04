@@ -193,6 +193,12 @@ export default function PeopleScreen() {
                   <PersonRowItem
                     key={p.user_id}
                     person={p}
+                    onPress={() =>
+                      router.push({
+                        pathname: "/person/[userId]",
+                        params: { userId: p.user_id },
+                      })
+                    }
                     actions={
                       p.status === "pending_in"
                         ? [
@@ -260,6 +266,12 @@ export default function PeopleScreen() {
                   <PersonRowItem
                     key={p.user_id}
                     person={p}
+                    onPress={() =>
+                      router.push({
+                        pathname: "/person/[userId]",
+                        params: { userId: p.user_id },
+                      })
+                    }
                     context={describeOverlap(p.shared_calendars, p.mutual_events)}
                     actions={[
                       {

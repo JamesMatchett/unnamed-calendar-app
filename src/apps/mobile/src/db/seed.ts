@@ -13,7 +13,7 @@ import type * as SQLite from "expo-sqlite";
  * last month shows a trip that has already happened; changing this makes the app
  * drop the fixtures and rebuild them starting from today.
  */
-export const FIXTURE_EPOCH = "2026-09-04T22:54:47.314Z";
+export const FIXTURE_EPOCH = "2026-09-04T23:05:52.000Z";
 
 /** Stands in for the signed-in user until Cognito exists (§3.2). */
 export const CURRENT_USER_ID = "01JC0USERJAMES0000000000";
@@ -463,16 +463,30 @@ function seedPeople(db: SQLite.SQLiteDatabase): void {
     // A friendship that predates any shared calendar, an outgoing request and an
     // incoming one — so all three states are visible without having to create
     // them first.
-    const friends: [string, string, string][] = [
-      ["01JC0USERMAYA00000000000", "accepted", day(-200, 12)],
-      ["01JC0USERTOM000000000000", "pending_out", day(-2, 15)],
-      ["01JC0USERSOFIA0000000000", "pending_in", day(-1, 20)],
+    //
+    // The grants differ on purpose. Visibility is per direction and does not
+    // have to match, and a friend page that only ever showed "we both share
+    // everything" would hide the case the design exists for: Luke shows me
+    // nothing, so his page has to say why finding a time is unavailable rather
+    // than claiming the two of us are never free.
+    const friends: [
+      user: string,
+      status: string,
+      since: string,
+      grants: string,
+      shares: string,
+    ][] = [
+      ["01JC0USERMAYA00000000000", "accepted", day(-200, 12), "busy", "busy"],
+      ["01JC0USERPRIYA0000000000", "accepted", day(-150, 12), "full", "full"],
+      ["01JC0USERLUKE00000000000", "accepted", day(-90, 12), "busy", "none"],
+      ["01JC0USERTOM000000000000", "pending_out", day(-2, 15), "none", "none"],
+      ["01JC0USERSOFIA0000000000", "pending_in", day(-1, 20), "none", "none"],
     ];
 
-    for (const [uid, status, since] of friends) {
+    for (const [uid, status, since, grants, shares] of friends) {
       db.runSync(
-        "INSERT INTO friends (user_id, status, grants, since) VALUES (?,?,'none',?)",
-        [uid, status, since],
+        "INSERT INTO friends (user_id, status, grants, shares, since) VALUES (?,?,?,?,?)",
+        [uid, status, grants, shares, since],
       );
     }
   });

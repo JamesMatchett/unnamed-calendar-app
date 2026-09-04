@@ -2081,3 +2081,121 @@ export function recentPlaces(limit = 40): string[] {
     )
     .map((r) => r.location_name);
 }
+
+// --- a friend's page (§7.3, §7.4) ------------------------------------------
+//
+// One person, everything about the relationship: what each of us can see of the
+// other, where we already overlap, when we are both free, and which of my
+// private calendars they are missing from. Scattered across three screens this
+// was four taps and a guess; together it is the page you would draw if you were
+// asked "what is my relationship with this person in this app".
+
+export interface FriendProfileRow extends PersonRow {
+  /** What THEY let ME see. The mirror of `grants`, and not implied by it. */
+  shares: FriendGrants | null;
+  since: string | null;
+}
+
+export function friendProfile(userId: string): FriendProfileRow | null {
+  return getDb().getFirstSync<FriendProfileRow>(
+    `SELECT d.user_id, d.handle, d.display_name, d.email,
+            f.status, f.grants, f.shares, f.since
+       FROM directory d
+       LEFT JOIN friends f ON f.user_id = d.user_id
+      WHERE d.user_id = ?`,
+    [userId],
+  );
+}
+
+/**
+ * Calendars we are both active members of.
+ *
+ * The honest measure of a connection in this app: not a follower count, but the
+ * things you are actually both part of.
+ */
+export function sharedCalendars(userId: string): (CalendarRow & {
+  my_role: "owner" | "member";
+})[] {
+  return getDb().getAllSync<CalendarRow & { my_role: "owner" | "member" }>(
+    `SELECT c.*, me.role AS my_role
+       FROM calendars c
+       JOIN members me ON me.calendar_id = c.calendar_id
+       JOIN members them ON them.calendar_id = c.calendar_id
+      WHERE me.user_id = ? AND me.status = 'active'
+        AND them.user_id = ? AND them.status = 'active'
+        AND c.status = 'active'
+      ORDER BY c.mode, c.name`,
+    [CURRENT_USER_ID, userId],
+  );
+}
+
+/**
+ * My private calendars this person is not already part of.
+ *
+ * Private calendars are the ones worth offering here: a trip has its own invite
+ * flow and a link, whereas "you and me" calendars are exactly the thing you
+ * want to start from somebody's page. Anything they have already been asked to
+ * join is excluded, because inviting twice is how an invite becomes noise.
+ */
+export function myPrivateCalendarsWithout(userId: string): CalendarRow[] {
+  return getDb().getAllSync<CalendarRow>(
+    `SELECT c.*
+       FROM calendars c
+       JOIN members me ON me.calendar_id = c.calendar_id
+      WHERE me.user_id = ? AND me.role = 'owner' AND me.status = 'active'
+        AND c.is_private = 1
+        AND c.status = 'active'
+        -- Only ACTIVE membership excludes a calendar: somebody who left, or was
+        -- removed, is exactly the person you might want to ask back.
+        AND NOT EXISTS (
+              SELECT 1 FROM members m
+               WHERE m.calendar_id = c.calendar_id
+                 AND m.user_id = ?
+                 AND m.status = 'active')
+        AND NOT EXISTS (
+              SELECT 1 FROM sent_invites s
+               WHERE s.calendar_id = c.calendar_id AND s.user_id = ?)
+      ORDER BY c.name`,
+    [CURRENT_USER_ID, userId, userId],
+  );
+}
+
+/**
+ * When somebody is spoken for, between two instants.
+ *
+ * Busy means "has said yes to something", plus anything they put in a calendar
+ * themselves — a plan you added to your own calendar is a plan, whether or not
+ * you also ticked Going on it. Maybe is deliberately NOT busy: an undecided
+ * evening is exactly the kind of evening a catch-up can win.
+ *
+ * An event with no stated end gets an hour, which is a guess; it is the same
+ * guess the landscape hour grid makes, and erring towards busy means the worst
+ * case is a suggestion the two of them decline rather than a double booking.
+ */
+export function busyBetween(
+  userIds: readonly string[],
+  fromUtc: string,
+  toUtc: string,
+): { start: string; end: string }[] {
+  if (userIds.length === 0) return [];
+  const marks = userIds.map(() => "?").join(",");
+
+  return getDb().getAllSync<{ start: string; end: string }>(
+    `SELECT e.start_utc AS start,
+            COALESCE(e.end_utc, strftime('%Y-%m-%dT%H:%M:%fZ', e.start_utc, '+1 hour')) AS end
+       FROM events e
+       JOIN members m ON m.calendar_id = e.calendar_id AND m.status = 'active'
+       LEFT JOIN rsvps r
+              ON r.event_id = e.event_id
+             AND r.occurrence = '-'
+             AND r.user_id = m.user_id
+      WHERE m.user_id IN (${marks})
+        AND e.status = 'active'
+        AND e.precision != 'tbc'
+        AND e.start_utc < ?
+        AND COALESCE(e.end_utc, strftime('%Y-%m-%dT%H:%M:%fZ', e.start_utc, '+1 hour')) > ?
+        AND (r.status = 'going' OR e.created_by = m.user_id)
+      ORDER BY e.start_utc`,
+    [...userIds, toUtc, fromUtc],
+  );
+}

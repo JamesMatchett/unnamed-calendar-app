@@ -183,6 +183,10 @@ CREATE TABLE IF NOT EXISTS friends (
   status  TEXT NOT NULL CHECK (status IN ('pending_out','pending_in','accepted')),
   -- §7.4. Inert until free/busy exists; recorded now so the shape is right.
   grants  TEXT NOT NULL DEFAULT 'none' CHECK (grants IN ('none','busy','full')),
+  -- The mirror: what THEY have chosen to let me see. Stored separately because
+  -- visibility is not reciprocal, and showing my own setting back to me as if
+  -- it were theirs would be a lie in the one place that must not lie.
+  shares  TEXT NOT NULL DEFAULT 'none' CHECK (shares IN ('none','busy','full')),
   since   TEXT NOT NULL,
   FOREIGN KEY (user_id) REFERENCES directory(user_id) ON DELETE CASCADE
 );
