@@ -79,7 +79,7 @@ export default function CalendarsScreen() {
           paddingHorizontal: space.xl,
           paddingVertical: space.md,
           borderRadius: radius.pill,
-          backgroundColor: t.color.accent,
+          backgroundColor: t.color.accentFill,
           shadowColor: "#000",
           shadowOpacity: 0.18,
           shadowRadius: 12,
@@ -87,8 +87,8 @@ export default function CalendarsScreen() {
           elevation: 4,
         }}
       >
-        <Ionicons name="add" size={19} color="#fff" />
-        <Text style={{ ...type.label, color: "#fff" }}>New</Text>
+        <Ionicons name="add" size={19} color={t.color.onAccent} />
+        <Text style={{ ...type.label, color: t.color.onAccent }}>New</Text>
       </Pressable>
     </View>
   );

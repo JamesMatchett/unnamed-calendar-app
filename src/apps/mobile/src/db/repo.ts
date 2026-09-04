@@ -26,6 +26,8 @@ import {
   ulid,
 } from "@calder/core";
 
+import type { Appearance } from "@/theme";
+
 import { getDb, notifyChanged } from "./client";
 import { CURRENT_USER_ID } from "./seed";
 
@@ -2198,4 +2200,35 @@ export function busyBetween(
       ORDER BY e.start_utc`,
     [...userIds, toUtc, fromUtc],
   );
+}
+
+// --- appearance (device-local) ---------------------------------------------
+
+/**
+ * Light, dark, or whatever the phone says.
+ *
+ * Stored, like the other display preferences, in `meta`: it is a fact about
+ * this device rather than about the person, and someone who uses the app on a
+ * phone and a tablet is entitled to a different answer on each.
+ *
+ * The absence of a row is meaningful — it means the person has never been asked
+ * — so this returns null rather than defaulting, and the caller decides whether
+ * that means "ask them" or "follow the phone".
+ */
+export function getAppearance(): Appearance | null {
+  const row = getDb().getFirstSync<{ value: string }>(
+    "SELECT value FROM meta WHERE key = 'pref:appearance'",
+  );
+  if (!row) return null;
+  return row.value === "light" || row.value === "dark" || row.value === "system"
+    ? row.value
+    : null;
+}
+
+export function setAppearance(value: Appearance): void {
+  getDb().runSync(
+    "INSERT OR REPLACE INTO meta (key, value) VALUES ('pref:appearance', ?)",
+    [value],
+  );
+  notifyChanged();
 }

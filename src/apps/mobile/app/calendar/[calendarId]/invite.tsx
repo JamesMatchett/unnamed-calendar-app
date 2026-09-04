@@ -120,11 +120,11 @@ export default function InviteScreen() {
               gap: space.sm,
               paddingVertical: space.lg - 2,
               borderRadius: radius.pill,
-              backgroundColor: t.color.accent,
+              backgroundColor: t.color.accentFill,
             }}
           >
-            <Ionicons name="share-outline" size={19} color="#fff" />
-            <Text style={{ ...type.label, fontSize: 16, color: "#fff" }}>
+            <Ionicons name="share-outline" size={19} color={t.color.onAccent} />
+            <Text style={{ ...type.label, fontSize: 16, color: t.color.onAccent }}>
               Send the link instead
             </Text>
           </Pressable>

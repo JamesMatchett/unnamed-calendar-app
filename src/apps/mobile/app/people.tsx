@@ -123,10 +123,10 @@ export default function PeopleScreen() {
                         alignItems: "center",
                         paddingVertical: space.md,
                         borderRadius: radius.pill,
-                        backgroundColor: t.color.accent,
+                        backgroundColor: t.color.accentFill,
                       }}
                     >
-                      <Text style={{ ...type.label, color: "#fff" }}>Join</Text>
+                      <Text style={{ ...type.label, color: t.color.onAccent }}>Join</Text>
                     </Pressable>
                     <Pressable
                       onPress={() => answerInvite(inv.calendar_id, false)}

@@ -492,14 +492,14 @@ function WeekView({
                 borderRadius: radius.md,
                 borderWidth: 1,
                 borderColor: isSelected ? t.color.accent : t.color.border,
-                backgroundColor: isSelected ? t.color.accent : t.color.surface,
+                backgroundColor: isSelected ? t.color.accentFill : t.color.surface,
               }}
             >
               <Text
                 style={{
                   ...type.caption,
                   fontSize: 11,
-                  color: isSelected ? "#fff" : t.color.textMuted,
+                  color: isSelected ? t.color.onAccent : t.color.textMuted,
                 }}
               >
                 {isToday
@@ -513,7 +513,7 @@ function WeekView({
                 style={{
                   ...type.label,
                   fontSize: 17,
-                  color: isSelected ? "#fff" : t.color.text,
+                  color: isSelected ? t.color.onAccent : t.color.text,
                 }}
               >
                 {day.getUTCDate()}
@@ -679,6 +679,8 @@ function Tally({
             fontSize: 9,
             lineHeight: 11,
             fontWeight: emphasis ? "800" : "700",
+            // White on a saturated status colour, in both themes: this circle
+            // is going/maybe/can't, not the accent.
             color: "#fff",
           }}
         >
@@ -751,12 +753,12 @@ function DayDots({
   // and an amber dot both read as "dark smudge". White marks keep the count
   // legible; the colours are still there on the other six days.
   const answered: Mark[] = [
-    { key: "going", count: counts.going, colour: onAccent ? "#fff" : t.color.going, label: "going" },
-    { key: "maybe", count: counts.maybe, colour: onAccent ? "#fff" : t.color.maybe, label: "maybe" },
+    { key: "going", count: counts.going, colour: onAccent ? t.color.onAccent : t.color.going, label: "going" },
+    { key: "maybe", count: counts.maybe, colour: onAccent ? t.color.onAccent : t.color.maybe, label: "maybe" },
     {
       key: "not_going",
       count: counts.not_going,
-      colour: onAccent ? "#fff" : t.color.notGoing,
+      colour: onAccent ? t.color.onAccent : t.color.notGoing,
       label: "not going",
     },
   ].filter((m) => m.count > 0);
@@ -765,7 +767,7 @@ function DayDots({
     {
       key: "none",
       count: counts.none,
-      colour: onAccent ? "#fff" : t.color.textMuted,
+      colour: onAccent ? t.color.onAccent : t.color.textMuted,
       label: "not answered",
     },
     {

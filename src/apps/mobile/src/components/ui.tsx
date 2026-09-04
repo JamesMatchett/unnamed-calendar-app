@@ -122,13 +122,13 @@ export function EmptyState({
           onPress={onAction}
           style={{
             marginTop: space.md,
-            backgroundColor: t.color.accent,
+            backgroundColor: t.color.accentFill,
             paddingHorizontal: space.xl,
             paddingVertical: space.md,
             borderRadius: radius.pill,
           }}
         >
-          <Text style={{ ...type.label, color: "#fff" }}>{actionLabel}</Text>
+          <Text style={{ ...type.label, color: t.color.onAccent }}>{actionLabel}</Text>
         </Pressable>
       ) : null}
     </View>

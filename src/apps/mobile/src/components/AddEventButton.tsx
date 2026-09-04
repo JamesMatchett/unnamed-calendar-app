@@ -56,7 +56,7 @@ export function AddEventButton() {
           paddingHorizontal: space.xl,
           paddingVertical: space.md,
           borderRadius: radius.pill,
-          backgroundColor: t.color.accent,
+          backgroundColor: t.color.accentFill,
           shadowColor: "#000",
           shadowOpacity: 0.18,
           shadowRadius: 12,
@@ -64,8 +64,8 @@ export function AddEventButton() {
           elevation: 4,
         }}
       >
-        <Ionicons name="add" size={19} color="#fff" />
-        <Text style={{ ...type.label, color: "#fff" }}>Add</Text>
+        <Ionicons name="add" size={19} color={t.color.onAccent} />
+        <Text style={{ ...type.label, color: t.color.onAccent }}>Add</Text>
       </Pressable>
 
       <Modal

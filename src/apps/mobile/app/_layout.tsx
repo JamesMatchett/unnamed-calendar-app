@@ -1,13 +1,30 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useColorScheme } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { AppearancePrompt } from "@/components/AppearancePrompt";
 import { getDb } from "@/db/client";
-import { useTheme } from "@/theme";
+import { getAppearance } from "@/db/repo";
+import { useQuery } from "@/lib/useQuery";
+import type { Appearance } from "@/theme";
+import { ThemeProvider, themeFor } from "@/theme";
 
 export default function RootLayout() {
-  const t = useTheme();
+  /**
+   * Light or dark, decided once here and handed down.
+   *
+   * No stored choice means the person has never been asked, which is a
+   * different thing from having chosen to follow the phone: the first is why
+   * the prompt appears, the second is one of its answers. Until they answer,
+   * the app follows the phone, so the question is asked over an app that
+   * already looks right rather than over a white flash.
+   */
+  const chosen = useQuery("pref:appearance", () => getAppearance());
+  const systemDark = useColorScheme() === "dark";
+  const [preview, setPreview] = useState<Appearance>("system");
+  const t = themeFor(chosen ?? preview, systemDark);
 
   // Opening the database also creates the schema and seeds fixtures. It is
   // synchronous and fast, and doing it here means no screen ever has to consider
@@ -23,8 +40,18 @@ export default function RootLayout() {
   }, []);
 
   return (
+    <ThemeProvider value={t}>
     <SafeAreaProvider>
       <StatusBar style={t.dark ? "light" : "dark"} />
+      {chosen === null ? (
+        <AppearancePrompt
+          value={preview}
+          onPreview={setPreview}
+          // Answering writes the choice, which makes `chosen` non-null and
+          // takes the sheet away; nothing else to do here.
+          onDone={() => {}}
+        />
+      ) : null}
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: t.color.bg },
@@ -45,7 +72,6 @@ export default function RootLayout() {
         <Stack.Screen name="settings" options={{ presentation: "modal" }} />
         <Stack.Screen name="suggestion" options={{ presentation: "modal" }} />
         <Stack.Screen name="activity" options={{ presentation: "modal" }} />
-        <Stack.Screen name="friends" options={{ presentation: "modal" }} />
         <Stack.Screen name="calendar/new" options={{ presentation: "modal" }} />
         <Stack.Screen
           name="calendar/[calendarId]/event/new"
@@ -66,5 +92,6 @@ export default function RootLayout() {
         <Stack.Screen name="join/[token]" options={{ presentation: "modal" }} />
       </Stack>
     </SafeAreaProvider>
+    </ThemeProvider>
   );
 }

@@ -1,10 +1,12 @@
 import { Stack } from "expo-router";
 import { ScrollView, Text, View } from "react-native";
 
-import { ToggleRow } from "@/components/form";
-import { getBoolPref, setBoolPref } from "@/db/repo";
+import { Segmented, ToggleRow } from "@/components/form";
+import { Muted } from "@/components/ui";
+import { getAppearance, getBoolPref, setAppearance, setBoolPref } from "@/db/repo";
 import { useQuery } from "@/lib/useQuery";
-import { space, type, useTheme } from "@/theme";
+import type { Appearance } from "@/theme";
+import { APPEARANCES, space, type, useTheme } from "@/theme";
 
 /**
  * Display settings for this device.
@@ -19,11 +21,32 @@ export default function SettingsScreen() {
   const countdown = useQuery("pref:countdown", () =>
     getBoolPref("countdown", true),
   );
+  // Null only until the first-run question is answered, and this screen cannot
+  // be reached before that.
+  const appearance = useQuery("pref:appearance", () => getAppearance());
 
   return (
     <>
       <Stack.Screen options={{ title: "Settings", presentation: "modal" }} />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.xl }}>
+        <View style={{ gap: space.sm }}>
+          <Text style={{ ...type.label, color: t.color.textMuted }}>
+            Appearance
+          </Text>
+          <Segmented
+            value={appearance ?? "system"}
+            onChange={(v) => setAppearance(v as Appearance)}
+            options={APPEARANCES}
+          />
+          <Muted>
+            {appearance === "light"
+              ? "Always light, whatever your phone is set to."
+              : appearance === "dark"
+                ? "Always dark, whatever your phone is set to."
+                : "Follows your phone, including its light and dark schedule."}
+          </Muted>
+        </View>
+
         <View style={{ gap: space.sm }}>
           <Text style={{ ...type.label, color: t.color.textMuted }}>
             Agenda

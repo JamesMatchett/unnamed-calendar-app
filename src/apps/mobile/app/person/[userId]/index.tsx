@@ -242,13 +242,13 @@ export default function PersonScreen() {
             <Ionicons
               name="calendar-outline"
               size={18}
-              color={canSeeFreeBusy(theyShare) ? "#fff" : t.color.textMuted}
+              color={canSeeFreeBusy(theyShare) ? t.color.onAccent : t.color.textMuted}
             />
             <Text
               style={{
                 ...type.label,
                 fontSize: 16,
-                color: canSeeFreeBusy(theyShare) ? "#fff" : t.color.textMuted,
+                color: canSeeFreeBusy(theyShare) ? t.color.onAccent : t.color.textMuted,
               }}
             >
               Catch up with {person.display_name.split(" ")[0]}

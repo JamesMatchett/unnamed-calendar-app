@@ -37,12 +37,12 @@ function Badge({ count }: { count: number }) {
         height: 16,
         paddingHorizontal: 4,
         borderRadius: radius.pill,
-        backgroundColor: t.color.accent,
+        backgroundColor: t.color.accentFill,
         alignItems: "center",
         justifyContent: "center",
       }}
     >
-      <Text style={{ fontSize: 10, fontWeight: "700", color: "#fff" }}>
+      <Text style={{ fontSize: 10, fontWeight: "700", color: t.color.onAccent }}>
         {count > 9 ? "9+" : count}
       </Text>
     </View>

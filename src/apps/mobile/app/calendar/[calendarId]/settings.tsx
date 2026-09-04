@@ -430,10 +430,10 @@ function OwnerControls({
                       alignItems: "center",
                       paddingVertical: space.sm,
                       borderRadius: radius.pill,
-                      backgroundColor: t.color.accent,
+                      backgroundColor: t.color.accentFill,
                     }}
                   >
-                    <Text style={{ ...type.caption, fontWeight: "700", color: "#fff" }}>
+                    <Text style={{ ...type.caption, fontWeight: "700", color: t.color.onAccent }}>
                       Let them in
                     </Text>
                   </Pressable>

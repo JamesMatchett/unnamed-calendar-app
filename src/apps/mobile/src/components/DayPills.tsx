@@ -68,7 +68,7 @@ export function DayPills({
                 paddingVertical: space.sm,
                 borderRadius: radius.md,
                 alignItems: "center",
-                backgroundColor: isSelected ? t.color.accent : t.color.surface,
+                backgroundColor: isSelected ? t.color.accentFill : t.color.surface,
                 borderWidth: 1,
                 borderColor: isSelected ? t.color.accent : t.color.border,
               }}
@@ -76,7 +76,7 @@ export function DayPills({
               <Text
                 style={{
                   ...type.caption,
-                  color: isSelected ? "#fff" : t.color.textMuted,
+                  color: isSelected ? t.color.onAccent : t.color.textMuted,
                 }}
               >
                 {label.top}
@@ -85,7 +85,7 @@ export function DayPills({
                 style={{
                   ...type.label,
                   fontSize: 17,
-                  color: isSelected ? "#fff" : t.color.text,
+                  color: isSelected ? t.color.onAccent : t.color.text,
                 }}
               >
                 {label.bottom}

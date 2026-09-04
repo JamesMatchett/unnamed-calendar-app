@@ -241,7 +241,7 @@ export function SlotPoll({
                       style={{
                         ...type.caption,
                         fontWeight: selected ? "700" : "500",
-                        color: selected ? "#fff" : t.color.textMuted,
+                        color: selected ? t.color.onAccent : t.color.textMuted,
                       }}
                     >
                       {o.label}

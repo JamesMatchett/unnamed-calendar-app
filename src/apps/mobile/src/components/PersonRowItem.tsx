@@ -71,7 +71,7 @@ export function PersonRowItem({
             paddingVertical: 7,
             borderRadius: radius.pill,
             backgroundColor:
-              a.tone === "primary" ? t.color.accent : "transparent",
+              a.tone === "primary" ? t.color.accentFill : "transparent",
             borderWidth: a.tone === "primary" ? 0 : 1,
             borderColor: t.color.border,
           }}
@@ -80,7 +80,7 @@ export function PersonRowItem({
             style={{
               ...type.caption,
               fontWeight: "600",
-              color: a.tone === "primary" ? "#fff" : t.color.textMuted,
+              color: a.tone === "primary" ? t.color.onAccent : t.color.textMuted,
             }}
           >
             {a.label}

@@ -156,7 +156,7 @@ export function TripDatePicker({
                       width: 3,
                       height: 3,
                       borderRadius: radius.pill,
-                      backgroundColor: t.color.accent,
+                      backgroundColor: t.color.accentFill,
                     }}
                   />
                 ) : null}
