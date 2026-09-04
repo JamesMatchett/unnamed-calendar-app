@@ -201,6 +201,11 @@ export function SlotDialog({
             display={
               Platform.OS !== "ios" ? "default" : pickingTime ? "spinner" : "inline"
             }
+            // The spinner sizes itself to its columns and then sits wherever
+            // the row leaves it, which reads as off-centre under rows that are
+            // full width. Letting it shrink to its content and centring that
+            // puts the wheel under the middle of the sheet.
+            style={pickingTime ? { alignSelf: "center" } : undefined}
             onChange={(_, selected) => {
               if (!selected) return;
               if (picking === "date") {
