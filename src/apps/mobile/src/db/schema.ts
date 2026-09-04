@@ -199,6 +199,10 @@ CREATE TABLE IF NOT EXISTS availability (
   -- NULL means "whatever the calendar says", so changing the group's mode still
   -- moves everyone who never chose their own.
   travel_mode TEXT,
+  -- How they are getting home, when that differs. NULL means "the same way I
+  -- came", which is what it is for almost everyone: recording a second answer
+  -- only when there is one keeps a single tap meaning both directions.
+  travel_mode_out TEXT,
   updated_at  TEXT NOT NULL,
   PRIMARY KEY (calendar_id, user_id),
   FOREIGN KEY (calendar_id) REFERENCES calendars(calendar_id) ON DELETE CASCADE

@@ -3,7 +3,7 @@ import type { DayPresence, PresenceInput, TravelMode } from "@calder/core";
 import { useState } from "react";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 
-import { groupByTravelMode, sharedTravelMode } from "@calder/core";
+import { groupByTravelMode, sharedTravelMode, travelModeFor } from "@calder/core";
 
 import { TRAVEL_ICON } from "@/components/TravelMode";
 import { formatClock } from "@/lib/format";
@@ -48,6 +48,14 @@ interface Row {
   tone: "here" | "moving" | "away";
   people: readonly PresenceInput[];
 }
+
+const ARRIVING_LABEL: Record<TravelMode, string> = {
+  plane: "Flying in",
+  train: "Arriving by train",
+  car: "Driving in",
+  boat: "Arriving by boat",
+  walk: "Walking in",
+};
 
 const LEAVING_LABEL: Record<TravelMode, string> = {
   plane: "Flying out",
@@ -103,13 +111,18 @@ export function PresenceStrip({
       // and two catch an evening flight: one line reading "5 leave" summarises
       // that into something nobody can act on. Only worth splitting when the
       // modes actually differ, otherwise it is the same row with a longer name.
-      if (g.key === "leavingToday") {
-        const byMode = groupByTravelMode(people, travelMode, "departsAt");
+      if (g.key === "leavingToday" || g.key === "arrivingToday") {
+        const leaving = g.key === "leavingToday";
+        const byMode = groupByTravelMode(
+          people,
+          travelMode,
+          leaving ? "departsAt" : "arrivesAt",
+        );
         if (byMode.length > 1) {
           return byMode.map((m) => ({
-            id: `leaving:${m.mode}`,
+            id: `${leaving ? "leaving" : "arriving"}:${m.mode}`,
             key: g.key,
-            label: LEAVING_LABEL[m.mode],
+            label: (leaving ? LEAVING_LABEL : ARRIVING_LABEL)[m.mode],
             icon: TRAVEL_ICON[m.mode],
             tone: g.tone,
             people: m.people,
@@ -145,8 +158,14 @@ export function PresenceStrip({
                   // not a mode of transport. A split departure row already
                   // carries its own mode's icon, so only the unsplit rows need
                   // the shared-mode fallback.
-                  g.id === "arrivingToday" || g.id === "leavingToday"
-                    ? TRAVEL_ICON[sharedTravelMode(people, travelMode)]
+                  g.key === "arrivingToday" || g.key === "leavingToday"
+                    ? TRAVEL_ICON[
+                        sharedTravelMode(
+                          people,
+                          travelMode,
+                          g.key === "leavingToday" ? "out" : "in",
+                        )
+                      ]
                     : g.icon
                 }
                 size={17}
@@ -222,7 +241,15 @@ export function PresenceStrip({
                       show each person's own way of getting there. */}
                   {showing.key === "arrivingToday" || showing.key === "leavingToday" ? (
                     <Ionicons
-                      name={TRAVEL_ICON[p.travelMode ?? travelMode]}
+                      name={
+                        TRAVEL_ICON[
+                          travelModeFor(
+                            p,
+                            showing.key === "leavingToday" ? "out" : "in",
+                            travelMode,
+                          )
+                        ]
+                      }
                       size={17}
                       color={t.color.textMuted}
                     />

@@ -13,7 +13,7 @@ import type * as SQLite from "expo-sqlite";
  * last month shows a trip that has already happened; changing this makes the app
  * drop the fixtures and rebuild them starting from today.
  */
-export const FIXTURE_EPOCH = "2026-09-04T18:51:57.470Z";
+export const FIXTURE_EPOCH = "2026-09-04T19:59:49.000Z";
 
 /** Stands in for the signed-in user until Cognito exists (§3.2). */
 export const CURRENT_USER_ID = "01JC0USERJAMES0000000000";
@@ -793,23 +793,26 @@ function seedCalendars(db: SQLite.SQLiteDatabase): void {
       arrives: string | null,
       departs: string | null,
       mode: TravelMode | null,
+      /** Null means home the way they came, which is true of most of them. */
+      modeOut: TravelMode | null,
     ][] = [
-      [CURRENT_USER_ID, day(12, 15, 40), day(15, 11, 0), "plane"],
-      ["01JC0USERPRIYA0000000000", day(12, 9, 15), day(15, 7, 30), "train"],
-      ["01JC0USERLUKE00000000000", day(13, 18, 30), day(15, 20, 0), "car"],
-      // A later flight out than me, then the same one home. The plane row
-      // therefore shows BOTH shapes across the trip: two names with their own
-      // times on the way out, and one clause with a shared time on the way
-      // back. One fixture, both cases.
-      ["01JC0USERMAYA00000000000", day(12, 21, 5), day(15, 11, 0), "plane"],
-      ["01JC0USERGLENN0000000000", null, null, null],
+      [CURRENT_USER_ID, day(12, 15, 40), day(15, 11, 0), "plane", null],
+      ["01JC0USERPRIYA0000000000", day(12, 9, 15), day(15, 7, 30), "train", null],
+      ["01JC0USERLUKE00000000000", day(13, 18, 30), day(15, 20, 0), "car", null],
+      // Flies in on a later plane than me, then rides home with Luke. She is
+      // the fixture for arriving and leaving differently: the arrival rows show
+      // her under the aeroplane and the departure rows under the car, from one
+      // person's record.
+      ["01JC0USERMAYA00000000000", day(12, 21, 5), day(15, 20, 0), "plane", "car"],
+      ["01JC0USERGLENN0000000000", null, null, null, null],
     ];
 
-    for (const [uid, arrives, departs, mode] of availability) {
+    for (const [uid, arrives, departs, mode, modeOut] of availability) {
       db.runSync(
-        `INSERT INTO availability (calendar_id, user_id, arrives_at, departs_at, travel_mode, updated_at)
-         VALUES ('01JC0CALLISBON0000000000',?,?,?,?,?)`,
-        [uid, arrives, departs, mode, day(-10, 9)],
+        `INSERT INTO availability
+           (calendar_id, user_id, arrives_at, departs_at, travel_mode, travel_mode_out, updated_at)
+         VALUES ('01JC0CALLISBON0000000000',?,?,?,?,?,?)`,
+        [uid, arrives, departs, mode, modeOut, day(-10, 9)],
       );
     }
 

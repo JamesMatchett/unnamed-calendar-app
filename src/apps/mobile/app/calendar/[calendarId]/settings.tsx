@@ -10,7 +10,11 @@ import { zonedWallToUtc } from "@calder/core";
 import { Cover, CoverPlaceholder } from "@/components/Cover";
 import { PersonRowItem } from "@/components/PersonRowItem";
 import { TripDatePicker } from "@/components/TripDatePicker";
-import { TravelModePicker } from "@/components/TravelMode";
+import {
+  TRAVEL_LABEL,
+  TravelDirectionPicker,
+  TravelModePicker,
+} from "@/components/TravelMode";
 import { SearchBar } from "@/components/SearchBar";
 import { Field, RowButton, TextField, ToggleRow } from "@/components/form";
 import { Card, EmptyState, Muted } from "@/components/ui";
@@ -169,7 +173,7 @@ function YourTrip({
   const mine = availability?.travel_mode ?? null;
   // Unset follows the calendar, so changing the group's mode still moves anyone
   // who never picked their own.
-  const effective = mine ?? calendarTravelMode;
+  const mineOut = availability?.travel_mode_out ?? null;
 
   const label = (value: string | null) =>
     value
@@ -236,16 +240,28 @@ function YourTrip({
         </View>
       ) : null}
 
-      <Field label="How are you getting there?">
-        <TravelModePicker
-          value={effective}
-          onChange={(v) => setMyAvailability(calendarId, arrives, departs, v)}
+      <Field label="How are you getting there and back?">
+        <TravelDirectionPicker
+          arrival={mine}
+          departure={mineOut}
+          onChange={(inMode, outMode) =>
+            setMyAvailability(calendarId, arrives, departs, inMode, outMode)
+          }
         />
+        <Muted>
+          {mine === null
+            ? "Tap how you're arriving, then tap how you're leaving. Tap the same one twice if it's the same both ways."
+            : mineOut === null
+              ? `Arriving by ${TRAVEL_LABEL[mine].toLowerCase()}. Tap again for the way back.`
+              : mineOut === mine
+                ? `${TRAVEL_LABEL[mine]} both ways.`
+                : `${TRAVEL_LABEL[mine]} there, ${TRAVEL_LABEL[mineOut].toLowerCase()} back.`}
+        </Muted>
       </Field>
 
       {mine !== null ? (
         <Pressable
-          onPress={() => setMyAvailability(calendarId, arrives, departs, null)}
+          onPress={() => setMyAvailability(calendarId, arrives, departs, null, null)}
           accessibilityRole="button"
         >
           <Text style={{ ...type.caption, color: t.color.accent }}>
@@ -258,7 +274,7 @@ function YourTrip({
 
       {arrives || departs ? (
         <Pressable
-          onPress={() => setMyAvailability(calendarId, null, null, mine)}
+          onPress={() => setMyAvailability(calendarId, null, null, mine, mineOut)}
           accessibilityRole="button"
         >
           <Text style={{ ...type.caption, color: t.color.accent }}>

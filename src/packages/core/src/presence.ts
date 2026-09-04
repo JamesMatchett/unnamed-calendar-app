@@ -24,6 +24,37 @@ export interface PresenceInput {
    * mode, the people who never chose should follow it.
    */
   readonly travelMode?: TravelMode | null;
+  /**
+   * How this person is getting home, when that differs from how they came.
+   *
+   * People fly in and get a lift back, or drive down and leave the car for
+   * someone else. `null` means "the same way I arrived", which then falls back
+   * to the calendar's mode if they never chose that either — so one stated mode
+   * still covers both directions, and the second is only recorded when it is
+   * genuinely a second answer.
+   */
+  readonly travelModeOut?: TravelMode | null;
+}
+
+/** Which leg of the trip a mode describes. */
+export type TravelDirection = "in" | "out";
+
+/**
+ * The mode to draw against one person for one direction.
+ *
+ * Exported because every caller that shows a travel icon has to make this same
+ * decision, and each one making it inline is how a departure ends up wearing
+ * the arrival's aeroplane.
+ */
+export function travelModeFor(
+  person: PresenceInput,
+  direction: TravelDirection,
+  fallback: TravelMode,
+): TravelMode {
+  if (direction === "out") {
+    return person.travelModeOut ?? person.travelMode ?? fallback;
+  }
+  return person.travelMode ?? fallback;
 }
 
 export interface DayPresence {
@@ -108,8 +139,9 @@ export const presenceTotal = (p: DayPresence): number =>
 export function sharedTravelMode(
   people: readonly PresenceInput[],
   fallback: TravelMode,
+  direction: TravelDirection = "in",
 ): TravelMode {
-  const modes = new Set(people.map((p) => p.travelMode ?? fallback));
+  const modes = new Set(people.map((p) => travelModeFor(p, direction, fallback)));
   if (modes.size !== 1) return fallback;
   const [only] = [...modes];
   return only ?? fallback;
@@ -146,8 +178,10 @@ export function groupByTravelMode(
 ): TravelGroup[] {
   const byMode = new Map<TravelMode, PresenceInput[]>();
 
+  const direction: TravelDirection = field === "departsAt" ? "out" : "in";
+
   for (const person of people) {
-    const mode = person.travelMode ?? fallback;
+    const mode = travelModeFor(person, direction, fallback);
     const bucket = byMode.get(mode);
     if (bucket) bucket.push(person);
     else byMode.set(mode, [person]);
@@ -172,4 +206,32 @@ function compareTimes(a: Instant | null | undefined, b: Instant | null | undefin
   if (!a) return 1;
   if (!b) return -1;
   return a < b ? -1 : a > b ? 1 : 0;
+}
+
+export interface TravelSelection {
+  readonly arrival: TravelMode | null;
+  /** Null means "the same way I came", not "unanswered". */
+  readonly departure: TravelMode | null;
+}
+
+/**
+ * What a tap on one travel icon means.
+ *
+ * The control is two answers on one row of icons, so the rule has to be
+ * unambiguous or people end up unable to say "fly there, drive back". It reads:
+ * the first tap answers the way in, the next answers the way out, and a tap
+ * after both are answered starts again — which makes correcting a mistake one
+ * tap rather than hunting for a reset.
+ *
+ * Pure and here rather than in the component so the sequence can be tested as a
+ * sequence, which is the only way it is ever experienced.
+ */
+export function nextTravelSelection(
+  current: TravelSelection,
+  tapped: TravelMode,
+): TravelSelection {
+  if (current.arrival === null || current.departure !== null) {
+    return { arrival: tapped, departure: null };
+  }
+  return { arrival: current.arrival, departure: tapped };
 }

@@ -630,11 +630,14 @@ export interface AvailabilityRow {
   arrives_at: string | null;
   departs_at: string | null;
   travel_mode: TravelMode | null;
+  /** Null means they leave the way they arrived. */
+  travel_mode_out: TravelMode | null;
 }
 
 export function listAvailability(calendarId: string): AvailabilityRow[] {
   return getDb().getAllSync<AvailabilityRow>(
-    "SELECT user_id, arrives_at, departs_at, travel_mode FROM availability WHERE calendar_id = ?",
+    `SELECT user_id, arrives_at, departs_at, travel_mode, travel_mode_out
+       FROM availability WHERE calendar_id = ?`,
     [calendarId],
   );
 }
@@ -663,6 +666,7 @@ export function presenceForDay(
       arrivesAt: byUser.get(m.user_id)?.arrives_at ?? null,
       departsAt: byUser.get(m.user_id)?.departs_at ?? null,
       travelMode: byUser.get(m.user_id)?.travel_mode ?? null,
+      travelModeOut: byUser.get(m.user_id)?.travel_mode_out ?? null,
     })),
     dayStartUtc,
     dayEndUtc,
@@ -681,8 +685,8 @@ export function myMembership(calendarId: string): MemberRow | null {
 
 export function myAvailability(calendarId: string): AvailabilityRow | null {
   return getDb().getFirstSync<AvailabilityRow>(
-    `SELECT user_id, arrives_at, departs_at, travel_mode FROM availability
-      WHERE calendar_id = ? AND user_id = ?`,
+    `SELECT user_id, arrives_at, departs_at, travel_mode, travel_mode_out
+       FROM availability WHERE calendar_id = ? AND user_id = ?`,
     [calendarId, CURRENT_USER_ID],
   );
 }
@@ -692,14 +696,18 @@ export function setMyAvailability(
   arrivesAt: string | null,
   departsAt: string | null,
   travelMode: TravelMode | null = null,
+  /** Null means "the same way I came", not "unset". */
+  travelModeOut: TravelMode | null = null,
 ): void {
   getDb().runSync(
-    `INSERT INTO availability (calendar_id, user_id, arrives_at, departs_at, travel_mode, updated_at)
-     VALUES (?,?,?,?,?,?)
+    `INSERT INTO availability
+       (calendar_id, user_id, arrives_at, departs_at, travel_mode, travel_mode_out, updated_at)
+     VALUES (?,?,?,?,?,?,?)
      ON CONFLICT (calendar_id, user_id)
      DO UPDATE SET arrives_at = excluded.arrives_at,
                    departs_at = excluded.departs_at,
                    travel_mode = excluded.travel_mode,
+                   travel_mode_out = excluded.travel_mode_out,
                    updated_at = excluded.updated_at`,
     [
       calendarId,
@@ -707,6 +715,7 @@ export function setMyAvailability(
       arrivesAt,
       departsAt,
       travelMode,
+      travelModeOut,
       new Date().toISOString(),
     ],
   );

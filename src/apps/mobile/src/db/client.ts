@@ -39,6 +39,7 @@ function addMissingColumns(database: SQLite.SQLiteDatabase): void {
     ["calendars", "allow_member_events", "INTEGER NOT NULL DEFAULT 1"],
     ["calendars", "travel_mode", "TEXT NOT NULL DEFAULT 'plane'"],
     ["availability", "travel_mode", "TEXT"],
+    ["availability", "travel_mode_out", "TEXT"],
     ["rsvps", "ticket_status", "TEXT"],
     ["calendars", "cover_image", "TEXT"],
     ["events", "image_key", "TEXT"],
