@@ -13,7 +13,7 @@ import type * as SQLite from "expo-sqlite";
  * last month shows a trip that has already happened; changing this makes the app
  * drop the fixtures and rebuild them starting from today.
  */
-export const FIXTURE_EPOCH = "2026-09-04T23:43:34.000Z";
+export const FIXTURE_EPOCH = "2026-09-04T23:44:39.000Z";
 
 /** Stands in for the signed-in user until Cognito exists (§3.2). */
 export const CURRENT_USER_ID = "01JC0USERJAMES0000000000";
@@ -467,7 +467,7 @@ function seedPeople(db: SQLite.SQLiteDatabase): void {
   const people: [string, string, string, string][] = [
     [CURRENT_USER_ID, "james", "James", "james@example.com"],
     ["01JC0USERPRIYA0000000000", "priya", "Priya Raman", "priya@example.com"],
-    ["01JC0USERLUKE00000000000", "luke", "Luke Bennett", "luke@example.com"],
+    ["01JC0USERLUKE00000000000", "luke", "Luke Spray", "luke@example.com"],
     ["01JC0USERGLENN0000000000", "glenn", "Glenn Ferreira", "glenn@example.com"],
     ["01JC0USERMAYA00000000000", "maya", "Maya Okonkwo", "maya@example.com"],
     ["01JC0USERTOM000000000000", "tomh", "Tom Hargreaves", "tom.h@example.com"],
