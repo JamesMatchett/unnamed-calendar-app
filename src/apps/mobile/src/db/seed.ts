@@ -13,7 +13,7 @@ import type * as SQLite from "expo-sqlite";
  * last month shows a trip that has already happened; changing this makes the app
  * drop the fixtures and rebuild them starting from today.
  */
-export const FIXTURE_EPOCH = "2026-09-04T23:41:32.000Z";
+export const FIXTURE_EPOCH = "2026-09-04T23:43:34.000Z";
 
 /** Stands in for the signed-in user until Cognito exists (§3.2). */
 export const CURRENT_USER_ID = "01JC0USERJAMES0000000000";
@@ -487,12 +487,11 @@ function seedPeople(db: SQLite.SQLiteDatabase): void {
     // incoming one — so all three states are visible without having to create
     // them first.
     //
-    // One friend per level of what they show ME, so all three states of the
-    // person page are a tap away: Luke shows everything, Maya shows when she
-    // is free, Priya shows nothing. Visibility is per direction and does not
-    // have to match - Priya is the asymmetric case, where I show her my full
-    // calendar and she shows me none of hers - and her page has to say why
-    // finding a time is unavailable rather than claiming we are never free.
+    // One friend per level, in both directions, so all three states are a tap
+    // away on the People list (what they see of me) and on each person's page
+    // (what they show me): Luke and I share everything, Maya and I share when
+    // we are free, Priya and I share nothing. Her page has to say why finding
+    // a time is unavailable rather than claiming we are never free.
     const friends: [
       user: string,
       status: string,
@@ -502,7 +501,7 @@ function seedPeople(db: SQLite.SQLiteDatabase): void {
     ][] = [
       ["01JC0USERLUKE00000000000", "accepted", day(-90, 12), "full", "full"],
       ["01JC0USERMAYA00000000000", "accepted", day(-200, 12), "busy", "busy"],
-      ["01JC0USERPRIYA0000000000", "accepted", day(-150, 12), "full", "none"],
+      ["01JC0USERPRIYA0000000000", "accepted", day(-150, 12), "none", "none"],
       ["01JC0USERTOM000000000000", "pending_out", day(-2, 15), "none", "none"],
       ["01JC0USERSOFIA0000000000", "pending_in", day(-1, 20), "none", "none"],
     ];
