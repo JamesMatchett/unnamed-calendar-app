@@ -2359,30 +2359,32 @@ export function answerEventInvite(inviteId: string, accept: boolean): void {
   if (!invite || invite.status !== "pending") return;
 
   const now = new Date().toISOString();
-  db.withTransactionSync(() => {
-    let copyId: string | null = null;
-    if (accept) {
-      copyId = createEvent(OWN_PLANS_ID, {
-        title: invite.title,
-        startUtc: invite.start_utc,
-        endUtc: invite.end_utc,
-        tz: invite.tz,
-        localWall: invite.local_wall,
-        precision: invite.precision,
-        locationName: invite.location_name,
-        ticketsRequired: false,
-        ticketUrl: null,
-        imageKey: null,
-        description: `With ${invite.from_name}.`,
-      });
-    }
-    db.runSync(
-      `UPDATE event_invites
-          SET status = ?, answered_at = ?, accepted_event_id = ?
-        WHERE invite_id = ?`,
-      [accept ? "accepted" : "declined", now, copyId, inviteId],
-    );
-  });
+  // createEvent runs its own transaction, and expo-sqlite does not nest them
+  // (BEGIN inside BEGIN), so the copy is made first and the answer recorded
+  // after. If the second write failed the worst case is an accepted event
+  // whose invite still reads pending, which the next tap corrects.
+  let copyId: string | null = null;
+  if (accept) {
+    copyId = createEvent(OWN_PLANS_ID, {
+      title: invite.title,
+      startUtc: invite.start_utc,
+      endUtc: invite.end_utc,
+      tz: invite.tz,
+      localWall: invite.local_wall,
+      precision: invite.precision,
+      locationName: invite.location_name,
+      ticketsRequired: false,
+      ticketUrl: null,
+      imageKey: null,
+      description: `With ${invite.from_name}.`,
+    });
+  }
+  db.runSync(
+    `UPDATE event_invites
+        SET status = ?, answered_at = ?, accepted_event_id = ?
+      WHERE invite_id = ?`,
+    [accept ? "accepted" : "declined", now, copyId, inviteId],
+  );
   notifyChanged();
 }
 
@@ -2485,8 +2487,18 @@ export function setIdentity(displayName: string, handle: string): void {
   const db = getDb();
   const name = displayName.trim();
   const tag = normaliseHandle(handle);
+  // The directory upsert is written out here rather than through updateProfile:
+  // expo-sqlite's withTransactionSync is BEGIN/COMMIT, not a savepoint, so a
+  // transaction inside a transaction commits the outer one early and the outer
+  // COMMIT then fails with "no transaction is active". One level, always.
   db.withTransactionSync(() => {
-    updateProfile({ displayName: name, handle: tag });
+    db.runSync(
+      `INSERT INTO directory (user_id, handle, display_name, email)
+       VALUES (?,?,?,NULL)
+       ON CONFLICT (user_id) DO UPDATE SET handle = excluded.handle,
+                                          display_name = excluded.display_name`,
+      [CURRENT_USER_ID, tag, name],
+    );
     db.runSync("UPDATE members SET display_name = ? WHERE user_id = ?", [name, CURRENT_USER_ID]);
     db.runSync("INSERT OR REPLACE INTO meta (key, value) VALUES ('identity_set', '1')");
   });
