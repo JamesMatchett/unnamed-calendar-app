@@ -18,6 +18,18 @@ export const PROVIDER_LABEL: Record<Provider, string> = {
 };
 
 /**
+ * How to name a provider read back from storage.
+ *
+ * The stored value came out of SQLite, written by whichever version of the app
+ * was installed at the time, so it is a string rather than a Provider — and a
+ * build that once wrote something no longer in the union would otherwise show a
+ * blank. Falling back to the raw value keeps an old row readable instead of
+ * invisible.
+ */
+export const providerLabel = (stored: string): string =>
+  PROVIDER_LABEL[stored as Provider] ?? stored;
+
+/**
  * Which ways in this device offers.
  *
  * Apple's own rule: an iOS app that offers third-party sign-in must offer Sign

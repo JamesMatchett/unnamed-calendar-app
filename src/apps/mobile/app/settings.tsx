@@ -21,6 +21,7 @@ import {
   setBoolPref,
 } from "@/db/repo";
 import { health } from "@/lib/api";
+import { providerLabel } from "@/lib/auth";
 import { buildLabel, sendFeedback } from "@/lib/feedback";
 import { useQuery } from "@/lib/useQuery";
 import type { Appearance } from "@/theme";
@@ -190,7 +191,7 @@ export default function SettingsScreen() {
             <RowButton
               bare
               label="Show the welcome again"
-              value={provider ? `Signed in with ${provider}` : ""}
+              value={provider ? `Signed in with ${providerLabel(provider)}` : ""}
               onPress={() =>
                 Alert.alert(
                   "Show the welcome again?",

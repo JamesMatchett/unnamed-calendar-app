@@ -423,10 +423,22 @@ export function RowButton({
             }),
       }}
     >
-      <Text style={{ ...type.body, color: t.color.textMuted }}>{label}</Text>
+      {/*
+        The label does not shrink and the value does. Without that, a long value
+        and `space-between` push the two together until they touch, with no gap
+        and no ellipsis — which is how "Show the welcome again" ended up printed
+        against "Signed in with Google" as one word. Truncating the value is the
+        right side to lose: the label is what the row IS, the value is what it
+        currently says.
+      */}
+      <Text style={{ ...type.body, color: t.color.textMuted, flexShrink: 0 }}>{label}</Text>
       <Text
+        numberOfLines={1}
         style={{
           ...type.body,
+          flex: 1,
+          textAlign: "right",
+          marginLeft: space.md,
           fontWeight: active ? "700" : "400",
           color: active ? t.color.accent : t.color.text,
         }}
