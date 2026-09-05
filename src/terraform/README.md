@@ -282,6 +282,16 @@ message and no hint.
    identifier from the bundle id, and it is the one Cognito calls `client_id`.
    Native sign-in issues tokens whose audience is the *bundle id*, which is why
    the redirect flow and the Services ID are the pair that works.
+
+   **Its description is user-facing copy, not a label.** Apple prints it on the
+   consent screen — *"Use your Apple Account to sign in to 'X'"* — at the moment
+   somebody decides whether to trust the app. Dev was registered as "Calandder
+   Sign In", which reads as the name of a service rather than of the app. Use
+   **`Calandder`** in staging and prod.
+
+   The ampersand is not available: Apple rejects `@ & * "` in that field, the
+   same restriction that produced `calandder.com`. So `Cal&der` cannot go there
+   and the domain spelling is as close to the real name as the field allows.
 3. Configure it: primary App ID `com.calandder.app`, the domain from
    `auth_hosted_domain` without a scheme, and the return URL from
    `auth_redirect_uri`. **You do not need to verify the domain** — Apple's own
