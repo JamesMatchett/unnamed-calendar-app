@@ -128,6 +128,13 @@ export async function signIn(provider: Provider): Promise<Account | null> {
   // allow-list and a physical phone needs a dev client.
   const redirectUri = AuthSession.makeRedirectUri({ scheme: "calandder", path: "auth" });
 
+  // Logged because this is the one value that fails invisibly. Cognito matches
+  // callback URLs exactly and, when none matches, shows a page saying only "An
+  // error was encountered with the requested page" — no parameter, no name, no
+  // clue which end is wrong. Knowing the string the app actually sent turns
+  // that into a one-line fix.
+  if (__DEV__) console.log(`[auth] redirect_uri = ${redirectUri}`);
+
   const request = new AuthSession.AuthRequest({
     clientId,
     redirectUri,

@@ -82,10 +82,17 @@ variable "callback_urls" {
   description = "Exact URLs Cognito may return to after sign-in. See modules/auth."
   type        = list(string)
   default = [
+    # What a real build uses, standalone or a dev client, and the only entry
+    # here that is stable. The scheme is registered with the OS at install time,
+    # so it does not depend on a network at all.
     "calandder://auth",
-    # The iOS simulator running Expo Go. Loopback is stable there; a phone gets
-    # the machine's LAN address, which is not, so real-device sign-in needs a
-    # dev client rather than Expo Go.
+
+    # Expo Go only, and disposable. It builds the redirect from Metro's own
+    # address, so this is whatever DHCP handed the laptop. It was .49 an hour
+    # before it was .130, which is the whole argument for moving to a dev
+    # client: an allow-list that tracks a router is not one worth maintaining.
+    # Delete both when Expo Go is no longer used for sign-in.
+    "exp://192.168.1.130:8081/--/auth",
     "exp://127.0.0.1:8081/--/auth",
   ]
 }
