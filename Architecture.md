@@ -593,13 +593,24 @@ Two notes on `lastUpdatedBy` and `allowSuggestions`:
 | 8 | Author approves a change | `TransactWriteItems`: update `EVENT#`, mark `SUGG#` accepted |
 | 9 | Set my arrival/departure | `PutItem SK=AVAIL#{uid}` |
 | 10 | Group availability view | from pattern 3 |
-| 11 | Delta sync since seq N | `Query PK=CAL#{cid}, SK > CHG#{N:012d}` |
+| 11 | Delta sync since seq N | `Query PK=CAL#{cid}, SK BETWEEN CHG#{N+1:012d} AND CHG#\uffff` |
 | 12 | Redeem an invite | `GetItem PK=INVITE#{hash}` then `TransactWriteItems` to add membership + increment use count |
 | 13 | My upcoming events across all calendars | `Query GSI1 PK=USER#{uid}, SK begins_with RSVP#` |
 | 14 | My inbox | `Query PK=USER#{uid}, SK begins_with NOTIF#` (descending, paginated) |
 | 15 | Invites waiting for me at first sign-in | `Query PK=PENDING#{sha256(email)}` then claim into memberships |
 | 16 | Join requests awaiting my approval | `Query PK=CAL#{cid}, SK begins_with JOINREQ#` |
 | 17 | All recurring series in a calendar | `Query GSI1 PK=CAL#{cid}, SK begins_with SERIES#` |
+
+Pattern 11 was wrong until it was executed, and is worth keeping as a warning. It read
+`SK > CHG#{N:012d}`, which is a lexicographic bound with no upper limit — and `CHG#` sorts
+before `EVENT#`, `JOINREQ#`, `MEMBER#`, `META`, `RSVP#` and `SUGG#`. Every delta sync would
+have returned the entire calendar partition, billed and transferred on every poll, with the
+client handed items it would try to read as changes. It would have looked correct in any
+small test. DynamoDB will not let `begins_with` be combined with `>` on the same sort key,
+which is presumably how the shape arose; a `BETWEEN` with an upper sentinel does both jobs,
+and the fixed-width padding in `padSeq` is what makes the bound numeric rather than
+alphabetical. `src/packages/api/test/access-patterns.test.mjs` executes all seventeen
+against a real DynamoDB engine and keeps the original form as a regression case.
 
 Pattern 3 is the one to appreciate: **opening a calendar is a single DynamoDB query**.
 No joins, no N+1, one round trip, single-digit milliseconds. That is the whole reason to

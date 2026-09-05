@@ -14,7 +14,10 @@
     "@calder/core": "*"
   },
   "devDependencies": {
+    "@aws-sdk/client-dynamodb": "^3.900.0",
+    "@aws-sdk/lib-dynamodb": "^3.900.0",
     "@types/node": "^22.0.0",
+    "dynalite": "^4.0.0",
     "esbuild": "^0.25.0",
     "typescript": "^7.0.0"
   }
