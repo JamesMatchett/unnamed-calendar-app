@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { dayBoundsIn } from "@calder/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import * as ScreenOrientation from "expo-screen-orientation";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -14,6 +14,7 @@ import {
 import { Cover } from "@/components/Cover";
 import { DayPills } from "@/components/DayPills";
 import { DayBoard } from "@/components/DayBoard";
+import { InvitePeopleDialog } from "@/components/InvitePeopleDialog";
 import { DayPresenceNote } from "@/components/DayPresenceNote";
 import { EventRow } from "@/components/EventRow";
 import { AvatarStack, Card, EmptyState, Muted } from "@/components/ui";
@@ -23,6 +24,7 @@ import {
   listEvents,
   listMembers,
   listRsvpsForCalendar,
+  listSentInvites,
   myMembership,
   presenceForDay,
 } from "@/db/repo";
@@ -48,6 +50,8 @@ export default function CalendarScreen() {
   const members = useQuery(`members:${calendarId}`, () => listMembers(calendarId));
   const rsvps = useQuery(`rsvps:${calendarId}`, () => listRsvpsForCalendar(calendarId));
   const me = useQuery(`me:${calendarId}`, () => myMembership(calendarId));
+  const invited = useQuery(`sent:${calendarId}`, () => listSentInvites(calendarId));
+  const [inviting, setInviting] = useState(false);
 
   const tz = calendar?.default_tz ?? "Europe/London";
 
@@ -103,6 +107,20 @@ export default function CalendarScreen() {
 
   const canAdd =
     me?.role === "owner" || calendar.allow_member_events === 1;
+  const canInvite =
+    me?.role === "owner" || calendar.allow_member_invites === 1;
+
+  /**
+   * What is still outstanding, worked out from the calendar rather than
+   * remembered from the moment it was made. Asking somebody counts as done: the
+   * invitation is out of your hands at that point, and a list that still asks
+   * for it until they accept is asking for something you cannot do.
+   */
+  const todo = STEPS.filter((step) =>
+    step.key === "event"
+      ? events.length === 0
+      : members.length <= 1 && invited.length === 0,
+  ).map((step) => step.key);
 
   const range = formatDateRange(
     calendar.start_date ?? undefined,
@@ -185,22 +203,67 @@ export default function CalendarScreen() {
           </Muted>
         </View>
 
-        {created === "1" ? (
-          /* Creation is not finished until there is something in the calendar
-             and somebody else in it (§3.5). A brand-new calendar therefore says
-             what happens next rather than presenting an empty room. */
+        {/* Creation is not finished until there is something in the calendar
+            and somebody else in it (§3.5). A brand-new calendar says what
+            happens next rather than presenting an empty room, and it keeps up:
+            the list was fixed text that still asked for a first event while the
+            first event was on screen underneath it, which teaches people that
+            the app is not paying attention. */}
+        {created === "1" && todo.length > 0 ? (
           <View style={{ paddingHorizontal: space.lg }}>
             <Card style={{ gap: space.sm, borderColor: t.color.accent }}>
               <Text style={{ ...type.label, color: t.color.accent }}>
-                Two things left
+                {todo.length === 1 ? "One thing left" : "Two things left"}
               </Text>
-              <Text style={{ ...type.body, color: t.color.text }}>
-                Add the first thing so there's something to look at, then invite
-                the others.
-              </Text>
-              <Muted>
-                An empty calendar nobody else is in doesn't do much.
-              </Muted>
+
+              {STEPS.map((step) => {
+                const done = !todo.includes(step.key);
+                return (
+                  <Pressable
+                    key={step.key}
+                    onPress={
+                      done
+                        ? undefined
+                        : step.key === "event"
+                          ? () => router.push(addEventHref(calendarId))
+                          : () => setInviting(true)
+                    }
+                    disabled={done}
+                    accessibilityRole="button"
+                    accessibilityState={{ checked: done }}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: space.md,
+                    }}
+                  >
+                    <Ionicons
+                      name={done ? "checkmark-circle" : "ellipse-outline"}
+                      size={20}
+                      color={done ? t.color.going : t.color.accent}
+                    />
+                    <Text
+                      style={{
+                        ...type.body,
+                        flex: 1,
+                        color: done ? t.color.textMuted : t.color.text,
+                        textDecorationLine: done ? "line-through" : "none",
+                      }}
+                    >
+                      {step.label}
+                    </Text>
+                    {done ? null : (
+                      <Ionicons
+                        name="chevron-forward"
+                        size={16}
+                        color={t.color.textMuted}
+                      />
+                    )}
+                  </Pressable>
+                );
+              })}
+
+              <Muted>An empty calendar nobody else is in doesn't do much.</Muted>
             </Card>
           </View>
         ) : null}
@@ -210,7 +273,25 @@ export default function CalendarScreen() {
             <AvatarStack names={members.map((m) => m.display_name)} />
             <Text style={{ ...type.caption, color: t.color.textMuted, flex: 1 }}>
               {members.map((m) => m.display_name).join(", ")}
+              {invited.length > 0
+                ? `, and ${invited.length} asked`
+                : ""}
             </Text>
+            {/* Beside the people, which is where somebody looks when they
+                notice a name missing. It was only in settings, behind a gear,
+                which is where you go to change a calendar rather than to fill
+                it. */}
+            {canInvite ? (
+              <Pressable
+                onPress={() => setInviting(true)}
+                hitSlop={8}
+                accessibilityRole="button"
+              >
+                <Text style={{ ...type.label, color: t.color.accent }}>
+                  Invite people
+                </Text>
+              </Pressable>
+            ) : null}
           </Card>
         </View>
 
@@ -277,6 +358,13 @@ export default function CalendarScreen() {
 
       </ScrollView>
 
+      <InvitePeopleDialog
+        calendarId={calendarId}
+        calendarName={calendar.name}
+        visible={inviting}
+        onClose={() => setInviting(false)}
+      />
+
       {canAdd ? (
         <Pressable
           onPress={() => router.push(addEventHref(calendarId))}
@@ -307,6 +395,12 @@ export default function CalendarScreen() {
     </>
   );
 }
+
+/** The two things that turn a new calendar into a working one (§3.5). */
+const STEPS = [
+  { key: "event", label: "Add the first thing" },
+  { key: "people", label: "Invite the others" },
+] as const;
 
 const addEventHref = (calendarId: string) =>
   ({
