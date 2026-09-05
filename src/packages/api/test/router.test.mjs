@@ -90,6 +90,38 @@ test("a non-string claim is dropped rather than coerced", () => {
   assert.equal(result.statusCode, 401);
 });
 
+test("config serves what the app needs to sign in", () => {
+  // Set here rather than assumed, because the point of the route is that these
+  // come from Terraform and not from a constant in the app.
+  Object.assign(process.env, {
+    CALDER_USER_POOL_ID: "eu-west-2_test",
+    CALDER_CLIENT_ID: "abc123",
+    CALDER_AUTH_DOMAIN: "calder-dev.auth.eu-west-2.amazoncognito.com",
+    CALDER_PROVIDERS: "SignInWithApple,Google",
+  });
+  try {
+    const result = route(request("GET /v1/config"));
+    assert.equal(result.statusCode, 200);
+    assert.deepEqual(body(result), {
+      userPoolId: "eu-west-2_test",
+      clientId: "abc123",
+      authDomain: "calder-dev.auth.eu-west-2.amazoncognito.com",
+      providers: ["SignInWithApple", "Google"],
+    });
+  } finally {
+    for (const k of ["CALDER_USER_POOL_ID", "CALDER_CLIENT_ID", "CALDER_AUTH_DOMAIN", "CALDER_PROVIDERS"]) {
+      delete process.env[k];
+    }
+  }
+});
+
+test("config offers no providers rather than a button that fails", () => {
+  // Empty means none configured. An empty string splits to [""], which would
+  // render as a nameless button, so the filter is the whole point.
+  const result = route(request("GET /v1/config"));
+  assert.deepEqual(body(result).providers, []);
+});
+
 test("an unrouted key is a 404 that says what it was", () => {
   const result = route(request("GET /v1/nothing"));
   assert.equal(result.statusCode, 404);

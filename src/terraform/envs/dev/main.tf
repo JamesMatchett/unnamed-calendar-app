@@ -92,6 +92,12 @@ module "api" {
   issuer    = "https://${module.auth.user_pool_endpoint}"
   audiences = module.auth.audiences
 
+  # Served by /v1/config rather than compiled into the app.
+  user_pool_id       = module.auth.user_pool_id
+  client_id          = module.auth.app_client_id
+  auth_domain        = module.auth.hosted_domain
+  identity_providers = module.auth.identity_providers
+
   table_name        = module.data.table_name
   table_arn         = module.data.table_arn
   table_kms_key_arn = module.data.kms_key_arn

@@ -137,9 +137,13 @@ resource "aws_lambda_function" "api" {
 
   environment {
     variables = {
-      CALDER_ENVIRONMENT = var.environment
-      CALDER_COMMIT      = var.commit
-      CALDER_TABLE       = var.table_name
+      CALDER_ENVIRONMENT  = var.environment
+      CALDER_COMMIT       = var.commit
+      CALDER_TABLE        = var.table_name
+      CALDER_USER_POOL_ID = var.user_pool_id
+      CALDER_CLIENT_ID    = var.client_id
+      CALDER_AUTH_DOMAIN  = var.auth_domain
+      CALDER_PROVIDERS    = join(",", var.identity_providers)
       # Ask the SDK to reuse connections between invocations. Off by default in
       # older runtimes and free to set.
       AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
@@ -197,6 +201,16 @@ resource "aws_apigatewayv2_route" "health" {
 
   # No authorizer_id. Stated as an absence rather than left to the default so
   # that a reader can see the route is public on purpose.
+  authorization_type = "NONE"
+}
+
+# Public, like health. A Cognito client id appears in every redirect URL the
+# browser already sees, and PKCE is what makes knowing it useless.
+resource "aws_apigatewayv2_route" "config" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /v1/config"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+
   authorization_type = "NONE"
 }
 
