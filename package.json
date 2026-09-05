@@ -15,6 +15,7 @@
     "test:core": "npm test --workspace @calder/core",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "check:db": "node tools/check-transactions.mjs",
-    "verify": "npm run build:core && npm run test:core && npm run check:db && npm run typecheck"
+    "verify": "npm run build:core && npm run test:core && npm run check:db && npm run check:sql && npm run typecheck",
+    "check:sql": "node tools/check-sql.mjs"
   }
 }

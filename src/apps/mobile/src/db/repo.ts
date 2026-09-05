@@ -593,10 +593,16 @@ export function createCalendar(input: NewCalendar): string {
 
   db.withTransactionSync(() => {
     db.runSync(
+      // Every column this binds is named. is_private and cover_image were
+      // missing from the list while still being passed, which shifted every
+      // parameter after them by two: created_by took the privacy flag and
+      // created_at took the cover, which is a crash when there is no cover and,
+      // worse, silently wrong data when there is one.
       `INSERT INTO calendars (calendar_id, name, description, mode, start_date, end_date,
          default_tz, collect_availability, travel_mode, require_approval,
-         allow_member_invites, allow_member_events, status, created_by, created_at, last_seq)
-       VALUES (?,?,NULL,?,?,?,?,?,?,1,1,?,'active',?,?,0)`,
+         allow_member_invites, allow_member_events, is_private, cover_image,
+         status, created_by, created_at, last_seq)
+       VALUES (?,?,NULL,?,?,?,?,?,?,1,1,?,?,?,'active',?,?,0)`,
       [
         calendarId,
         input.name.trim(),
@@ -617,7 +623,8 @@ export function createCalendar(input: NewCalendar): string {
     db.runSync(
       `INSERT INTO members (calendar_id, user_id, role, status, display_name, joined_at)
        VALUES (?,?, 'owner', 'active', ?, ?)`,
-      [calendarId, CURRENT_USER_ID, "James", now],
+      // The name they chose at first run, not a fixture's.
+      [calendarId, CURRENT_USER_ID, getProfile().displayName, now],
     );
 
     db.runSync(
@@ -1159,7 +1166,7 @@ export function joinByToken(token: string): JoinOutcome | null {
       [
         preview.calendarId,
         CURRENT_USER_ID,
-        "James",
+        getProfile().displayName,
         now,
         token,
         wasRemoved ? 1 : 0,
@@ -1174,7 +1181,7 @@ export function joinByToken(token: string): JoinOutcome | null {
      VALUES (?,?, 'member', 'active', ?, ?)
      ON CONFLICT (calendar_id, user_id)
      DO UPDATE SET status = 'active', joined_at = excluded.joined_at`,
-    [preview.calendarId, CURRENT_USER_ID, "James", now],
+    [preview.calendarId, CURRENT_USER_ID, getProfile().displayName, now],
   );
   db.runSync("UPDATE invite_links SET uses = uses + 1 WHERE token = ?", [token]);
   notifyChanged();
