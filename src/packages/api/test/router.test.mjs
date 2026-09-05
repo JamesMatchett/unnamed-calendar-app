@@ -51,9 +51,29 @@ test("health is never cached", () => {
 });
 
 test("me returns the verified subject", () => {
-  const result = route(request("GET /v1/me", { sub: "abc-123", token_use: "access" }));
+  const result = route(request("GET /v1/me", { sub: "abc-123", token_use: "id" }));
   assert.equal(result.statusCode, 200);
-  assert.deepEqual(body(result), { sub: "abc-123", userId: null, tokenUse: "access" });
+  assert.deepEqual(body(result), {
+    sub: "abc-123",
+    name: null,
+    email: null,
+    userId: null,
+    tokenUse: "id",
+  });
+});
+
+test("me passes on the name and email when the provider gave them", () => {
+  const claims = { sub: "abc-123", name: "James", email: "j@example.com" };
+  const got = body(route(request("GET /v1/me", claims)));
+  assert.equal(got.name, "James");
+  assert.equal(got.email, "j@example.com");
+});
+
+test("a missing name is null rather than an empty string", () => {
+  // Apple sends a name on the first authorisation only, and only with consent,
+  // so absent is the common case rather than the exception. An empty string
+  // would prefill a field with nothing and look like the answer.
+  assert.equal(body(route(request("GET /v1/me", { sub: "abc-123" }))).name, null);
 });
 
 test("me reports the ULID the Pre Token Generation trigger injects", () => {
@@ -88,6 +108,42 @@ test("a non-string claim is dropped rather than coerced", () => {
   // surprise, and String(surprise) is how a "0" ends up being treated as an id.
   const result = route(request("GET /v1/me", { sub: 12345 }));
   assert.equal(result.statusCode, 401);
+});
+
+test("config serves what the app needs to sign in", () => {
+  // Set here rather than assumed, because the point of the route is that these
+  // come from Terraform and not from a constant in the app.
+  Object.assign(process.env, {
+    CALDER_USER_POOL_ID: "eu-west-2_test",
+    CALDER_CLIENT_ID: "abc123",
+    CALDER_AUTH_DOMAIN: "calder-dev.auth.eu-west-2.amazoncognito.com",
+    CALDER_PROVIDERS: "SignInWithApple,Google",
+  });
+  try {
+    const result = route(request("GET /v1/config"));
+    assert.equal(result.statusCode, 200);
+    // The one cacheable response here, and the reason the parameter exists:
+    // an unauthenticated route that cannot be authenticated even in principle
+    // should not invoke a function to repeat four constants.
+    assert.equal(result.headers["cache-control"], "public, max-age=300");
+    assert.deepEqual(body(result), {
+      userPoolId: "eu-west-2_test",
+      clientId: "abc123",
+      authDomain: "calder-dev.auth.eu-west-2.amazoncognito.com",
+      providers: ["SignInWithApple", "Google"],
+    });
+  } finally {
+    for (const k of ["CALDER_USER_POOL_ID", "CALDER_CLIENT_ID", "CALDER_AUTH_DOMAIN", "CALDER_PROVIDERS"]) {
+      delete process.env[k];
+    }
+  }
+});
+
+test("config offers no providers rather than a button that fails", () => {
+  // Empty means none configured. An empty string splits to [""], which would
+  // render as a nameless button, so the filter is the whole point.
+  const result = route(request("GET /v1/config"));
+  assert.deepEqual(body(result).providers, []);
 });
 
 test("an unrouted key is a 404 that says what it was", () => {

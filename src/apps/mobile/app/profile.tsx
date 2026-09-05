@@ -13,8 +13,10 @@ import {
   handleAvailable,
   normaliseHandle,
   profileFootprint,
+  replayOnboarding,
   updateProfile,
 } from "@/db/repo";
+import { signOut } from "@/lib/auth";
 import { handleHint } from "@/lib/handles";
 import { pickCoverImage } from "@/lib/pickImage";
 import { useQuery } from "@/lib/useQuery";
@@ -276,6 +278,27 @@ export default function ProfileScreen() {
           <Text style={{ ...type.label, color: t.color.textMuted }}>
             Your account
           </Text>
+          {/* Above Delete, and in the app's own colour rather than the danger
+              one. They sit together because both are "end this", and they are
+              drawn differently because one is reversible in ten seconds and
+              the other is not. */}
+          <Pressable
+            onPress={confirmSignOut}
+            accessibilityRole="button"
+            style={{
+              alignItems: "center",
+              paddingVertical: space.lg - 2,
+              borderRadius: radius.pill,
+              borderWidth: 1,
+              borderColor: t.color.border,
+              backgroundColor: t.color.surface,
+            }}
+          >
+            <Text style={{ ...type.label, fontSize: 16, color: t.color.text }}>
+              Sign out
+            </Text>
+          </Pressable>
+
           <Pressable
             onPress={confirmDelete}
             accessibilityRole="button"
@@ -299,6 +322,32 @@ export default function ProfileScreen() {
       </ScrollView>
     </>
   );
+
+  function confirmSignOut() {
+    // Said plainly, because the honest answer is surprising: the calendars are
+    // on this phone, so signing out does not remove them. Somebody expecting
+    // sign-out to clear the device would otherwise hand it over believing it
+    // had.
+    Alert.alert(
+      "Sign out?",
+      "Your calendars and events stay on this phone. You will be asked to sign in again.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Sign out",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              await signOut();
+              // The only route back in: signing in lives in the first-run flow,
+              // so ending a session means starting that again.
+              replayOnboarding();
+            })();
+          },
+        },
+      ],
+    );
+  }
 
   function cycleGrants(current: FriendGrants) {
     const order: FriendGrants[] = ["none", "busy", "full"];

@@ -74,3 +74,53 @@ variable "api_domain" {
   type        = string
   default     = "api.calandder.com"
 }
+
+variable "auth_domain_prefix" {
+  description = "Cognito hosted domain prefix. Unique per region; see modules/auth."
+  type        = string
+  default     = "calder-prod"
+}
+
+variable "callback_urls" {
+  description = "Exact URLs Cognito may return to after sign-in. See modules/auth."
+  type        = list(string)
+  default     = ["calandder://auth"]
+}
+
+variable "apple_services_id" {
+  description = "Apple Services ID. Empty disables the provider. See modules/auth."
+  type        = string
+  default     = ""
+}
+
+variable "apple_team_id" {
+  description = "Apple Team ID. Empty disables the provider."
+  type        = string
+  default     = ""
+}
+
+variable "apple_key_id" {
+  description = "Apple key id. Empty disables the provider."
+  type        = string
+  default     = ""
+}
+
+variable "apple_private_key" {
+  description = "The .p8 contents. Pass via TF_VAR_apple_private_key; never commit."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "google_client_id" {
+  description = "Google OAuth client id. Empty disables the provider."
+  type        = string
+  default     = ""
+}
+
+variable "google_client_secret" {
+  description = "Its secret. Pass via TF_VAR_google_client_secret; never commit."
+  type        = string
+  default     = ""
+  sensitive   = true
+}

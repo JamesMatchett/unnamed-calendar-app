@@ -130,6 +130,31 @@ resource "aws_cognito_user_pool_client" "app" {
   # somebody who was not thinking about this client.
   read_attributes  = ["email", "email_verified", "name"]
   write_attributes = ["email", "name"]
+
+  # --- the redirect flow --------------------------------------------------
+  #
+  # Authorization code with PKCE, which is the only flow a public client should
+  # use: the code is useless without the verifier the app kept, so intercepting
+  # the redirect gains an attacker nothing.
+  allowed_oauth_flows_user_pool_client = true
+  allowed_oauth_flows                  = ["code"]
+
+  # `openid` is what makes Cognito issue an ID token at all, which is the token
+  # this API validates and the one carrying the uid claim (decision 40).
+  allowed_oauth_scopes = ["openid", "email", "profile"]
+
+  callback_urls = var.callback_urls
+  logout_urls   = var.callback_urls
+
+  # COGNITO is absent on purpose: there are no passwords, so there is no
+  # in-pool sign-in to offer. Until a provider is configured this list is empty
+  # and the hosted flow has nothing to show, which is the honest state of it.
+  supported_identity_providers = local.providers_configured
+
+  depends_on = [
+    aws_cognito_identity_provider.apple,
+    aws_cognito_identity_provider.google,
+  ]
 }
 
 # --- a way to get a token before Apple and Google exist ----------------------
@@ -287,4 +312,98 @@ resource "aws_lambda_permission" "trigger" {
   function_name = aws_lambda_function.trigger.function_name
   principal     = "cognito-idp.amazonaws.com"
   source_arn    = aws_cognito_user_pool.main.arn
+}
+
+# --- the hosted domain, and the providers that redirect through it -----------
+
+resource "aws_cognito_user_pool_domain" "main" {
+  domain       = var.domain_prefix
+  user_pool_id = aws_cognito_user_pool.main.id
+}
+
+locals {
+  # Apple and Google both need this exact string in their own consoles, and
+  # neither can be configured until it exists. That is why the domain is applied
+  # before the providers rather than beside them.
+  redirect_uri = "https://${aws_cognito_user_pool_domain.main.domain}.auth.${data.aws_region.current.region}.amazoncognito.com/oauth2/idpresponse"
+
+  # nonsensitive() around the secret comparisons only.
+  #
+  # Terraform propagates sensitivity through every expression that touches a
+  # sensitive value, so without this the derived list of PROVIDER NAMES is
+  # treated as secret and the root output is refused. That is the right default
+  # and the wrong answer here: marking the output sensitive would hide
+  # ["Google", "SignInWithApple"], which is not a secret and is the one thing
+  # somebody wants to read after configuring them.
+  #
+  # What is asserted is narrow and true: whether a key is empty is not the key.
+  apple_ready  = var.apple_services_id != "" && var.apple_team_id != "" && var.apple_key_id != "" && nonsensitive(var.apple_private_key != "")
+  google_ready = var.google_client_id != "" && nonsensitive(var.google_client_secret != "")
+
+  providers_configured = compact([
+    local.apple_ready ? "SignInWithApple" : "",
+    local.google_ready ? "Google" : "",
+  ])
+}
+
+data "aws_region" "current" {}
+
+# The BUILT-IN Apple provider, not a generic OIDC one. They produce an identical
+# sign-in and are billed a hundredfold differently: social providers get the
+# 10,000-MAU free tier, generic OIDC gets fifty (§13, decision 42).
+resource "aws_cognito_identity_provider" "apple" {
+  count = local.apple_ready ? 1 : 0
+
+  user_pool_id  = aws_cognito_user_pool.main.id
+  provider_name = "SignInWithApple"
+  provider_type = "SignInWithApple"
+
+  provider_details = {
+    client_id        = var.apple_services_id
+    team_id          = var.apple_team_id
+    key_id           = var.apple_key_id
+    private_key      = var.apple_private_key
+    authorize_scopes = "email name"
+  }
+
+  # Apple returns the name on the FIRST authorisation only, and with Hide My
+  # Email never again (§3.2). Mapping it here is what gives the Post
+  # Confirmation trigger something to capture; without the mapping the claim
+  # arrives and is discarded.
+  attribute_mapping = {
+    email    = "email"
+    name     = "name"
+    username = "sub"
+  }
+
+  lifecycle {
+    # Terraform cannot read the key back, so every plan would otherwise propose
+    # rewriting it. Changing the key means removing this line deliberately.
+    ignore_changes = [provider_details["private_key"]]
+  }
+}
+
+resource "aws_cognito_identity_provider" "google" {
+  count = local.google_ready ? 1 : 0
+
+  user_pool_id  = aws_cognito_user_pool.main.id
+  provider_name = "Google"
+  provider_type = "Google"
+
+  provider_details = {
+    client_id        = var.google_client_id
+    client_secret    = var.google_client_secret
+    authorize_scopes = "openid email profile"
+  }
+
+  attribute_mapping = {
+    email          = "email"
+    email_verified = "email_verified"
+    name           = "name"
+    username       = "sub"
+  }
+
+  lifecycle {
+    ignore_changes = [provider_details["client_secret"]]
+  }
 }

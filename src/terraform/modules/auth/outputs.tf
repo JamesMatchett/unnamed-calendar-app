@@ -40,3 +40,22 @@ output "trigger_function_name" {
   description = "The Pre Token Generation function, for logs when a sign-in fails."
   value       = aws_lambda_function.trigger.function_name
 }
+
+output "hosted_domain" {
+  description = "The sign-in host. Apple's Services ID and Google's OAuth client both need this exact string."
+  value       = "${aws_cognito_user_pool_domain.main.domain}.auth.${data.aws_region.current.region}.amazoncognito.com"
+}
+
+output "redirect_uri" {
+  description = <<-EOT
+    What goes in Apple's Return URLs and Google's Authorized redirect URIs,
+    character for character. Neither console will tell you it does not match;
+    the sign-in just fails at the provider with a generic error.
+  EOT
+  value       = local.redirect_uri
+}
+
+output "identity_providers" {
+  description = "Which providers are configured. Empty until credentials are supplied."
+  value       = local.providers_configured
+}

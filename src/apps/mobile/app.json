@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "//scheme": "Universal links carry invite tokens straight into the app when it is installed (Architecture.md §7.1, §13.9). The scheme and every machine-readable name derive from the domain, calandder.com.",
+    "//scheme": "Universal links carry invite tokens straight into the app when it is installed (Architecture.md \u00a77.1, \u00a713.9). The scheme and every machine-readable name derive from the domain, calandder.com.",
     "scheme": "calandder",
     "ios": {
       "supportsTablet": true,
@@ -91,7 +91,9 @@
             "backgroundColor": "#12141A"
           }
         }
-      ]
+      ],
+      "expo-web-browser",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true
@@ -103,6 +105,8 @@
     "//orientation": "Portrait by default; screens that want landscape call unlockAsync themselves. Locking from the root layout instead raced the screens' own effects.",
     "icon": "./assets/icon.png",
     "//icon": "Drawn by tools/icon.py: the ampersand on a calendar page. Regenerate there, never edit the PNGs.",
-    "//associatedDomains": "Needs apple-app-site-association served at https://calandder.com/.well-known/ with this bundle id before universal links work; until then the calandder:// scheme still does."
+    "//associatedDomains": "Needs apple-app-site-association served at https://calandder.com/.well-known/ with this bundle id before universal links work; until then the calandder:// scheme still does.",
+    "//plugins.expo-web-browser": "Sign-in opens Cognito in an ASWebAuthenticationSession rather than an in-app WebView. The system sheet is what Apple requires for OAuth, and it is the only way the redirect back into calandder:// is delivered.",
+    "//plugins.expo-secure-store": "Tokens live in the Keychain, not in SQLite beside the calendars. A refresh token lasts 180 days (\u00a73.2) and is the one value in this app worth stealing, so it does not belong in a database a backup can copy."
   }
 }

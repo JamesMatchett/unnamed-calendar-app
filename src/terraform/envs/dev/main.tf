@@ -57,6 +57,19 @@ module "auth" {
   table_name        = module.data.table_name
   table_arn         = module.data.table_arn
   table_kms_key_arn = module.data.kms_key_arn
+
+  domain_prefix = var.auth_domain_prefix
+  callback_urls = var.callback_urls
+
+  # Empty until Apple and Google are configured, at which point each provider
+  # appears. Supplied at apply time, never in a committed file:
+  #   export TF_VAR_apple_private_key="$(cat AuthKey_XXXXXXXXXX.p8)"
+  apple_services_id    = var.apple_services_id
+  apple_team_id        = var.apple_team_id
+  apple_key_id         = var.apple_key_id
+  apple_private_key    = var.apple_private_key
+  google_client_id     = var.google_client_id
+  google_client_secret = var.google_client_secret
 }
 
 module "dns" {
@@ -78,6 +91,12 @@ module "api" {
 
   issuer    = "https://${module.auth.user_pool_endpoint}"
   audiences = module.auth.audiences
+
+  # Served by /v1/config rather than compiled into the app.
+  user_pool_id       = module.auth.user_pool_id
+  client_id          = module.auth.app_client_id
+  auth_domain        = module.auth.hosted_domain
+  identity_providers = module.auth.identity_providers
 
   table_name        = module.data.table_name
   table_arn         = module.data.table_arn

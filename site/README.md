@@ -7,9 +7,11 @@ obvious fit given the rest of the stack); nothing here needs a server.
   TestFlight (now) or the store (later). **Set the three links in the script
   before deploying.**
 - `.well-known/apple-app-site-association` — lets iOS open
-  `https://calandder.com/join/<token>` straight into the app (§7.1). Replace
-  `TEAMID` with the Apple Team ID, serve it with `Content-Type:
-  application/json` and **no** `.json` extension, over HTTPS, at the root.
+  `https://calandder.com/join/<token>` straight into the app (§7.1). The Team
+  ID is filled in. Serve it with `Content-Type: application/json`, **no** `.json`
+  extension, over HTTPS, at the root, and with no redirect: iOS fetches this
+  itself and follows none. It also caches the result, so a wrong one is wrong
+  for a while.
   Android's equivalent (`assetlinks.json`) goes beside it once there is a
   signing key to put in it.
 

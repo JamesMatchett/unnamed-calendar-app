@@ -71,3 +71,66 @@ variable "api_domain" {
   type        = string
   default     = "api.dev.calandder.com"
 }
+
+variable "auth_domain_prefix" {
+  description = "Cognito hosted domain prefix. Unique per region; see modules/auth."
+  type        = string
+  default     = "calder-dev"
+}
+
+variable "callback_urls" {
+  description = "Exact URLs Cognito may return to after sign-in. See modules/auth."
+  type        = list(string)
+  default = [
+    # What a real build uses, standalone or a dev client, and the only entry
+    # here that is stable. The scheme is registered with the OS at install time,
+    # so it does not depend on a network at all.
+    "calandder://auth",
+
+    # Expo Go only, and disposable. It builds the redirect from Metro's own
+    # address, so this is whatever DHCP handed the laptop. It was .49 an hour
+    # before it was .130, which is the whole argument for moving to a dev
+    # client: an allow-list that tracks a router is not one worth maintaining.
+    # Delete both when Expo Go is no longer used for sign-in.
+    "exp://192.168.1.130:8081/--/auth",
+    "exp://127.0.0.1:8081/--/auth",
+  ]
+}
+
+variable "apple_services_id" {
+  description = "Apple Services ID. Empty disables the provider. See modules/auth."
+  type        = string
+  default     = ""
+}
+
+variable "apple_team_id" {
+  description = "Apple Team ID. Empty disables the provider."
+  type        = string
+  default     = ""
+}
+
+variable "apple_key_id" {
+  description = "Apple key id. Empty disables the provider."
+  type        = string
+  default     = ""
+}
+
+variable "apple_private_key" {
+  description = "The .p8 contents. Pass via TF_VAR_apple_private_key; never commit."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "google_client_id" {
+  description = "Google OAuth client id. Empty disables the provider."
+  type        = string
+  default     = ""
+}
+
+variable "google_client_secret" {
+  description = "Its secret. Pass via TF_VAR_google_client_secret; never commit."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
