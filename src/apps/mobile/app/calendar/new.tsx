@@ -1,7 +1,6 @@
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
-import { Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 
 import {
   Field,
@@ -12,12 +11,14 @@ import {
   ToggleRow,
 } from "@/components/form";
 import { Cover, CoverPlaceholder } from "@/components/Cover";
+import { RangeCalendar } from "@/components/TripDatePicker";
 import { TimeZonePicker } from "@/components/TimeZonePicker";
 import { TravelModePicker } from "@/components/TravelMode";
-import { Muted } from "@/components/ui";
+import { Group, Muted } from "@/components/ui";
 import { pickCoverImage } from "@/lib/pickImage";
 import { createCalendar, inviteUser } from "@/db/repo";
-import type { TravelMode } from "@calder/core";
+import type { RangeField, TravelMode } from "@calder/core";
+import { isBackwards } from "@calder/core";
 
 import { describeZone, deviceTimeZone, offsetLabel } from "@/lib/timezones";
 import { space, type, useTheme } from "@/theme";
@@ -77,10 +78,16 @@ export default function NewCalendarScreen() {
   const inAWeek = new Date(Date.now() + 7 * 86_400_000);
   const [startDate, setStartDate] = useState(iso(today));
   const [endDate, setEndDate] = useState(iso(inAWeek));
-  const [picking, setPicking] = useState<"start" | "end" | null>(null);
+  /**
+   * Which end the grid is moving. Never null: the grid is always on screen
+   * for a dated calendar, so it always has to be pointed at something, and
+   * "start" is where anybody begins.
+   */
+  const [picking, setPicking] = useState<RangeField>("start");
 
   const zone = describeZone(tz);
-  const valid = name.trim().length > 0 && (mode === "continuous" || endDate >= startDate);
+  const backwards = mode === "bounded" && isBackwards({ start: startDate, end: endDate });
+  const valid = name.trim().length > 0 && !backwards;
 
   const submit = () => {
     const calendarId = createCalendar({
@@ -147,37 +154,38 @@ export default function NewCalendarScreen() {
 
         {mode === "bounded" ? (
           <View style={{ gap: space.sm }}>
-            <RowButton
-              label="Starts"
-              value={pretty(startDate)}
-              onPress={() => setPicking(picking === "start" ? null : "start")}
-            />
-            <RowButton
-              label="Ends"
-              value={pretty(endDate)}
-              onPress={() => setPicking(picking === "end" ? null : "end")}
-            />
-
-            {picking ? (
-              <DateTimePicker
-                value={new Date(`${picking === "start" ? startDate : endDate}T12:00:00.000Z`)}
-                mode="date"
-                display={Platform.OS === "ios" ? "inline" : "default"}
-                onChange={(_, selected) => {
-                  if (Platform.OS !== "ios") setPicking(null);
-                  if (!selected) return;
-                  const next = iso(selected);
-                  if (picking === "start") {
-                    setStartDate(next);
-                    // An end before the start is not a validation error to
-                    // scold someone about — just move it.
-                    if (endDate < next) setEndDate(next);
-                  } else {
-                    setEndDate(next);
-                  }
-                }}
+            {/* Both ends on one grid. The native inline picker knows about a
+                single date, so this used to be two pickers shown one at a time,
+                and the span between them, which is the actual thing being
+                chosen, was never on screen. The rows stay because they name
+                which end a tap will move. */}
+            <Group>
+              <RowButton
+                bare
+                label="Starts"
+                value={pretty(startDate)}
+                active={picking === "start"}
+                onPress={() => setPicking("start")}
               />
-            ) : null}
+              <RowButton
+                bare
+                label="Ends"
+                value={pretty(endDate)}
+                active={picking === "end"}
+                onPress={() => setPicking("end")}
+              />
+            </Group>
+
+            <RangeCalendar
+              range={{ start: startDate, end: endDate }}
+              editing={picking}
+              tz={tz}
+              onChange={(next) => {
+                setStartDate(next.range.start);
+                setEndDate(next.range.end);
+                setPicking(next.editing);
+              }}
+            />
           </View>
         ) : null}
 
@@ -268,6 +276,14 @@ export default function NewCalendarScreen() {
         ) : null}
 
         <View style={{ gap: space.sm }}>
+          {/* A greyed-out button with no reason beside it is the worst of both:
+              it refuses and does not say why. If Create is off, this says what
+              to fix. */}
+          {backwards ? (
+            <Text style={{ ...type.caption, color: t.color.danger, textAlign: "center" }}>
+              The last day is before the first day. Fix the dates above to carry on.
+            </Text>
+          ) : null}
           <PrimaryButton label="Create" onPress={submit} disabled={!valid} />
           <Text style={{ ...type.caption, color: t.color.textMuted, textAlign: "center" }}>
             You'll add the first thing next, then invite people.
