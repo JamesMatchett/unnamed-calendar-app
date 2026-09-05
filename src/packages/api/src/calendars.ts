@@ -24,6 +24,7 @@ import {
   GSI1,
   GSI1_SK_PREFIX,
   GSI1_KEYS,
+  KEY_PREFIX,
   SK,
   calendarPk,
   isOwner,
@@ -169,19 +170,33 @@ export async function createCalendar(
 /**
  * Access pattern 1: which calendars am I in?
  *
- * A query on the sparse index, not a scan. Departed and removed memberships
- * carry no GSI1 keys, so leaving a calendar removes it from this list without
- * deleting the item that still resolves the person's name on events they
- * created (§8.4). That is the index doing the authorisation filtering for free,
- * which is worth noticing: there is no status test in this function because
- * there is nothing here to test.
+ * Returns IDS, and only ids, which is not a shortcut — it is what the index can
+ * honestly answer. GSI1 is an INCLUDE projection with a deliberately narrow
+ * attribute list (§4.2: a fat projection is how a DynamoDB bill doubles
+ * quietly), and `role`, `joinedAt` and `lastSeenSeq` are not in it. A query
+ * that read them would compile, pass review, and return undefined for every
+ * one of them in production. The test suite caught exactly that.
+ *
+ * Widening the projection would fix it and cost a write on every indexed item
+ * forever, and replace the index to do it. Not needed: the membership item
+ * lives in the calendar's own partition, so it arrives through the change feed
+ * with everything on it. This endpoint answers "which calendars", the feed
+ * answers "and what is in them", and neither duplicates the other.
+ *
+ * The id itself comes from GSI1SK rather than an attribute, because the key is
+ * always there by definition — it is what made the row appear in the index.
+ *
+ * Departed and removed memberships carry no GSI1 keys at all, so leaving a
+ * calendar removes it from this list without deleting the item that still
+ * resolves the person's name on events they created (§8.4). There is no status
+ * test in this function because the sparse index has already done it.
  */
 export async function listCalendars(
   table: string,
   actor: UserId,
   db: DynamoDBDocumentClient = client(),
-): Promise<MembershipItem[]> {
-  const out: MembershipItem[] = [];
+): Promise<CalendarId[]> {
+  const out: CalendarId[] = [];
   let cursor: Record<string, unknown> | undefined;
 
   do {
@@ -194,10 +209,17 @@ export async function listCalendars(
           ":pk": userPk(actor),
           ":prefix": GSI1_SK_PREFIX.calendarsForUser,
         },
+        // Only the keys are read, so nothing here can come to depend on an
+        // attribute the projection does not carry.
+        ProjectionExpression: "GSI1SK",
         ...(cursor === undefined ? {} : { ExclusiveStartKey: cursor }),
       }),
     );
-    out.push(...((page.Items ?? []) as MembershipItem[]));
+
+    for (const item of (page.Items ?? []) as { GSI1SK?: string }[]) {
+      if (item.GSI1SK === undefined) continue;
+      out.push(item.GSI1SK.slice(KEY_PREFIX.calendar.length) as CalendarId);
+    }
     cursor = page.LastEvaluatedKey;
   } while (cursor !== undefined);
 

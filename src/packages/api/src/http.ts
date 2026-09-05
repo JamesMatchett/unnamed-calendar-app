@@ -18,6 +18,14 @@ export interface HttpEvent {
   readonly version?: string;
   /** "GET /v1/health". The method and path as *routed*, not as requested. */
   readonly routeKey?: string;
+  /** {calendarId} and friends, already extracted by API Gateway from the route. */
+  readonly pathParameters?: Readonly<Record<string, string | undefined>>;
+  /** Already URL-decoded. Absent, not empty, when there is no query string. */
+  readonly queryStringParameters?: Readonly<Record<string, string | undefined>>;
+  /** Raw. Parsing it is the handler's job, because failing to parse is an answer. */
+  readonly body?: string;
+  /** Lower-cased by API Gateway, so `idempotency-key` never varies in case. */
+  readonly headers?: Readonly<Record<string, string | undefined>>;
   readonly requestContext?: {
     readonly requestId?: string;
     readonly http?: {
@@ -68,4 +76,27 @@ export function json(statusCode: number, body: unknown, maxAge?: number): HttpRe
     },
     body: JSON.stringify(body),
   };
+}
+
+/**
+ * The request body as an object, or the reason it is not one.
+ *
+ * Returned rather than thrown because a malformed body is a 400 the caller
+ * should see, not a 500 that pages somebody. An absent body is an empty object:
+ * a PATCH with nothing in it is a valid request that changes nothing, and is
+ * not the same thing as a body of "{".
+ */
+export function parseBody(
+  raw: string | undefined,
+): { ok: true; value: Record<string, unknown> } | { ok: false; detail: string } {
+  if (raw === undefined || raw.trim() === "") return { ok: true, value: {} };
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return { ok: false, detail: "body must be a JSON object" };
+    }
+    return { ok: true, value: parsed as Record<string, unknown> };
+  } catch (cause) {
+    return { ok: false, detail: `body is not JSON: ${String(cause)}` };
+  }
 }

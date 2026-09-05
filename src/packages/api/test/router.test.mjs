@@ -25,33 +25,33 @@ function request(routeKey, claims) {
 
 const body = (result) => JSON.parse(result.body);
 
-test("health answers without a token", () => {
-  const result = route(request("GET /v1/health"), Date.parse("2026-09-05T12:00:00Z"));
+test("health answers without a token", async () => {
+  const result = await route(request("GET /v1/health"), Date.parse("2026-09-05T12:00:00Z"));
   assert.equal(result.statusCode, 200);
   assert.equal(body(result).status, "ok");
   assert.equal(body(result).time, "2026-09-05T12:00:00.000Z");
 });
 
-test("health names the environment it is running in", () => {
+test("health names the environment it is running in", async () => {
   // The point of the route: a 200 from the wrong account looks identical to a
   // 200 from the right one unless it says which it is.
   process.env.CALDER_ENVIRONMENT = "dev";
   try {
-    assert.equal(body(route(request("GET /v1/health"))).environment, "dev");
+    assert.equal(body(await route(request("GET /v1/health"))).environment, "dev");
   } finally {
     delete process.env.CALDER_ENVIRONMENT;
   }
-  assert.equal(body(route(request("GET /v1/health"))).environment, "unknown");
+  assert.equal(body(await route(request("GET /v1/health"))).environment, "unknown");
 });
 
-test("health is never cached", () => {
+test("health is never cached", async () => {
   // A health check answered from a cache reports when the service was last up.
-  const result = route(request("GET /v1/health"));
+  const result = await route(request("GET /v1/health"));
   assert.equal(result.headers["cache-control"], "no-store");
 });
 
-test("me returns the verified subject", () => {
-  const result = route(request("GET /v1/me", { sub: "abc-123", token_use: "id" }));
+test("me returns the verified subject", async () => {
+  const result = await route(request("GET /v1/me", { sub: "abc-123", token_use: "id" }));
   assert.equal(result.statusCode, 200);
   assert.deepEqual(body(result), {
     sub: "abc-123",
@@ -62,55 +62,55 @@ test("me returns the verified subject", () => {
   });
 });
 
-test("me passes on the name and email when the provider gave them", () => {
+test("me passes on the name and email when the provider gave them", async () => {
   const claims = { sub: "abc-123", name: "James", email: "j@example.com" };
-  const got = body(route(request("GET /v1/me", claims)));
+  const got = body(await route(request("GET /v1/me", claims)));
   assert.equal(got.name, "James");
   assert.equal(got.email, "j@example.com");
 });
 
-test("a missing name is null rather than an empty string", () => {
+test("a missing name is null rather than an empty string", async () => {
   // Apple sends a name on the first authorisation only, and only with consent,
   // so absent is the common case rather than the exception. An empty string
   // would prefill a field with nothing and look like the answer.
-  assert.equal(body(route(request("GET /v1/me", { sub: "abc-123" }))).name, null);
+  assert.equal(body(await route(request("GET /v1/me", { sub: "abc-123" }))).name, null);
 });
 
-test("me reports the ULID the Pre Token Generation trigger injects", () => {
+test("me reports the ULID the Pre Token Generation trigger injects", async () => {
   // UID_CLAIM rather than the literal, because the name is shared with the
   // trigger that writes it and this test found the drift the one time it was
   // hard-coded: the claim was renamed from `custom:uid` to `uid` — `custom:`
   // implies a pool attribute, and §3.2 keeps the pool thin — and the handler
   // moved while this did not.
   const claims = { sub: "abc-123", [UID_CLAIM]: "01K4ABCDEFGHJKMNPQRSTVWXYZ" };
-  assert.equal(body(route(request("GET /v1/me", claims))).userId, "01K4ABCDEFGHJKMNPQRSTVWXYZ");
+  assert.equal(body(await route(request("GET /v1/me", claims))).userId, "01K4ABCDEFGHJKMNPQRSTVWXYZ");
 });
 
-test("a claim under the old name is not read", () => {
+test("a claim under the old name is not read", async () => {
   // Belt and braces on the rename: a token minted before it would report no
   // user rather than the wrong one, which is the safe direction.
   const claims = { sub: "abc-123", "custom:uid": "01K4ABCDEFGHJKMNPQRSTVWXYZ" };
-  assert.equal(body(route(request("GET /v1/me", claims))).userId, null);
+  assert.equal(body(await route(request("GET /v1/me", claims))).userId, null);
 });
 
-test("me distinguishes a detached authoriser from a missing token", () => {
+test("me distinguishes a detached authoriser from a missing token", async () => {
   // API Gateway answers 401 itself while the authoriser is attached, so the
   // handler only ever sees this when the route has lost it. A bare 401 would be
   // indistinguishable from the ordinary case and would hide a misconfiguration
   // that silently opens the route.
-  const result = route(request("GET /v1/me"));
+  const result = await route(request("GET /v1/me"));
   assert.equal(result.statusCode, 401);
   assert.match(body(result).detail, /authoriser/);
 });
 
-test("a non-string claim is dropped rather than coerced", () => {
+test("a non-string claim is dropped rather than coerced", async () => {
   // exp and iat are numbers. Nothing read here is, so anything non-string is a
   // surprise, and String(surprise) is how a "0" ends up being treated as an id.
-  const result = route(request("GET /v1/me", { sub: 12345 }));
+  const result = await route(request("GET /v1/me", { sub: 12345 }));
   assert.equal(result.statusCode, 401);
 });
 
-test("config serves what the app needs to sign in", () => {
+test("config serves what the app needs to sign in", async () => {
   // Set here rather than assumed, because the point of the route is that these
   // come from Terraform and not from a constant in the app.
   Object.assign(process.env, {
@@ -120,7 +120,7 @@ test("config serves what the app needs to sign in", () => {
     CALDER_PROVIDERS: "SignInWithApple,Google",
   });
   try {
-    const result = route(request("GET /v1/config"));
+    const result = await route(request("GET /v1/config"));
     assert.equal(result.statusCode, 200);
     // The one cacheable response here, and the reason the parameter exists:
     // an unauthenticated route that cannot be authenticated even in principle
@@ -139,23 +139,23 @@ test("config serves what the app needs to sign in", () => {
   }
 });
 
-test("config offers no providers rather than a button that fails", () => {
+test("config offers no providers rather than a button that fails", async () => {
   // Empty means none configured. An empty string splits to [""], which would
   // render as a nameless button, so the filter is the whole point.
-  const result = route(request("GET /v1/config"));
+  const result = await route(request("GET /v1/config"));
   assert.deepEqual(body(result).providers, []);
 });
 
-test("an unrouted key is a 404 that says what it was", () => {
-  const result = route(request("GET /v1/nothing"));
+test("an unrouted key is a 404 that says what it was", async () => {
+  const result = await route(request("GET /v1/nothing"));
   assert.equal(result.statusCode, 404);
   assert.equal(body(result).routeKey, "GET /v1/nothing");
 });
 
-test("a payload that is not format 2.0 is a 404 that says so", () => {
+test("a payload that is not format 2.0 is a 404 that says so", async () => {
   // Format 1.0 has no routeKey. Without this the handler would answer 404 to
   // every request in production and look like a routing mistake.
-  const result = route({ version: "1.0", requestContext: {} });
+  const result = await route({ version: "1.0", requestContext: {} });
   assert.equal(result.statusCode, 404);
   assert.equal(body(result).routeKey, null);
 });
@@ -165,7 +165,7 @@ test("the exported handler is async and returns the same result", async () => {
   assert.equal(result.statusCode, 200);
 });
 
-test("the bundle carries its dependencies rather than importing them", () => {
+test("the bundle carries its dependencies rather than importing them", async () => {
   // esbuild marking a workspace package external produces a bundle that imports
   // @calder/core at runtime, where node_modules does not exist. It runs
   // perfectly in every test and fails on the first invocation in AWS.

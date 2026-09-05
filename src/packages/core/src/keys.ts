@@ -94,6 +94,14 @@ export const SK = {
     `SUGG#${eventId}#${suggestionId}`,
   availability: (userId: UserId) => `AVAIL#${userId}`,
   change: (seq: number) => `CHG#${padSeq(seq)}`,
+  /**
+   * The per-calendar sequence counter, incremented atomically by the change-log
+   * consumer. Its own item rather than an attribute on META, because every
+   * write to it produces a stream record of its own: putting it on META would
+   * make every change look like a calendar edit, and the consumer would be
+   * assigning sequence numbers to its own bookkeeping forever.
+   */
+  seqCounter: () => "SEQ",
   joinRequest: (userId: UserId) => `JOINREQ#${userId}`,
 
   notification: (createdAt: Instant, id: NotificationId) =>
