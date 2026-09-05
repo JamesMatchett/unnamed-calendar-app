@@ -17,6 +17,71 @@ src/terraform/
 different AWS accounts, and workspaces-as-environments breaks down once accounts rather than
 just variable values differ.
 
+## Your local AWS profile
+
+Access is by IAM Identity Center SSO. No access keys, here or anywhere.
+
+Put this in `~/.aws/config`. The `sso-session` block needs AWS CLI 2.9 or newer
+(`aws --version`); older versions have no refreshable SSO tokens and want the settings
+repeated on every profile.
+
+```ini
+[sso-session jmatch]
+sso_start_url = https://jmatch.awsapps.com/start
+sso_region = eu-west-2
+sso_registration_scopes = sso:account:access
+
+[profile calder-dev]
+sso_session      = jmatch
+sso_account_id   = 392852903961
+sso_role_name    = AdministratorAccess
+region           = eu-west-2
+output           = json
+```
+
+Two things people get wrong here.
+
+**`sso_region` is not `region`.** The first is where the Identity Center *directory* lives,
+the second is where this project's resources go. They may be the same value and they are
+different settings; setting only one produces an authentication error that mentions neither.
+`aws configure sso` prompts for both if you would rather answer questions than edit a file.
+
+**The start URL has no `#/`.** What the browser shows is
+`https://jmatch.awsapps.com/start/#/`, and everything after the `#` is a fragment the
+browser never sends. The CLI wants the URL without it.
+
+Then:
+
+```sh
+aws sso login --profile calder-dev
+aws sts get-caller-identity --profile calder-dev   # must print 392852903961
+export AWS_PROFILE=calder-dev                      # Terraform reads this
+```
+
+The account check is not ceremony. Every environment sets `allowed_account_ids`, so
+Terraform refuses to run against the wrong account — but it refuses *after* you have
+authenticated, and the error is easier to read when you already know which account you are
+in.
+
+### The permission set has to be able to do this
+
+`SystemAdministrator` is not enough for the first apply, and the way it fails is piecemeal:
+bootstrap succeeds, then the environment apply stops partway through having created some
+things and not others.
+
+| Needed by | `SystemAdministrator` |
+|---|---|
+| `s3:*` — the state bucket | yes |
+| `kms:CreateKey` — the table's CMK | yes |
+| `kms:TagResource` — because the provider sets `default_tags` | **no** |
+| `dynamodb:CreateTable` — the table | **no**, it grants no DynamoDB at all |
+| `iam:CreateRole`, `iam:CreateOpenIDConnectProvider` — the CI roles | **no**, read-only on IAM |
+
+Use `AdministratorAccess` for the first apply in an account. After that CI owns applies
+through its own roles, so the human permission set only has to be enough to *look* at things
+— and note that `SystemAdministrator` cannot read the table either, so it is a poor fit for
+this project even then.
+
 ## First-time setup, per account
 
 The first apply in an account cannot run in CI, because CI's role is created *by* that

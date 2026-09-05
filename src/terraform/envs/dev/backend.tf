@@ -3,7 +3,7 @@
 # account (see src/terraform/README.md).
 terraform {
   backend "s3" {
-    bucket = "calder-tfstate-dev-REPLACE_WITH_ACCOUNT_ID"
+    bucket = "calder-tfstate-dev-392852903961"
     key    = "envs/dev/terraform.tfstate"
     region = "eu-west-2"
 
