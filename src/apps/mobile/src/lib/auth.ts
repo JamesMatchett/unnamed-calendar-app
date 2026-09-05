@@ -144,7 +144,29 @@ export async function signIn(provider: Provider): Promise<Account | null> {
     extraParams: { identity_provider: cognitoProvider },
   });
 
-  const result = await request.promptAsync(discovery);
+  // A PRIVATE authentication session: the web view that opens Cognito does not
+  // share Safari's cookie jar.
+  //
+  // Signing out is the reason. Cognito sets its own session cookie on the
+  // hosted domain, and nothing this app can run reaches it — fetch has its own
+  // cookie store, so revoking the refresh token and clearing the Keychain
+  // leaves that cookie alive. Sign out, sign back in, and Cognito recognises
+  // the still-live session and returns a token without Apple being asked
+  // anything. Somebody who hands their phone over after signing out would find
+  // that surprising, and they would be right.
+  //
+  // It also removes iOS's "wants to use amazoncognito.com to sign in" consent
+  // prompt, which is not a cosmetic win so much as the honest consequence:
+  // that prompt is asking permission for the cookie sharing this turns off.
+  //
+  // What it costs is single sign-on from Safari, which is worth close to
+  // nothing here: Sign in with Apple authenticates against the system account
+  // through the native sheet, not a browser cookie. It would start to matter
+  // if an email-and-password provider is ever added, where a live browser
+  // session saves real typing.
+  const result = await request.promptAsync(discovery, {
+    preferEphemeralSession: true,
+  });
   if (result.type === "cancel" || result.type === "dismiss") return null;
   if (result.type !== "success") {
     throw new SignInFailed(result.type === "error" ? (result.error?.message ?? "error") : result.type);
