@@ -34,7 +34,7 @@ export default function JoinScreen() {
   if (!preview) {
     return (
       <>
-        <Stack.Screen options={{ title: "Invite", presentation: "modal" }} />
+        <Stack.Screen options={{ title: "Invite" }} />
         <EmptyState
           title="This invite has expired"
           body="The link may have been replaced. Ask whoever sent it for a new one."
@@ -59,7 +59,7 @@ export default function JoinScreen() {
   if (preview.alreadyMember || outcome === "already") {
     return (
       <>
-        <Stack.Screen options={{ title: "Invite", presentation: "modal" }} />
+        <Stack.Screen options={{ title: "Invite" }} />
         <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg }}>
           <Header name={preview.name} subtitle="You're already in this one." />
           <PrimaryButton label="Open it" onPress={open} />
@@ -71,7 +71,7 @@ export default function JoinScreen() {
   if (outcome === "requested" || preview.requestPending) {
     return (
       <>
-        <Stack.Screen options={{ title: "Invite", presentation: "modal" }} />
+        <Stack.Screen options={{ title: "Invite" }} />
         <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg }}>
           <Header
             name={preview.name}
@@ -90,7 +90,7 @@ export default function JoinScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "Invite", presentation: "modal" }} />
+      <Stack.Screen options={{ title: "Invite" }} />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.xl }}>
         <Header
           name={preview.name}

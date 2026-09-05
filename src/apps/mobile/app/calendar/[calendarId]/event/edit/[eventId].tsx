@@ -1,5 +1,5 @@
 import { canEditEvent, zonedWallToUtc } from "@calder/core";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 
@@ -115,7 +115,6 @@ export default function EditEventScreen() {
   if (!event) {
     return (
       <>
-        <Stack.Screen options={{ title: "Edit", presentation: "modal" }} />
         <EmptyState title="Event not found" body="It may have been deleted." />
       </>
     );
@@ -131,7 +130,6 @@ export default function EditEventScreen() {
   if (!allowed) {
     return (
       <>
-        <Stack.Screen options={{ title: "Edit", presentation: "modal" }} />
         <EmptyState
           title="Not yours to change"
           body="You can suggest a change instead, and whoever owns the calendar decides."
@@ -226,7 +224,6 @@ export default function EditEventScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "Edit event", presentation: "modal" }} />
       <ScrollView
         contentContainerStyle={{ padding: space.lg, gap: space.xl }}
         keyboardShouldPersistTaps="handled"

@@ -1,6 +1,6 @@
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { zonedWallToUtc } from "@calder/core";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { Platform, ScrollView, View } from "react-native";
 
@@ -51,7 +51,6 @@ export default function ProposeSlotScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "Suggest a time", presentation: "modal" }} />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.xl }}>
         <Field label="When">
           <Segmented<"datetime" | "date">

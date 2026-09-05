@@ -47,7 +47,7 @@ export default function SettingsScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "Settings", presentation: "modal" }} />
+      <Stack.Screen options={{ title: "Settings" }} />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.xl }}>
         {LOCAL_ONLY ? (
           <View

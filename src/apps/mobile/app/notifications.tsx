@@ -121,7 +121,7 @@ export default function NotificationsScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "Notifications", presentation: "modal" }} />
+      <Stack.Screen options={{ title: "Notifications" }} />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.xl }}>
         {permission === "denied" ? (
           <Card style={{ gap: space.md }}>

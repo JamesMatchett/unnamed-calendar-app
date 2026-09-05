@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import QRCode from "react-native-qrcode-svg";
 
@@ -49,7 +49,6 @@ export default function InviteScreen() {
   if (!mayInvite) {
     return (
       <>
-        <Stack.Screen options={{ title: "Invite", presentation: "modal" }} />
         <EmptyState
           title="Only owners can invite"
           body={`${calendar.name} is set up so that only its owners bring people in. Ask one of them.`}
@@ -85,7 +84,6 @@ export default function InviteScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "Invite people", presentation: "modal" }} />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.xl }}>
         <View style={{ alignItems: "center", gap: space.md }}>
           <Text style={{ ...type.title, color: t.color.text, textAlign: "center" }}>

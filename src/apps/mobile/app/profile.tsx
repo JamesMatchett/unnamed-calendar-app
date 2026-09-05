@@ -63,7 +63,6 @@ export default function ProfileScreen() {
       <Stack.Screen
         options={{
           title: "Your profile",
-          presentation: "modal",
           headerRight: () => (
             <Pressable
               onPress={() => router.push("/settings")}

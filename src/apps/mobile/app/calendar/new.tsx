@@ -1,4 +1,4 @@
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 
@@ -115,7 +115,6 @@ export default function NewCalendarScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "New calendar", presentation: "modal" }} />
       <ScrollView
         contentContainerStyle={{ padding: space.lg, gap: space.xl }}
         keyboardShouldPersistTaps="handled"

@@ -43,7 +43,7 @@ export default function ConnectScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "Your code", presentation: "modal" }} />
+      <Stack.Screen options={{ title: "Your code" }} />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.xl }}>
         <View style={{ alignItems: "center", gap: space.md }}>
           <Text style={{ ...type.title, color: t.color.text, textAlign: "center" }}>

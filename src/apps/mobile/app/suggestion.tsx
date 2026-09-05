@@ -52,7 +52,7 @@ export default function SuggestionScreen() {
   if (!suggestion || !event) {
     return (
       <>
-        <Stack.Screen options={{ title: "Suggestion", presentation: "modal" }} />
+        <Stack.Screen options={{ title: "Suggestion" }} />
         <EmptyState
           title="Nothing to answer"
           body="This suggestion was withdrawn or has already been dealt with."
@@ -64,7 +64,7 @@ export default function SuggestionScreen() {
   if (suggestion.status !== "pending") {
     return (
       <>
-        <Stack.Screen options={{ title: "Suggestion", presentation: "modal" }} />
+        <Stack.Screen options={{ title: "Suggestion" }} />
         <EmptyState
           title={
             suggestion.status === "accepted"
@@ -93,7 +93,7 @@ export default function SuggestionScreen() {
   return (
     <>
       <Stack.Screen
-        options={{ title: "Suggested change", presentation: "modal" }}
+        options={{ title: "Suggested change" }}
       />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg }}>
         <View style={{ gap: space.xs }}>

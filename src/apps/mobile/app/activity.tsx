@@ -29,7 +29,7 @@ export default function ActivityScreen() {
   if (items.length === 0) {
     return (
       <>
-        <Stack.Screen options={{ title: "Activity", presentation: "modal" }} />
+        <Stack.Screen options={{ title: "Activity" }} />
         <EmptyState
           title="Nothing new"
           body="Events added, changes and cancellations in your calendars show up here."
@@ -43,7 +43,7 @@ export default function ActivityScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "Activity", presentation: "modal" }} />
+      <Stack.Screen options={{ title: "Activity" }} />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.xl }}>
         {needsYou.length > 0 ? (
           <View style={{ gap: space.sm }}>

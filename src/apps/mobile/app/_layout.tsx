@@ -92,23 +92,58 @@ export default function RootLayout() {
             somewhere you go INTO, and swiping it away by accident on the way to
             reading it would lose the selection. */}
         <Stack.Screen name="sync/index" options={{ presentation: "modal" }} />
-        <Stack.Screen name="calendar/new" options={{ presentation: "modal" }} />
+        {/* Every route is registered here, with its title and its presentation,
+            and NOT via <Stack.Screen> inside the screen. Two separate things go
+            wrong otherwise, and the second is much worse than the first.
+
+            An unregistered route keeps the file path as its header title, which
+            is what "calendar/[calendarId]/settings" across the top used to be.
+
+            And presentation cannot be changed once a screen is mounted: it
+            decides which container the navigator builds. Setting it from inside
+            means the screen mounts as a card and then asks to be a modal, and
+            the navigator obliges by creating the scene again — which is what
+            "the tickets toggle opens a second copy of the event" was. The
+            trigger looked like the toggle only because that is where somebody
+            happened to tap; any re-render would do it.
+
+            tools/check-routes.mjs enforces both halves. */}
+        <Stack.Screen
+          name="calendar/new"
+          options={{ title: "New calendar", presentation: "modal" }}
+        />
         <Stack.Screen
           name="calendar/[calendarId]/event/new"
-          options={{ presentation: "modal" }}
+          options={{ title: "Add an event", presentation: "modal" }}
+        />
+        <Stack.Screen
+          name="calendar/[calendarId]/event/edit/[eventId]"
+          options={{ title: "Edit event", presentation: "modal" }}
+        />
+        <Stack.Screen
+          name="calendar/[calendarId]/event/slot/[eventId]"
+          options={{ title: "Suggest a time", presentation: "modal" }}
         />
         <Stack.Screen
           name="calendar/[calendarId]/invite"
-          options={{ presentation: "modal" }}
+          options={{ title: "Invite people", presentation: "modal" }}
         />
-        {/* Registered here, not only via <Stack.Screen> inside the screen:
-            an unregistered route keeps the file path as its header title,
-            which is what "calendar/[calendarId]/settings" across the top was. */}
+        {/* Pushed rather than modal, deliberately: the calendar stays underneath
+            with a back button to it. The screen file used to ask for a modal
+            from the inside, which never took effect here and only risked the
+            remount above. */}
         <Stack.Screen
           name="calendar/[calendarId]/settings"
           options={{ title: "Calendar settings" }}
         />
         <Stack.Screen name="connect" options={{ presentation: "modal" }} />
+        {/* The title is set from inside, from the person's name. A title is an
+            ordinary option and can change after mount; presentation cannot,
+            which is why only the second one lives here. */}
+        <Stack.Screen
+          name="person/[userId]/index"
+          options={{ presentation: "modal" }}
+        />
         {/* Where universal links land: calandder.com/join/<token> (§7.1) and
             calandder.com/add/<handle> (§7.3). */}
         <Stack.Screen name="join/[token]" options={{ presentation: "modal" }} />

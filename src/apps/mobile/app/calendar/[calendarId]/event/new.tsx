@@ -257,7 +257,6 @@ export default function NewEventScreen() {
   if (!mayAdd) {
     return (
       <>
-        <Stack.Screen options={{ title: "Add an event", presentation: "modal" }} />
         <EmptyState
           title="Only owners can add here"
           body={`${calendar.name} is set up so that only its owners add events. Ask one of them, or suggest it another way.`}
@@ -369,7 +368,6 @@ export default function NewEventScreen() {
       <Stack.Screen
         options={{
           title: invite && withName ? `Invite ${withName}` : "Add an event",
-          presentation: "modal",
         }}
       />
       <ScrollView

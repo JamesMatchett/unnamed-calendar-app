@@ -76,7 +76,6 @@ export default function PeopleScreen() {
       <Stack.Screen
         options={{
           title: "People",
-          presentation: "modal",
           headerRight: () => (
             <Pressable
               onPress={() => router.push("/settings")}

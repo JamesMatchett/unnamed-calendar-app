@@ -43,7 +43,7 @@ export default function AddByHandleScreen() {
   if (handle.length === 0) {
     return (
       <>
-        <Stack.Screen options={{ title: "Add someone", presentation: "modal" }} />
+        <Stack.Screen options={{ title: "Add someone" }} />
         <EmptyState
           title="This code did not scan properly"
           body="Ask them to show it again, or search for them by handle instead."
@@ -57,7 +57,7 @@ export default function AddByHandleScreen() {
   if (normaliseHandle(me.handle) === handle) {
     return (
       <>
-        <Stack.Screen options={{ title: "Your code", presentation: "modal" }} />
+        <Stack.Screen options={{ title: "Your code" }} />
         <EmptyState
           title="That's you"
           body="This is your own code. Show it to somebody else and have them scan it."
@@ -82,7 +82,7 @@ export default function AddByHandleScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "Add someone", presentation: "modal" }} />
+      <Stack.Screen options={{ title: "Add someone" }} />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.xl }}>
         <View style={{ alignItems: "center", gap: space.sm }}>
           <View

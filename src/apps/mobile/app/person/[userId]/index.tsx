@@ -77,7 +77,7 @@ export default function PersonScreen() {
   if (!person) {
     return (
       <>
-        <Stack.Screen options={{ title: "Person", presentation: "modal" }} />
+        <Stack.Screen options={{ title: "Person" }} />
         <EmptyState title="Not found" body="This person is no longer listed." />
       </>
     );
@@ -132,7 +132,7 @@ export default function PersonScreen() {
   return (
     <>
       <Stack.Screen
-        options={{ title: person.display_name, presentation: "modal" }}
+        options={{ title: person.display_name }}
       />
       <ScrollView
         contentContainerStyle={{ padding: space.lg, gap: space.xl, paddingBottom: 64 }}

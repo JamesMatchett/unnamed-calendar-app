@@ -49,7 +49,7 @@ export default function SyncScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "Calendar sync", presentation: "modal" }} />
+      <Stack.Screen options={{ title: "Calendar sync" }} />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.xl }}>
         {permission === "denied" ? (
           <Card style={{ gap: space.md }}>

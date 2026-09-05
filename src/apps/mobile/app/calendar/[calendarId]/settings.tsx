@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { Alert, Platform, Pressable, ScrollView, Text, View } from "react-native";
 
@@ -116,7 +116,6 @@ export default function CalendarSettingsScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "Calendar settings", presentation: "modal" }} />
       <ScrollView
         contentContainerStyle={{ padding: space.lg, gap: space.xl }}
         keyboardShouldPersistTaps="handled"
