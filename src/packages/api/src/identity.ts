@@ -29,7 +29,8 @@
  * nobody anticipated, which over a pool's lifetime is most of them.
  */
 
-import { newUserId, identityPk, userPk, SK } from "@calder/core";
+import type { CognitoSub } from "@calder/core";
+import { asCognitoSub, newUserId, identityPk, userPk, SK } from "@calder/core";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
   DynamoDBDocumentClient,
@@ -87,7 +88,7 @@ const lostTheRace = (cause: unknown): boolean =>
 
 export async function resolveUserId(
   table: string,
-  sub: string,
+  sub: CognitoSub,
   displayName: string | undefined,
   now: string,
   db: DynamoDBDocumentClient = client(),
@@ -198,7 +199,10 @@ export async function preTokenGeneration(
 
   const userId = await resolveUserId(
     table,
-    sub,
+    // Branded here and nowhere else: this is the one point where a string off
+    // the wire becomes an identifier. The brand is what stops a `sub` being
+    // used where a ULID belongs, which §3.2 spends a whole item avoiding.
+    asCognitoSub(sub),
     attributes["name"],
     new Date().toISOString(),
   );
