@@ -1,9 +1,10 @@
+import { HANDLE_MAX } from "@calder/core";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
 import { useState } from "react";
 import { Alert, Image, Pressable, ScrollView, Text, View } from "react-native";
 
-import { Field, RowButton, TextField, ToggleRow } from "@/components/form";
+import { Field, PrimaryButton, RowButton, TextField, ToggleRow } from "@/components/form";
 import { Card, Muted } from "@/components/ui";
 import type { FriendGrants } from "@/db/repo";
 import {
@@ -14,8 +15,8 @@ import {
   profileFootprint,
   updateProfile,
 } from "@/db/repo";
-import { pickCoverImage } from "@/lib/pickImage";
 import { handleHint } from "@/lib/handles";
+import { pickCoverImage } from "@/lib/pickImage";
 import { useQuery } from "@/lib/useQuery";
 import { radius, space, type, useTheme } from "@/theme";
 
@@ -40,7 +41,7 @@ export default function ProfileScreen() {
   // handle stored like that produces a code for &jamesm, which is somebody
   // else, or nobody.
   const trimmedHandle = normaliseHandle(handle);
-  const hint = handleHint(handle, !handleAvailable(trimmedHandle));
+  const hint = handleHint(handle, !handleAvailable(trimmedHandle), profile.handle);
 
   const commitName = () => {
     const next = name.trim();
@@ -50,14 +51,29 @@ export default function ProfileScreen() {
     if (next !== profile.displayName) updateProfile({ displayName: next });
   };
 
-  const commitHandle = () => {
-    // Reverts on anything the hint is complaining about, which now includes a
-    // handle that is too short: this screen used to accept one character while
-    // onboarding demanded three, so a handle nobody could sign up with could be
-    // set an hour later.
-    if (!hint.ok) return setHandle(profile.handle);
-    if (trimmedHandle !== profile.handle) updateProfile({ handle: trimmedHandle });
-  };
+  /**
+   * Confirmed, never saved on the way past.
+   *
+   * This used to commit when the field lost focus, and silently put the old
+   * handle back if the new one was refused — so the two outcomes of typing
+   * looked the same, and the one that did something happened without being
+   * asked for. A handle is not a preference: it is an address. It is in the QR
+   * code on somebody's phone and in whatever they have already shown people,
+   * and all of that stops pointing here the moment it changes. That earns a
+   * button and a sentence saying so.
+   */
+  const confirmHandle = () =>
+    Alert.alert(
+      `Change your handle to &${trimmedHandle}?`,
+      `&${profile.handle} stops being yours, and any code or link you have already shared stops finding you. People who have you as a friend are unaffected.`,
+      [
+        { text: "Keep &" + profile.handle, style: "cancel" },
+        {
+          text: "Change it",
+          onPress: () => updateProfile({ handle: trimmedHandle }),
+        },
+      ],
+    );
 
   const pickAvatar = async () => {
     const picked = await pickCoverImage();
@@ -155,23 +171,63 @@ export default function ProfileScreen() {
           />
         </Field>
 
-        <Field
-          label="Your handle"
-          hint={hint.message}
-        >
+        <Field label="Your handle">
           {/* The & is part of the field furniture, not of the value: it can
               never be deleted, and the handle we store and compare never
               carries it. Anything typed with a sigil is quietly cleaned, "@"
-              included, because that is what fingers do by habit. */}
+              included, because that is what fingers do by habit.
+
+              Nothing is stripped as you type beyond the sigil. A field that
+              silently eats the underscore you just pressed is a field you
+              cannot tell is working; normaliseHandle has the last word when it
+              is saved, and the line underneath shows what will actually be
+              stored. */}
           <TextField
             value={handle}
-            onChange={(next) => setHandle(next.replace(/[^A-Za-z0-9.]/g, ""))}
-            onBlur={commitHandle}
+            onChange={setHandle}
             placeholder="handle"
             autoCapitalize="none"
-            maxLength={20}
+            maxLength={HANDLE_MAX + 4}
             prefix="&"
           />
+
+          <Text
+            style={{
+              ...type.caption,
+              color:
+                hint.tone === "bad"
+                  ? t.color.danger
+                  : hint.tone === "good"
+                    ? t.color.accent
+                    : t.color.textMuted,
+            }}
+          >
+            {hint.message}
+          </Text>
+
+          {hint.changed ? (
+            <View style={{ gap: space.sm, paddingTop: space.xs }}>
+              <PrimaryButton
+                label={hint.ok ? `Use &${trimmedHandle}` : "Use this handle"}
+                onPress={confirmHandle}
+                disabled={!hint.ok}
+              />
+              <Pressable
+                onPress={() => setHandle(profile.handle)}
+                accessibilityRole="button"
+              >
+                <Text
+                  style={{
+                    ...type.caption,
+                    color: t.color.textMuted,
+                    textAlign: "center",
+                  }}
+                >
+                  Keep &{profile.handle}
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
         </Field>
 
         <View style={{ gap: space.sm }}>

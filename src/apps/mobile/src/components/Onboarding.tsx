@@ -402,13 +402,21 @@ function Identity({
           autoCapitalize="none"
           maxLength={24}
         />
-        {/* Coloured when it is a reason rather than a hint. Grey said "taken"
-            in the same voice as "letters, numbers and dots", next to a button
-            that had quietly stopped working. */}
+        {/* Three colours for three meanings. Grey used to say "taken" in the
+            same voice as "letters, numbers and dots", next to a button that had
+            quietly stopped working; and "free" was never said at all, only
+            implied by nothing being wrong. A handle is the one thing here
+            somebody invents while a stranger might already have it, so the
+            answer belongs on the screen. */}
         <Text
           style={{
             ...type.caption,
-            color: hint.fault ? t.color.danger : t.color.textMuted,
+            color:
+              hint.tone === "bad"
+                ? t.color.danger
+                : hint.tone === "good"
+                  ? t.color.accent
+                  : t.color.textMuted,
           }}
         >
           {hint.message}
