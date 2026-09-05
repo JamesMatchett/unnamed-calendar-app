@@ -33,7 +33,7 @@ jobs:
       # Terraform, because check:infra runs `fmt -check` when it can and says
       # so plainly when it cannot. Installing it here means the answer is never
       # "not checked" in the one place that gates a merge.
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: "1.16.0"
           terraform_wrapper: false
