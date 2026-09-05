@@ -20,11 +20,18 @@ permissions:
 env:
   TF_VERSION: "1.13.0"
   AWS_REGION: eu-west-2
-  PROJECT: uca
+  # Must match `project` in src/terraform/*/variables.tf: the role ARNs below
+  # are built by convention, so a prefix that disagrees fails at the point of
+  # assuming the role, with an error that names a role nobody ever created.
+  # tools/check-infra.mjs holds the two in step.
+  PROJECT: calder
 
 jobs:
   dev:
     name: apply (dev)
+    # Not configured yet means nothing to apply. A skipped job also skips the
+    # ones that need it, which is the right order of events.
+    if: vars.AWS_ACCOUNT_ID_DEV != ''
     runs-on: ubuntu-latest
     environment: dev
     concurrency:
@@ -45,6 +52,9 @@ jobs:
 
   staging:
     name: apply (staging)
+    # Not configured yet means nothing to apply. A skipped job also skips the
+    # ones that need it, which is the right order of events.
+    if: vars.AWS_ACCOUNT_ID_STAGING != ''
     needs: dev
     runs-on: ubuntu-latest
     environment: staging
@@ -66,6 +76,9 @@ jobs:
 
   prod:
     name: apply (prod)
+    # Not configured yet means nothing to apply. A skipped job also skips the
+    # ones that need it, which is the right order of events.
+    if: vars.AWS_ACCOUNT_ID_PROD != ''
     needs: staging
     runs-on: ubuntu-latest
     environment: prod

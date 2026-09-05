@@ -32,9 +32,14 @@ apply. A human does it once with admin credentials.
 
    Note the three outputs: `state_bucket_name`, `state_bucket_arn`, `account_id`.
 
-2. **Fill in the placeholders.** In `envs/dev/`, replace `REPLACE_WITH_ACCOUNT_ID` in both
-   `backend.tf` and `terraform.tfvars`. The backend block cannot take variables, so the
-   bucket name has to be literal.
+2. **Fill in the account id.** In `envs/dev/`, replace `REPLACE_WITH_ACCOUNT_ID` in both
+   `backend.tf` and `terraform.tfvars`. It appears twice because an S3 backend block cannot
+   take variables, so that bucket name has to be a literal; everything else derives from it.
+
+   `npm run check:infra` verifies the two agree, that the bucket matches what bootstrap
+   builds, and that an environment is not left half configured. Run it before `terraform
+   init` — the alternative is an error about a bucket rather than about the thing you
+   forgot.
 
 3. **First apply, locally.**
 
@@ -48,8 +53,12 @@ apply. A human does it once with admin credentials.
 
 4. **Wire up GitHub.** From the outputs, set three **repository variables**:
    `AWS_ACCOUNT_ID_DEV`, `AWS_ACCOUNT_ID_STAGING`, `AWS_ACCOUNT_ID_PROD`. The workflows
-   build role ARNs by convention (`uca-<env>-ci-plan` / `-ci-apply`), so no role ARNs need
+   build role ARNs by convention (`calder-<env>-ci-plan` / `-ci-apply`), so no role ARNs need
    storing.
+
+   Until an account id is set as a repository variable, that environment's plan and apply
+   jobs skip rather than fail, so starting with dev alone does not leave two permanently red
+   checks on every pull request.
 
 5. **Create GitHub Environments** named `dev`, `staging` and `prod`. The apply role's trust
    policy requires `environment:<name>` in the OIDC subject, so an apply cannot run without

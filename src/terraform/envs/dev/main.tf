@@ -15,6 +15,14 @@ provider "aws" {
   }
 }
 
+locals {
+  # Derived, never passed in. This was a variable holding a second spelling of
+  # the bucket bootstrap creates, and the two had already drifted apart: the
+  # tfvars still carried the pre-rename prefix, so CI's roles would have been
+  # granted access to a bucket that does not exist. One expression, one name.
+  state_bucket_arn = "arn:aws:s3:::${var.project}-tfstate-${var.environment}-${var.account_id}"
+}
+
 module "data" {
   source = "../../modules/data"
 
@@ -29,5 +37,5 @@ module "github_oidc" {
   project           = var.project
   environment       = var.environment
   github_repository = var.github_repository
-  state_bucket_arn  = var.state_bucket_arn
+  state_bucket_arn  = local.state_bucket_arn
 }

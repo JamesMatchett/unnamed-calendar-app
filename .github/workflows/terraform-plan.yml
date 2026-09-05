@@ -17,7 +17,11 @@ permissions:
 env:
   TF_VERSION: "1.13.0"
   AWS_REGION: eu-west-2
-  PROJECT: uca
+  # Must match `project` in src/terraform/*/variables.tf: the role ARNs below
+  # are built by convention, so a prefix that disagrees fails at the point of
+  # assuming the role, with an error that names a role nobody ever created.
+  # tools/check-infra.mjs holds the two in step.
+  PROJECT: calder
 
 jobs:
   fmt:
@@ -48,6 +52,12 @@ jobs:
     name: plan (${{ matrix.environment }})
     needs: fmt
     runs-on: ubuntu-latest
+
+    # Skip an environment whose account is not set up yet, rather than failing
+    # it. Dev exists first and staging and prod follow; without this, every pull
+    # request carries two permanently red jobs, which is how a red check stops
+    # meaning anything.
+    if: vars[matrix.account_var] != ''
 
     strategy:
       fail-fast: false

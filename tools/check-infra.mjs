@@ -1,0 +1,147 @@
+#!/usr/bin/env node
+/**
+ * The infrastructure agrees with itself about its own names.
+ *
+ * Written after finding the same mistake three times in one directory. The
+ * project prefix was renamed from "uca" to "calder" in the Terraform modules
+ * and not in: the three tfvars files, the README, or — the expensive one — both
+ * GitHub workflows, which build CI role ARNs by convention. Nothing catches
+ * that. `terraform validate` sees valid HCL, `terraform plan` passes because
+ * the plan role is assumed before Terraform starts, and the failure arrives as
+ * "cannot assume arn:aws:iam::…:role/uca-dev-ci-plan" naming a role nobody has
+ * ever created, in CI, on the first run after a successful apply.
+ *
+ * A name that appears in two files will eventually disagree. Where the second
+ * copy could be removed it has been; where it cannot — a workflow cannot read a
+ * Terraform variable, and an S3 backend block cannot take one — this holds the
+ * copies in step instead.
+ */
+
+import { readFileSync, existsSync, readdirSync } from "node:fs";
+
+const TF = "src/terraform";
+const WORKFLOWS = ".github/workflows";
+
+if (!existsSync(TF) || !existsSync(WORKFLOWS)) {
+  console.error(`check-infra: ${TF} or ${WORKFLOWS} is missing, so it checked nothing.`);
+  process.exit(1);
+}
+
+const read = (p) => readFileSync(p, "utf8");
+const problems = [];
+const fail = (where, message) => problems.push(`${where}: ${message}`);
+
+/** `variable "x" { ... default = "y" }` — the default only. */
+function tfDefault(file, name) {
+  const block = read(file).match(
+    new RegExp(`variable\\s+"${name}"\\s*\\{[^}]*?default\\s*=\\s*"([^"]*)"`, "s"),
+  );
+  return block?.[1] ?? null;
+}
+
+const PLACEHOLDER = /REPLACE_WITH/;
+const envs = readdirSync(`${TF}/envs`);
+
+// --- the project prefix, which is what actually broke ----------------------
+
+const project = tfDefault(`${TF}/bootstrap/variables.tf`, "project");
+if (!project) fail(`${TF}/bootstrap/variables.tf`, "no default for `project`");
+
+for (const env of envs) {
+  const got = tfDefault(`${TF}/envs/${env}/variables.tf`, "project");
+  if (got !== project) {
+    fail(`${TF}/envs/${env}/variables.tf`, `project is "${got}", bootstrap says "${project}"`);
+  }
+}
+
+for (const wf of readdirSync(WORKFLOWS).filter((f) => f.startsWith("terraform-"))) {
+  const text = read(`${WORKFLOWS}/${wf}`);
+  const declared = text.match(/^\s*PROJECT:\s*(\S+)/m)?.[1];
+  if (declared !== project) {
+    fail(
+      `${WORKFLOWS}/${wf}`,
+      `PROJECT is "${declared}", Terraform says "${project}".\n` +
+        `    The role ARNs in this workflow are built from it, so they would name ` +
+        `a role\n    that does not exist.`,
+    );
+  }
+}
+
+// --- one region ------------------------------------------------------------
+
+const region = tfDefault(`${TF}/bootstrap/variables.tf`, "region");
+for (const env of envs) {
+  const got = tfDefault(`${TF}/envs/${env}/variables.tf`, "region");
+  if (got !== region) fail(`${TF}/envs/${env}/variables.tf`, `region "${got}" != "${region}"`);
+
+  const backend = read(`${TF}/envs/${env}/backend.tf`).match(/region\s*=\s*"([^"]+)"/)?.[1];
+  if (backend !== region) {
+    fail(`${TF}/envs/${env}/backend.tf`, `backend region "${backend}" != "${region}"`);
+  }
+}
+for (const wf of readdirSync(WORKFLOWS).filter((f) => f.startsWith("terraform-"))) {
+  const got = read(`${WORKFLOWS}/${wf}`).match(/AWS_REGION:\s*(\S+)/)?.[1];
+  if (got !== region) fail(`${WORKFLOWS}/${wf}`, `AWS_REGION "${got}" != "${region}"`);
+}
+
+// --- each environment is internally consistent -----------------------------
+
+for (const env of envs) {
+  const tfvars = read(`${TF}/envs/${env}/terraform.tfvars`);
+  const backendFile = read(`${TF}/envs/${env}/backend.tf`);
+
+  // A tfvars that names a different environment than its own directory would
+  // create dev-named resources in the staging account, and the run would look
+  // like it worked.
+  const declared = tfvars.match(/environment\s*=\s*"([^"]+)"/)?.[1];
+  if (declared !== env) {
+    fail(`${TF}/envs/${env}/terraform.tfvars`, `environment is "${declared}", directory is "${env}"`);
+  }
+
+  const accountId = tfvars.match(/account_id\s*=\s*"([^"]+)"/)?.[1] ?? "";
+  const bucket = backendFile.match(/bucket\s*=\s*"([^"]+)"/)?.[1] ?? "";
+
+  const accountSet = !PLACEHOLDER.test(accountId);
+  const bucketSet = !PLACEHOLDER.test(bucket);
+
+  // Not set up yet is fine. Half set up is not: it fails at `terraform init`
+  // with a message about a bucket rather than about the thing you forgot.
+  if (accountSet !== bucketSet) {
+    fail(
+      `${TF}/envs/${env}`,
+      accountSet
+        ? "account_id is filled in but backend.tf still has its placeholder"
+        : "backend.tf is filled in but terraform.tfvars still has its placeholder",
+    );
+    continue;
+  }
+  if (!accountSet) continue;
+
+  if (!/^\d{12}$/.test(accountId)) {
+    fail(`${TF}/envs/${env}/terraform.tfvars`, `account_id "${accountId}" is not 12 digits`);
+  }
+
+  // The one name that genuinely cannot be derived: an S3 backend block takes no
+  // variables, so this literal has to match what bootstrap builds.
+  const expected = `${project}-tfstate-${env}-${accountId}`;
+  if (bucket !== expected) {
+    fail(
+      `${TF}/envs/${env}/backend.tf`,
+      `bucket is "${bucket}", bootstrap creates "${expected}"`,
+    );
+  }
+}
+
+if (problems.length > 0) {
+  for (const p of problems) console.error(p);
+  console.error(`\n${problems.length} infrastructure naming problem${problems.length === 1 ? "" : "s"}.`);
+  process.exit(1);
+}
+
+const ready = envs.filter(
+  (e) => !PLACEHOLDER.test(read(`${TF}/envs/${e}/terraform.tfvars`)),
+);
+console.log(
+  `ok: infrastructure names agree (${project}, ${region}); ` +
+    `${ready.length ? ready.join(", ") + " configured" : "no environment configured yet"}`,
+);
