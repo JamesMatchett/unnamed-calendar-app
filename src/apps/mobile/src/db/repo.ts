@@ -8,6 +8,8 @@ import type {
   DayPresence,
   ExportableEvent,
   NotificationKind,
+  NotifyPrefs,
+  RemindableEvent,
   NotificationSurface,
   RsvpAnswer,
   RsvpStatus,
@@ -19,6 +21,7 @@ import type {
 } from "@calder/core";
 import type { SchedulingMode, SlotResponse } from "@calder/core";
 import {
+  DEFAULT_NOTIFY_PREFS,
   DEFAULT_SYNC_PREFS,
   SERIES_DEFAULT,
   classifyPresence,
@@ -2274,6 +2277,117 @@ export function setAppearance(value: Appearance): void {
     [value],
   );
   notifyChanged();
+}
+
+// --- notifications and reminders (§7.3) --------------------------------------
+
+export function getNotifyPrefs(): NotifyPrefs {
+  const row = getDb().getFirstSync<{ value: string }>(
+    "SELECT value FROM meta WHERE key = 'notify:prefs'",
+  );
+  if (!row) return DEFAULT_NOTIFY_PREFS;
+  try {
+    // Spread over the defaults so a preference added in a later version is
+    // present rather than undefined on a phone that saved this row before it
+    // existed.
+    return { ...DEFAULT_NOTIFY_PREFS, ...(JSON.parse(row.value) as Partial<NotifyPrefs>) };
+  } catch {
+    return DEFAULT_NOTIFY_PREFS;
+  }
+}
+
+export function setNotifyPrefs(prefs: NotifyPrefs): void {
+  getDb().runSync(
+    "INSERT OR REPLACE INTO meta (key, value) VALUES ('notify:prefs', ?)",
+    [JSON.stringify(prefs)],
+  );
+  notifyChanged();
+}
+
+export interface PendingNotification {
+  notification_id: string;
+  kind: NotificationKind;
+  created_at: string;
+  calendar_name: string | null;
+  event_title: string | null;
+  actor_name: string | null;
+}
+
+/**
+ * Inbox rows that have not been shown on the lock screen yet.
+ *
+ * Anything the person did themselves is excluded at the query: an app that
+ * tells you that you added an event is an app you turn notifications off for.
+ * In this alpha every row is either seeded or written by the person's own
+ * actions, so this is also what stops the fixtures announcing themselves.
+ *
+ * `since` keeps history quiet. A notification from last Tuesday is not news
+ * just because this is the first time the app has looked at it, which happens
+ * on any install that predates the feature and after clearing data.
+ */
+export function undeliveredNotifications(since: string): PendingNotification[] {
+  return getDb().getAllSync<PendingNotification>(
+    `SELECT notification_id, kind, created_at, calendar_name, event_title, actor_name
+       FROM notifications
+      WHERE notified_at IS NULL
+        AND created_at >= ?
+        AND (actor_id IS NULL OR actor_id != ?)
+      ORDER BY created_at`,
+    [since, CURRENT_USER_ID],
+  );
+}
+
+/**
+ * Written straight after handing them to the operating system, never before.
+ *
+ * The other order loses notifications: mark first and a failure in between
+ * means it is neither shown nor ever retried. Showing one twice is a smaller
+ * fault than never showing it, so the risk is taken in that direction.
+ */
+export function markNotified(ids: readonly string[]): void {
+  if (ids.length === 0) return;
+  const db = getDb();
+  const now = new Date().toISOString();
+  const marks = ids.map(() => "?").join(",");
+  db.runSync(
+    `UPDATE notifications SET notified_at = ? WHERE notification_id IN (${marks})`,
+    [now, ...ids],
+  );
+  notifyChanged();
+}
+
+/** Everything ahead that could be worth a reminder, in the shape core wants. */
+export function remindableEvents(): RemindableEvent[] {
+  return getDb()
+    .getAllSync<{
+      event_id: string;
+      title: string;
+      calendar_name: string | null;
+      start_utc: string;
+      precision: "datetime" | "date" | "tbc";
+      status: "active" | "cancelled";
+    }>(
+      `SELECT e.event_id, e.title, c.name AS calendar_name, e.start_utc,
+              e.precision, e.status
+         FROM events e
+         JOIN members m ON m.calendar_id = e.calendar_id
+         JOIN calendars c ON c.calendar_id = e.calendar_id
+        WHERE m.user_id = ? AND m.status = 'active'
+          AND e.start_utc >= ?
+        ORDER BY e.start_utc`,
+      // A day of slack, so an event that started this morning is still
+      // available to the planner, which does its own filtering on the exact
+      // firing time rather than the start.
+      [CURRENT_USER_ID, new Date(Date.now() - 86_400_000).toISOString()],
+    )
+    .map((r) => ({
+      eventId: r.event_id,
+      title: r.title,
+      calendarName: r.calendar_name,
+      startUtc: r.start_utc,
+      precision: r.precision,
+      status: r.status,
+    }));
 }
 
 // --- inviting one person to one thing (§8.1) ---------------------------------

@@ -353,6 +353,9 @@ export type NotificationKind =
   | "invite_pending"
   | "join_request"
   | "joined_via_link"
+  // Somebody wants to be connected. On the People surface with the other
+  // relationship changes, and actionable: it stays live until answered.
+  | "friend_request"
   | "removed_from_calendar"
   | "ownership_granted"
   | "ownership_revoked"
@@ -363,6 +366,10 @@ export type NotificationKind =
   | "suggestion_received"
   | "suggestion_accepted"
   | "suggestion_rejected"
+  // Candidate times are up and the person who put them there is waiting. Its
+  // own kind rather than a flavour of event_added, because the two ask
+  // different things: one is news, the other does not resolve until you reply.
+  | "poll_started"
   | "rsvp_nudge";
 
 export interface NotificationItem extends BaseItem {

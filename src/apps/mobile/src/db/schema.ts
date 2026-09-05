@@ -138,7 +138,13 @@ CREATE TABLE IF NOT EXISTS notifications (
   event_id        TEXT,
   event_title     TEXT,
   actor_id        TEXT,
-  actor_name      TEXT
+  actor_name      TEXT,
+  -- When this was handed to the operating system to show on the lock screen.
+  -- NULL means it has not been, which is the whole queue: one column turns "is
+  -- there anything new" into a query rather than something the app has to
+  -- remember across launches. It is deliberately not the same as read_at, which
+  -- is about the inbox inside the app.
+  notified_at     TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_notifications_created

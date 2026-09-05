@@ -79,6 +79,8 @@ const ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
   suggestion_accepted: "checkmark-circle-outline",
   suggestion_rejected: "close-circle-outline",
   rsvp_nudge: "hand-left-outline",
+  poll_started: "help-circle-outline",
+  friend_request: "person-add-outline",
 };
 
 function describe(n: NotificationRow): string {
@@ -92,6 +94,8 @@ function describe(n: NotificationRow): string {
     suggestion_accepted: `Your change to ${what} was accepted`,
     suggestion_rejected: `Your change to ${what} wasn't taken`,
     rsvp_nudge: `${who} is waiting on your answer for ${what}`,
+    poll_started: `${who} is asking when suits for ${what}`,
+    friend_request: `${who} wants to connect`,
     invite_pending: `${who} invited you`,
     join_request: `${who} wants to join`,
     joined_via_link: `${who} joined via an invite link`,

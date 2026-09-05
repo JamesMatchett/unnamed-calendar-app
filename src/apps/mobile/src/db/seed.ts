@@ -13,7 +13,7 @@ import type * as SQLite from "expo-sqlite";
  * last month shows a trip that has already happened; changing this makes the app
  * drop the fixtures and rebuild them starting from today.
  */
-export const FIXTURE_EPOCH = "2026-09-05T09:18:00.383Z";
+export const FIXTURE_EPOCH = "2026-09-04T23:44:39.000Z";
 
 /** Stands in for the signed-in user until Cognito exists (§3.2). */
 export const CURRENT_USER_ID = "01JC0USERJAMES0000000000";
@@ -610,7 +610,12 @@ function seedInbox(db: SQLite.SQLiteDatabase): void {
       ],
     );
 
-    type Notif = [string, string, string | null, string, string, string, string | null, string | null];
+    // calendar_id and calendar_name are nullable: a friend request is about a
+    // person, not a calendar, and forcing one on it would put a lie in the row.
+    type Notif = [
+      string, string, string | null, string,
+      string | null, string | null, string | null, string | null,
+    ];
     const notifs: Notif[] = [
       // kind, id, read_at, created, calendar_id, calendar_name, actor_name, event_title
       ["invite_pending", "n1", null, day(-1, 18), "01JC0CALGLASTO0000000000", "Glastonbury 2027", "Priya", null],
@@ -620,6 +625,11 @@ function seedInbox(db: SQLite.SQLiteDatabase): void {
       ["suggestion_received", "n5", null, day(-2, 16), "01JC0CALLISBON0000000000", "Lisbon, October", "Glenn", "Fado night in Alfama"],
       ["event_cancelled", "n6", day(-4, 8), day(-5, 11), "01JC0CALLONDON0000000000", "London things", "Priya", "Pub quiz"],
       ["rsvp_nudge", "n7", day(-4, 8), day(-4, 7), "01JC0CALLISBON0000000000", "Lisbon, October", "Priya", "Dinner at Time Out Market"],
+      // The two kinds the notification work added. Seeded so both surfaces and
+      // the lock-screen copy can be seen without waiting for a backend to send
+      // anything: in this alpha nobody else can write to your inbox.
+      ["poll_started", "n8", null, day(-1, 11), "01JC0CALLONDON0000000000", "London things", "Luke", "Sunday lunch somewhere"],
+      ["friend_request", "n9", null, day(-2, 9), null, null, "Priya", null],
     ];
 
     for (const [kind, id, readAt, createdAt, cid, cname, actor, title] of notifs) {

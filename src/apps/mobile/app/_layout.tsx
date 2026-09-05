@@ -9,6 +9,7 @@ import { Onboarding } from "@/components/Onboarding";
 import { getDb } from "@/db/client";
 import { getAppearance, identityComplete } from "@/db/repo";
 import { useAutoSync } from "@/lib/useAutoSync";
+import { useNotifier } from "@/lib/useNotifier";
 import { useQuery } from "@/lib/useQuery";
 import type { Appearance } from "@/theme";
 import { ThemeProvider, themeFor } from "@/theme";
@@ -37,6 +38,9 @@ export default function RootLayout() {
   // an event from the sync screen. It does nothing at all unless the preference
   // is on and calendar access has already been granted.
   useAutoSync();
+  // Reminders are a real schedule held by the phone, so this has to run
+  // wherever the person is, not on the screen where the preference lives.
+  useNotifier();
 
   // Opening the database also creates the schema and seeds fixtures. It is
   // synchronous and fast, and doing it here means no screen ever has to consider
@@ -79,6 +83,7 @@ export default function RootLayout() {
         <Stack.Screen name="people" options={{ presentation: "modal" }} />
         <Stack.Screen name="profile" options={{ presentation: "modal" }} />
         <Stack.Screen name="settings" options={{ presentation: "modal" }} />
+        <Stack.Screen name="notifications" options={{ presentation: "modal" }} />
         <Stack.Screen name="suggestion" options={{ presentation: "modal" }} />
         <Stack.Screen name="activity" options={{ presentation: "modal" }} />
         {/* Only the entry screen is modal. Choosing a direction pushes an

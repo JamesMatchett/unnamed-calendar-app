@@ -21,6 +21,7 @@ export const PEOPLE_NOTIFICATION_KINDS = [
   "invite_pending",
   "join_request",
   "joined_via_link",
+  "friend_request",
   "removed_from_calendar",
   "ownership_granted",
   "ownership_revoked",
@@ -34,6 +35,7 @@ export const ACTIVITY_NOTIFICATION_KINDS = [
   "suggestion_received",
   "suggestion_accepted",
   "suggestion_rejected",
+  "poll_started",
   "rsvp_nudge",
 ] as const satisfies readonly NotificationKind[];
 
@@ -52,7 +54,9 @@ export const surfaceFor = (kind: NotificationKind): NotificationSurface =>
 export const ACTIONABLE_KINDS = [
   "invite_pending",
   "join_request",
+  "friend_request",
   "suggestion_received",
+  "poll_started",
   "rsvp_nudge",
 ] as const satisfies readonly NotificationKind[];
 
@@ -60,3 +64,88 @@ const actionableSet: ReadonlySet<string> = new Set(ACTIONABLE_KINDS);
 
 export const isActionable = (kind: NotificationKind): boolean =>
   actionableSet.has(kind);
+
+// --- what reaches the lock screen -------------------------------------------
+//
+// Two different questions, and conflating them is how notification settings
+// become a wall of switches. Which INBOX something belongs to is decided above
+// and is not a preference. Whether it is worth interrupting somebody for is
+// decided here, and is.
+
+/**
+ * The choices offered, in the order they appear.
+ *
+ * Grouped rather than one switch per kind: fifteen switches is a settings
+ * screen nobody reads, and the kinds inside each group genuinely rise and fall
+ * together. Somebody who wants to know about invitations wants to know about
+ * all three sorts of invitation.
+ */
+export const NOTIFY_GROUPS = [
+  "invitations",
+  "events",
+  "picking_times",
+  "rsvps",
+  "joining",
+  "changes",
+] as const;
+
+export type NotifyGroup = (typeof NOTIFY_GROUPS)[number];
+
+/**
+ * Every kind has a group. The mapping is total on purpose: a `Record` keyed by
+ * the union means adding a notification kind without deciding whether it is
+ * worth waking somebody up for is a type error rather than a silent default.
+ */
+export const GROUP_FOR: Record<NotificationKind, NotifyGroup> = {
+  invite_pending: "invitations",
+  friend_request: "invitations",
+  join_request: "invitations",
+
+  event_added: "events",
+  poll_started: "picking_times",
+  rsvp_nudge: "rsvps",
+  joined_via_link: "joining",
+
+  event_cancelled: "changes",
+  event_deleted_by_owner: "changes",
+  suggestion_received: "changes",
+  suggestion_accepted: "changes",
+  suggestion_rejected: "changes",
+  removed_from_calendar: "changes",
+  ownership_granted: "changes",
+  ownership_revoked: "changes",
+  calendar_deleted: "changes",
+};
+
+export const groupFor = (kind: NotificationKind): NotifyGroup => GROUP_FOR[kind];
+
+export interface NotifyPrefs {
+  /** The master switch. Off means nothing reaches the lock screen at all. */
+  readonly enabled: boolean;
+  /** Groups that are switched OFF. Absence means on, so a new group arrives on. */
+  readonly muted: readonly NotifyGroup[];
+  /** How long before an event to say something. Empty means no reminders. */
+  readonly remindAt: readonly ReminderOffset[];
+}
+
+export type ReminderOffset = "start" | "1h" | "1d";
+
+export const DEFAULT_NOTIFY_PREFS: NotifyPrefs = {
+  enabled: true,
+  muted: [],
+  // One hour is the only default that is useful without being intrusive: at the
+  // start is too late to leave the house, and a day before is a reminder about
+  // a reminder for most things.
+  remindAt: ["1h"],
+};
+
+/**
+ * Whether something is worth interrupting for.
+ *
+ * Muted rather than chosen, so that a kind added in a later version reaches
+ * people instead of being silently withheld from everybody who saved their
+ * preferences before it existed.
+ */
+export function notifies(prefs: NotifyPrefs, kind: NotificationKind): boolean {
+  return prefs.enabled && !prefs.muted.includes(groupFor(kind));
+}

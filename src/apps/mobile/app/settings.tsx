@@ -1,5 +1,7 @@
+import type { NotifyPrefs } from "@calder/core";
+import { NOTIFY_GROUPS } from "@calder/core";
 import { Ionicons } from "@expo/vector-icons";
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { Alert, ScrollView, Text, View } from "react-native";
 
 import { RowButton, Segmented, ToggleRow } from "@/components/form";
@@ -10,6 +12,7 @@ import {
   examplesLoaded,
   getAppearance,
   getAuthProvider,
+  getNotifyPrefs,
   getBoolPref,
   loadExampleData,
   replayOnboarding,
@@ -30,6 +33,7 @@ import { APPEARANCES, radius, space, type, useTheme } from "@/theme";
  */
 export default function SettingsScreen() {
   const t = useTheme();
+  const router = useRouter();
 
   const countdown = useQuery("pref:countdown", () =>
     getBoolPref("countdown", true),
@@ -39,6 +43,7 @@ export default function SettingsScreen() {
   const appearance = useQuery("pref:appearance", () => getAppearance());
   const examples = useQuery("examples", () => examplesLoaded());
   const provider = useQuery("auth:provider", () => getAuthProvider());
+  const notify = useQuery("notify:prefs", () => getNotifyPrefs());
 
   return (
     <>
@@ -84,6 +89,20 @@ export default function SettingsScreen() {
                 ? "Always dark, whatever your phone is set to."
                 : "Follows your phone, including its light and dark schedule."}
           </Muted>
+        </View>
+
+        <View style={{ gap: space.sm }}>
+          <Text style={{ ...type.label, color: t.color.textMuted }}>
+            Notifications
+          </Text>
+          <Group>
+            <RowButton
+              bare
+              label="Notifications and reminders"
+              value={notifySummary(notify)}
+              onPress={() => router.push("/notifications")}
+            />
+          </Group>
         </View>
 
         <View style={{ gap: space.sm }}>
@@ -182,4 +201,20 @@ export default function SettingsScreen() {
       </ScrollView>
     </>
   );
+}
+
+/**
+ * One line for a screen with a dozen switches on it.
+ *
+ * "On" would be true and useless when every group is muted and no reminder is
+ * set, which is a state somebody can reach without meaning to. The summary
+ * names whichever half is off so the row is worth reading.
+ */
+function notifySummary(prefs: NotifyPrefs): string {
+  if (!prefs.enabled) return "Off";
+  const silent = prefs.muted.length === NOTIFY_GROUPS.length;
+  if (silent && prefs.remindAt.length === 0) return "Nothing on";
+  if (silent) return "Reminders only";
+  if (prefs.remindAt.length === 0) return "No reminders";
+  return "On";
 }

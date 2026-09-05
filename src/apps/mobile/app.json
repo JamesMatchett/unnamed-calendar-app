@@ -69,6 +69,13 @@
         }
       ],
       [
+        "expo-notifications",
+        {
+          "color": "#4C6FFF",
+          "defaultChannel": "default"
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/splash-icon.png",
@@ -85,6 +92,7 @@
       "typedRoutes": true
     },
     "//plugins.expo-image-picker": "Without this the Info.plist has no NSPhotoLibraryUsageDescription, so iOS shows no Photos row for the app in Settings and a real build crashes on the first request.",
+    "//plugins.expo-notifications": "Reminders are local notifications and work in Expo Go today. Remote push does NOT: it was removed from Expo Go in SDK 53, so news about other people reaches the lock screen only in a real build, and only once there is a server to send it. The plugin is here so the icon and Android channel are right when that build happens.",
     "//plugins.expo-calendar": "Same reason: NSCalendarsFullAccessUsageDescription must exist before iOS will show the permission sheet at all. Reminders are switched off deliberately; the app reads and writes events and asking for reminders too would be requesting access it never uses. The code imports expo-calendar/legacy, not the package default, because the newer API in SDK 57 throws in Expo Go.",
     "//name": "Display name only. The ampersand is illegal in bundle ids, npm package names, URL schemes and domains. The domain is calandder.com (cal-and-der), so every machine-readable form derives from that: com.calandder.app, the calandder scheme. @calder/core keeps its short name.",
     "//orientation": "Portrait by default; screens that want landscape call unlockAsync themselves. Locking from the root layout instead raced the screens' own effects.",

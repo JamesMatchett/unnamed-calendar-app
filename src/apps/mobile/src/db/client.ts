@@ -49,6 +49,7 @@ function addMissingColumns(database: SQLite.SQLiteDatabase): void {
     ["events", "updated_at", "TEXT"],
     ["events", "scheduling_mode", "TEXT NOT NULL DEFAULT 'fixed'"],
     ["device_links", "hash", "TEXT"],
+    ["notifications", "notified_at", "TEXT"],
   ];
 
   for (const [table, column, decl] of added) {
@@ -57,6 +58,14 @@ function addMissingColumns(database: SQLite.SQLiteDatabase): void {
     );
     if (columns.some((c) => c.name === column)) continue;
     database.execSync(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl};`);
+
+    // Adding the column to a database that already has an inbox in it would
+    // otherwise leave every historical notification looking brand new, and the
+    // first launch after the update would fire the lot at once. They have all
+    // been seen; mark them so.
+    if (table === "notifications" && column === "notified_at") {
+      database.runSync("UPDATE notifications SET notified_at = created_at");
+    }
   }
 }
 
