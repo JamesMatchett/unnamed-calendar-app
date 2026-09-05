@@ -106,6 +106,7 @@ export const newArtistId = (): ArtistId => ulid() as ArtistId;
 
 /** Escape hatch for ids arriving from the wire or from SQLite. */
 export const asUserId = (s: string): UserId => s as UserId;
+export const asCognitoSub = (s: string): CognitoSub => s as CognitoSub;
 export const asCalendarId = (s: string): CalendarId => s as CalendarId;
 export const asEventId = (s: string): EventId => s as EventId;
 export const asArtistId = (s: string): ArtistId => s as ArtistId;

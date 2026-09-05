@@ -41,3 +41,39 @@ module "github_oidc" {
   github_repository_id = var.github_repository_id
   state_bucket_arn     = local.state_bucket_arn
 }
+
+module "auth" {
+  source = "../../modules/auth"
+
+  project             = var.project
+  environment         = var.environment
+  deletion_protection = var.deletion_protection
+  test_client_enabled = var.test_client_enabled
+}
+
+module "dns" {
+  source = "../../modules/dns"
+
+  zone_name   = var.zone_name
+  environment = var.environment
+}
+
+module "api" {
+  source = "../../modules/api"
+
+  project     = var.project
+  environment = var.environment
+
+  # Built by `npm run build:api` before Terraform runs. Both workflows do this
+  # before plan and apply; from a laptop, `npm run verify` is enough.
+  bundle_dir = "${path.module}/../../../packages/api/dist"
+
+  issuer    = "https://${module.auth.user_pool_endpoint}"
+  audiences = module.auth.audiences
+
+  table_name        = module.data.table_name
+  table_arn         = module.data.table_arn
+  table_kms_key_arn = module.data.kms_key_arn
+
+  commit = var.commit
+}

@@ -8,6 +8,17 @@ on:
     paths:
       - "src/terraform/**"
       - ".github/workflows/terraform-plan.yml"
+      # The Lambda bundle is part of the infrastructure now that Terraform owns
+      # the artifact, so a handler change IS an infrastructure change and has to
+      # be planned and applied like one. core is here because it is bundled into
+      # the same file, which does mean a change made for the mobile app can
+      # trigger a deploy. That noise is the cost of the decision recorded in
+      # modules/api/main.tf, and the first thing that will argue for reversing
+      # it.
+      - "src/packages/api/**"
+      - "src/packages/core/**"
+      - "package.json"
+      - "package-lock.json"
 
 permissions:
   contents: read
@@ -41,9 +52,9 @@ jobs:
       environments: ${{ steps.configured.outputs.environments }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
@@ -107,15 +118,26 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      # The bundle has to exist before Terraform reads it: the archive_file data
+      # source zips a directory at plan time, and a missing directory is a plan
+      # error rather than an empty zip.
+      - run: npm ci
+      - run: npm run build:api
+
       - name: assume plan role
         id: assume
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
         with:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/${{ env.PROJECT }}-${{ matrix.environment }}-ci-plan
@@ -168,17 +190,25 @@ jobs:
 
       - name: terraform plan
         id: plan
+        env:
+          # Reported by /v1/health, so a running environment can say which commit
+          # it is serving rather than only that it is up.
+          TF_VAR_commit: ${{ github.sha }}
         run: |
           terraform -chdir=src/terraform/envs/${{ matrix.environment }} \
             plan -no-color -lock-timeout=5m -out=tfplan 2>&1 | tee plan.txt
           echo "exitcode=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
       - name: comment plan on the pull request
-        uses: actions/github-script@v7
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
-            const fs = require('fs');
-            const raw = fs.readFileSync('plan.txt', 'utf8');
+            // `await import`, not `require`. github-script v9 moved to an
+            // ESM-only @actions/github, and require is not defined in the
+            // context the script now runs in. Dynamic import works under both,
+            // so this is not a bet on which one is in force.
+            const { readFileSync } = await import('node:fs');
+            const raw = readFileSync('plan.txt', 'utf8');
             // Comments are capped at 65,536 characters; keep the tail, which is
             // where the summary line lives.
             const body = raw.length > 60000

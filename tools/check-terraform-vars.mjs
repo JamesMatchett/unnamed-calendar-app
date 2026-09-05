@@ -15,6 +15,7 @@
  *   - every argument passed to a module is a variable that module declares
  *   - every module variable without a default is passed by every caller
  *   - every key set in a .tfvars is declared in that directory
+ *   - every module.NAME.OUTPUT reads an output that module actually declares
  *
  * The parsing is regular expressions rather than HCL, which is honest about
  * what it is: this repository's Terraform is small, formatted by `terraform
@@ -101,6 +102,30 @@ function moduleCalls(dir) {
   return calls;
 }
 
+/** Outputs a directory declares, which is the surface a caller may read. */
+function declaredOutputs(dir) {
+  const found = new Set();
+  for (const file of tfFiles(dir)) {
+    const src = stripComments(readFileSync(file, "utf8"));
+    for (const [, name] of src.matchAll(/^output\s+"([^"]+)"/gm)) found.add(name);
+  }
+  return found;
+}
+
+/** Every module.NAME.OUTPUT read in a directory, and where it was read. */
+function moduleReads(dir) {
+  const found = [];
+  for (const file of tfFiles(dir)) {
+    const src = stripComments(readFileSync(file, "utf8"));
+    for (const [, name, output] of src.matchAll(
+      /\bmodule\.([A-Za-z_][A-Za-z0-9_-]*)\.([A-Za-z_][A-Za-z0-9_-]*)/g,
+    )) {
+      found.push({ file, name, output });
+    }
+  }
+  return found;
+}
+
 function tfvarsKeys(dir) {
   const found = new Map();
   for (const file of readdirSync(dir).filter((f) => f.endsWith(".tfvars"))) {
@@ -115,10 +140,30 @@ function tfvarsKeys(dir) {
 const problems = [];
 const dirs = dirsUnder(ROOT);
 const declaredBy = new Map(dirs.map((d) => [d, declaredVariables(d)]));
+const outputsBy = new Map(dirs.map((d) => [d, declaredOutputs(d)]));
 
 for (const dir of dirs) {
   const declared = declaredBy.get(dir);
   const where = (f) => relative(process.cwd(), f);
+  const callsHere = new Map(moduleCalls(dir).map((c) => [c.name, c]));
+
+  // Reading an output a module does not have is the mirror of passing an
+  // argument it does not take, and it fails in the same place: at plan, in the
+  // environment somebody happens to be planning, which for staging and prod is
+  // not on any pull request.
+  for (const { file, name, output } of moduleReads(dir)) {
+    const call = callsHere.get(name);
+    if (!call) {
+      problems.push(`${where(file)}: reads module.${name}, which ${where(dir)} does not declare`);
+      continue;
+    }
+    const outputs = outputsBy.get(call.dir);
+    if (outputs && !outputs.has(output)) {
+      problems.push(
+        `${where(file)}: reads module.${name}.${output}, which ${where(call.dir)} does not output`,
+      );
+    }
+  }
 
   for (const [name, file] of referencedVariables(dir)) {
     if (!declared.has(name)) {

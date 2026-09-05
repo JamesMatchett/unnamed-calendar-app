@@ -120,6 +120,128 @@ resource "aws_iam_role_policy" "plan_state" {
   policy = data.aws_iam_policy_document.state_access.json
 }
 
+# --- what "read-only" is allowed to mean --------------------------------------
+
+# ReadOnlyAccess grants far more than describing infrastructure. It reads
+# DynamoDB items, S3 object contents, Secrets Manager values and SSM parameters:
+# the data, not just the shape of the thing holding it. That is a poor fit for a
+# role assumable from ANY pull request on this repository, including one opened
+# by Dependabot proposing a new version of a third-party action, whose code then
+# runs in the job that holds these credentials.
+#
+# So keep the managed policy for the refresh, and take back the reads that
+# matter. Deny beats Allow unconditionally in IAM, so this holds no matter what
+# ReadOnlyAccess grows to cover — which is the point of doing it this way rather
+# than replacing the policy with a hand-written allow-list. An allow-list is
+# genuinely least privilege and genuinely brittle: every resource type added
+# later fails the plan with AccessDenied, and the fix, made in a hurry, is
+# always to widen it.
+#
+# The honest limitation: this is not least privilege. A service added later
+# whose data-read API is not named below stays readable, and nothing here will
+# say so. Adding a data store means adding it to this list.
+#
+# Only the plan role. The apply role carries PowerUserAccess and could create a
+# Lambda that reads the table anyway, so denying it item reads would be theatre.
+# The plan role is the one whose whole promise is that it cannot touch anything,
+# and this is what makes "read-only" mean read the configuration, not the
+# contents.
+data "aws_iam_policy_document" "plan_no_data" {
+  statement {
+    sid    = "NoItemReads"
+    effect = "Deny"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:BatchGetItem",
+      "dynamodb:Query",
+      "dynamodb:Scan",
+      "dynamodb:PartiQLSelect",
+      "dynamodb:GetRecords",
+      "dynamodb:ExportTableToPointInTime",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "NoSecretValues"
+    effect = "Deny"
+    actions = [
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:BatchGetSecretValue",
+      "ssm:GetParameter",
+      "ssm:GetParameters",
+      "ssm:GetParameterHistory",
+      "ssm:GetParametersByPath",
+      # Describing a key stays allowed; using one does not. The state bucket is
+      # SSE-S3, so nothing a plan does needs this.
+      "kms:Decrypt",
+      "kms:GenerateDataKey",
+      "kms:GenerateDataKeyWithoutPlaintext",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "NoUserData"
+    effect = "Deny"
+    actions = [
+      "cognito-idp:AdminGetUser",
+      "cognito-idp:ListUsers",
+      "cognito-idp:ListUsersInGroup",
+      "cognito-idp:AdminListGroupsForUser",
+      "cognito-idp:AdminListUserAuthEvents",
+      "cognito-identity:*",
+    ]
+    resources = ["*"]
+  }
+
+  # Terraform reads state from this bucket and writes a lock beside it, so the
+  # state prefix is the one place object reads stay allowed. Everything else in
+  # the account is denied, including buckets that do not exist yet.
+  statement {
+    sid    = "NoObjectContentsExceptState"
+    effect = "Deny"
+    actions = [
+      "s3:GetObject",
+      "s3:GetObjectVersion",
+    ]
+    not_resources = ["${var.state_bucket_arn}/*"]
+  }
+
+  # Describing a log group is infrastructure; what people logged in it is not.
+  statement {
+    sid    = "NoLogContents"
+    effect = "Deny"
+    actions = [
+      "logs:GetLogEvents",
+      "logs:FilterLogEvents",
+      "logs:StartQuery",
+      "logs:GetQueryResults",
+    ]
+    resources = ["*"]
+  }
+
+  # The escalation this arrangement would otherwise still allow: nothing stops a
+  # read-only role from being a stepping stone to a role that is not. Terraform
+  # here never assumes a second role, so denying it costs nothing and closes it.
+  statement {
+    sid    = "NoRoleChaining"
+    effect = "Deny"
+    actions = [
+      "sts:AssumeRole",
+      "sts:AssumeRoleWithWebIdentity",
+      "sts:AssumeRoleWithSAML",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "plan_no_data" {
+  name   = "no-data-reads"
+  role   = aws_iam_role.plan.id
+  policy = data.aws_iam_policy_document.plan_no_data.json
+}
+
 # --- apply role ------------------------------------------------------------
 
 data "aws_iam_policy_document" "apply_assume" {

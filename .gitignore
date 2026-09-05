@@ -9,3 +9,7 @@ dist/
 # Expo / Metro
 .expo-shared/
 web-build/
+
+# The zip archive_file builds from the Lambda bundle. Derived from dist/, which
+# is also ignored, and rebuilt by every plan.
+.build/

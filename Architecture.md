@@ -384,11 +384,29 @@ a relational schema, where the tables really are declared twice.)
 
 **The one real friction point: Lambda code deployment.** Terraform is good at infrastructure
 and poor at shipping application code — letting it own Lambda bundles couples every code
-deploy to a state apply, which is slow and makes rollbacks awkward. Split them: Terraform
-creates the functions and their configuration with
+deploy to a state apply, which is slow and makes rollbacks awkward. The end state is to split
+them: Terraform creates the functions and their configuration with
 `lifecycle { ignore_changes = [source_code_hash, s3_key] }`, and CI ships new code with
 `aws lambda update-function-code` against a versioned S3 artifact. Infrastructure changes
 weekly; application code changes hourly, and they should not share a lock.
+
+**Amended 5 September 2026 (decision 37): Terraform owns the bundle for now.** The reasoning
+above rests on a deploy cadence that does not exist yet. Today there is one function, the
+infrastructure is what is moving, and the split costs more than it saves: with
+`ignore_changes` on the code, `terraform apply` ships an empty function, so nothing can be
+proved end to end until a second pipeline also runs — which is exactly what the first slice
+needs to do. So `modules/api` zips the esbuild output with `archive_file` and lets
+`source_code_hash` drive redeploys. Both Terraform workflows build the bundle before plan and
+apply, and both now trigger on `src/packages/api/**` and `src/packages/core/**` as well as on
+`src/terraform/**`, because a handler change genuinely is an infrastructure change under this
+arrangement.
+
+Two things this costs, both accepted knowingly, and either of which is reason enough to
+switch to the split above:
+
+- A change to `packages/core` made for the mobile app triggers a plan and an apply, because
+  core is bundled into the same file.
+- A rollback is a state apply rather than a call to `update-function-code`.
 
 ---
 
@@ -1548,8 +1566,9 @@ Choose the Cognito tier deliberately, and keep auth behind an interface so you c
 
 ## 14. Decisions log
 
-Taken during the design session of 2 September 2026. Recorded so that later readers can tell
-a decision from an assumption.
+Taken during the design session of 2 September 2026, and added to as building changes what
+the design was assuming. Recorded so that later readers can tell a decision from an
+assumption, and an amendment from a mistake.
 
 | # | Decision | Section |
 |---|---|---|
@@ -1580,7 +1599,7 @@ a decision from an assumption.
 | 25 | Region: eu-west-2 (London) | §13 |
 | 26 | v1 website is a thin acquisition surface only, not a planning surface | §13 |
 | 27 | User id is a self-minted ULID, not Cognito's `sub`; no identity pool | §3.2 |
-| 28 | Terraform for infrastructure, with Lambda code deployed separately by CI | §3.6 |
+| 28 | ~~Terraform for infrastructure, with Lambda code deployed separately by CI~~ **Amended** — see 37 | §3.6 |
 | 29 | Real friends graph in v2, with @handles; derived connections become its ranking layer | §7.3 |
 | 30 | Discovery is one search box: handle, hashed email/phone, and mutual-calendar suggestions | §7.3 |
 | 31 | Free/busy sharing needs native calendar **import** first — import only, not two-way sync | §7.4 |
@@ -1589,6 +1608,9 @@ a decision from an assumption.
 | 34 | Landscape day view on the day screen only; app portrait-locked elsewhere | §3.5 |
 | 35 | One pre-filled event draft with several sources: manual, natural language, pasted link, opened `.ics`, native import | §3.5 |
 | 36 | `allowMemberEvents` (default true) — contributing and editing someone else's contribution are separate permissions | §4.3, §8.1 |
+| 37 | Terraform owns the Lambda bundle until deploys outpace infrastructure changes; amends 28 | §3.6 |
+| 38 | A delegated DNS zone per environment in its own account; the apex stays with the site | §3.6 |
+| 39 | A dev-only admin-password Cognito client, so the JWT authoriser can be proved to accept as well as reject | §3.2 |
 
 ---
 

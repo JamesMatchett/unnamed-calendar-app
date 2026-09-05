@@ -1,0 +1,21 @@
+{
+  "name": "@calder/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cal&der HTTP handlers. Bundled by esbuild into a single ESM file that Terraform zips and ships as the Lambda artifact.",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/index.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "rm -rf dist",
+    "test": "npm run build && node --test \"test/*.test.mjs\""
+  },
+  "dependencies": {
+    "@calder/core": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^7.0.0"
+  }
+}

@@ -9,6 +9,9 @@ src/terraform/
   modules/
     data/             the single DynamoDB table (§4.2) + its CMK
     github-oidc/      OIDC provider and the CI plan/apply roles
+    auth/             the Cognito user pool and its app clients (§3.2)
+    api/              the HTTP API, the Lambda, and the pool's JWT authoriser (§3.3)
+    dns/              this environment's delegated Route 53 zone
   envs/
     dev/ staging/ prod/   one root module per environment, one per AWS account
 ```
@@ -187,6 +190,84 @@ apply. A human does it once with admin credentials.
 After that, CI owns it: pull requests plan all three environments, and merges to `main`
 apply dev → staging → prod in order.
 
+## The API
+
+Two routes, and they answer different questions on purpose.
+
+```sh
+API=$(terraform -chdir=envs/dev output -raw api_endpoint)
+
+curl -s "$API/v1/health"          # 200, and names the environment and commit
+curl -si "$API/v1/me" | head -1   # 401 from API Gateway, before Lambda is invoked
+```
+
+A 200 on the first and a 401 on the second is the whole slice working: the API, the
+integration and the function on one hand, the authoriser on the other. One route could not
+tell you that. A single public route passes while the authorised path is broken, and a
+single authorised route failing cannot say which of the three failed.
+
+The 401 only proves the authoriser **rejects**. Proving it **accepts** needs a token, and
+there is no source of one until Apple and Google federation is configured. `dev` therefore
+sets `test_client_enabled = true`, which adds a second app client permitting
+`ADMIN_USER_PASSWORD_AUTH`. That flow is server-side only and needs IAM permission on top of
+the password, so it is not a password path in front of users; the app's own client never gets
+it. Create a user, then:
+
+```sh
+POOL=$(terraform -chdir=envs/dev output -raw user_pool_id)
+CLIENT=$(terraform -chdir=envs/dev output -raw test_client_id)
+
+aws cognito-idp admin-create-user --user-pool-id "$POOL" \
+  --username you@example.com --message-action SUPPRESS --profile calder-dev
+aws cognito-idp admin-set-user-password --user-pool-id "$POOL" \
+  --username you@example.com --password '<a long one>' --permanent --profile calder-dev
+
+TOKEN=$(aws cognito-idp admin-initiate-auth --user-pool-id "$POOL" \
+  --client-id "$CLIENT" --auth-flow ADMIN_USER_PASSWORD_AUTH \
+  --auth-parameters USERNAME=you@example.com,PASSWORD='<a long one>' \
+  --profile calder-dev --query 'AuthenticationResult.AccessToken' --output text)
+
+curl -s "$API/v1/me" -H "Authorization: Bearer $TOKEN"
+```
+
+That answers 200 with the `sub` and a null `userId`. Null is correct for now: the user id is
+a ULID minted at first sign-in and injected as a custom claim by a Pre Token Generation
+trigger (§3.2), and neither exists yet. **Delete the test client and the user once federation
+is in.**
+
+If `/v1/me` ever answers 200 with `"detail": "no verified claims reached the handler"`, the
+authoriser has come off the route. That body exists to say so: API Gateway answers 401 itself
+while the authoriser is attached, so the handler can only see an unauthenticated request when
+the route has been left open.
+
+## DNS
+
+Each environment holds its own zone, in its own account, delegated from the root account
+where the domain is registered:
+
+| Environment | Zone |
+|---|---|
+| dev | `dev.calandder.com` |
+| staging | `staging.calandder.com` |
+| prod | `api.calandder.com` |
+
+Production's is a subdomain rather than the apex because the apex belongs to the site:
+`/join`, `/add`, `/get` and `.well-known/apple-app-site-association` are all served from it,
+and a universal link only works from the domain that serves the association file.
+
+**The delegation is manual, once per environment, and deliberately so.** Terraform in a
+child account has no credentials for the root account, and giving it some would defeat the
+separation the arrangement exists for. After applying:
+
+```sh
+terraform -chdir=envs/dev output dns_name_servers
+```
+
+and add those four as an `NS` record for the zone in the root account's `calandder.com`
+zone. Until then the zone resolves for nobody, which is harmless while it holds no records.
+It is created early because delegation propagates on its own schedule, and the certificate
+that the custom domain needs cannot be validated until it has.
+
 ## Checking before you push
 
 `npm run verify` includes three infrastructure checks, and each says plainly when
@@ -197,14 +278,25 @@ it could not do its job rather than passing quietly:
   `terraform` or `tofu` is on PATH.
 - **`check:tfvars`** — every `var.x` is declared where it is used, every module argument
   is a variable that module has, every module variable without a default is passed by
-  every caller, and every key in a `.tfvars` is a real variable. `terraform validate`
+  every caller, every `module.name.output` reads something that module actually outputs,
+  and every key in a `.tfvars` is a real variable. `terraform validate`
   covers most of this but needs a provider download; this needs nothing, and it catches
   the case validate never reaches, which is a module gaining a required variable that
   only one of the three environments is updated for. dev is planned on every pull
   request. staging and prod are not planned at all until an account exists for them, so
   a gap there stays invisible for months.
-- **`check:workflows`** — [actionlint](https://github.com/rhysd/actionlint), if installed
-  (`brew install actionlint`).
+- **`check:workflows`** — every action pinned to a 40-character commit, and each pin resolved
+  against the upstream repository to confirm it matches its version comment. Then
+  [actionlint](https://github.com/rhysd/actionlint), if installed (`brew install actionlint`).
+
+  The resolution step exists because a pin can be the right length and the wrong object: an
+  **annotated** tag's ref is the tag object, not the commit, and Actions cannot resolve it.
+  Nothing about the string says which you have. To get a pin by hand:
+
+  ```sh
+  git ls-remote https://github.com/OWNER/REPO 'vX.Y.Z^{}'   # empty means lightweight
+  git ls-remote https://github.com/OWNER/REPO 'vX.Y.Z'      # then this is the commit
+  ```
 
 The second matters more than it looks, and is deliberately *not* run in CI. An
 invalid workflow is the one mistake CI cannot catch: GitHub rejects the file rather
@@ -221,6 +313,15 @@ it names — a check that quietly does nothing is worse than no check.
 - **No long-lived AWS keys.** Everything authenticates by OIDC.
 - **Plan and apply roles are separate.** Plan is assumable from any pull request and carries
   `ReadOnlyAccess`; apply is assumable only from a protected Environment.
+- **"Read-only" means the configuration, not the contents.** `ReadOnlyAccess` on its own also
+  reads DynamoDB items, S3 objects, Secrets Manager values and SSM parameters. An inline Deny
+  on the plan role takes those back, along with log contents, Cognito user reads and
+  `sts:AssumeRole`. Deny beats Allow unconditionally, so it survives whatever the managed
+  policy grows to include. It is deliberately not least privilege: a data store added later
+  is readable until somebody adds it to that list.
+- **Every action is pinned to a commit, not a tag.** A tag is a mutable pointer in somebody
+  else's repository, and these jobs assume an AWS role. `check:workflows` refuses a tag, and
+  resolves each pin against upstream to confirm it is the commit the version comment claims.
 - **The apply role cannot manage IAM** (`PowerUserAccess`). Role and policy changes stay a
   deliberate, human act rather than something CI can do to itself. It *can* read IAM, via a
   small inline policy, because the roles live in the same state as everything else and
@@ -228,9 +329,14 @@ it names — a check that quietly does nothing is worse than no check.
   resources it was never going to change. The read grants nothing new: the plan role
   carries `ReadOnlyAccess`, and both roles are assumable from this one repository.
 
-  The consequence to know about: **a change to `modules/github-oidc` cannot be applied by
+  The consequence to know about: **any change that creates or alters IAM cannot be applied by
   CI.** It will plan clean and fail at apply. Apply it yourself first, then merge, and CI
   finds nothing to do. That is the floor working, not a bug.
+
+  This is not only `modules/github-oidc`. `modules/api` creates a Lambda execution role and
+  its policies, so the first apply of that module is a local one too, and so is any later
+  change to what the handlers are allowed to touch. Widening a handler's DynamoDB permissions
+  being a deliberate, human act is the intended shape of this, not an accident of it.
 - **Lock files are committed** (`.terraform.lock.hcl`); state and plans are not.
 - **`allowed_account_ids`** is set in every environment, so a wrong-credentials apply fails
   rather than succeeding somewhere unintended.
