@@ -1562,10 +1562,37 @@ Choose the Cognito tier deliberately, and keep auth behind an interface so you c
 
 ## 13. Open questions
 
-1. **Cognito tier** — Lite looks sufficient now that v1 is SSO-only with no passkeys, but
-   **confirm how Apple/Google federation is billed** before relying on it: OIDC federation
-   is priced separately with only 50 free MAUs, and the difference is roughly $850/month at
-   100k MAU.
+1. ~~Cognito tier~~ **Resolved (5 September 2026): Lite, and build our own auth if it stops
+   being enough.** The federation worry does not apply — Apple and Google are **social**
+   identity providers in Cognito and bill exactly like direct sign-ins, with the full
+   10,000-MAU free tier. The $0.015 rate with 50 free MAUs is for **generic OIDC and SAML**
+   only. That distinction is a setting, not a consequence: configuring Apple as the built-in
+   Sign in with Apple provider and configuring it as a generic OIDC provider give an
+   identical login experience and a 100x difference in the bill. Use the built-in one.
+
+   Lite costs nothing to 10,000 MAU, then $0.0055 for the next 90,000 and $0.0046 beyond:
+   $220/month at 50,000 and $495/month at 100,000. Decision 40's choice of the ID token is
+   what keeps us off Essentials, which would be $1,350/month at 100,000.
+
+   **Trigger for revisiting: $220/month, which is 50,000 MAU** (decision 42). At that point
+   compare against running auth ourselves. The case is better than it usually is, because v1
+   has no passwords: no credential storage, no reset flow, no login to rate-limit. What is
+   left is the code-with-PKCE exchange against two providers, verifying their `id_token`
+   against cached JWKS, and issuing our own — signed by a KMS asymmetric key with a static
+   JWKS on CloudFront, which keeps API Gateway's native authoriser and changes no handler.
+   Roughly $15/month in compute against $220 and rising.
+
+   What we would be taking on: Apple's client secret is a JWT we sign ourselves, valid six
+   months at most, so it has to be regenerated on a schedule or sign-in stops for everyone
+   on a date nobody has written down. Plus refresh-token rotation and reuse detection, our
+   own signing-key rotation, nonce and state validation, and account linking.
+
+   The swap stays cheap because of decision 27: nothing in the table is keyed on Cognito's
+   `sub`, only on our own ULID, and the `IDENTITY#{sub}` mapping absorbs a change of issuer.
+
+   Bring it forward if a feature-plan gate bites again. Passkeys or device-level session
+   control push Cognito to Essentials or Plus, and at $1,350–1,800/month at 100k MAU the
+   comparison stops being close.
 2. ~~Region~~ **Resolved:** **eu-west-2 (London)** — UK latency and data residency. Note
    prices in §10 are us-east-1 and London runs a little higher; re-cost before quoting.
 3. **Festival licensing** — which sources permit caching and redistribution? Blocks §6.
@@ -1638,6 +1665,7 @@ assumption, and an amendment from a mistake.
 | 39 | A dev-only admin-password Cognito client, so the JWT authoriser can be proved to accept as well as reject | §3.2 |
 | 40 | The API validates the ID token, not the access token, so the ULID claim works on the Lite plan; amends §3.2 | §3.2, §13 |
 | 41 | The ULID is minted lazily in Pre Token Generation, not in Post Confirmation | §3.2 |
+| 42 | Cognito on Lite; revisit against self-hosted auth at 50,000 MAU (~$220/month), or sooner if a feature plan forces an upgrade | §13 |
 
 ---
 
