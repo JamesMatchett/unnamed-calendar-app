@@ -18,7 +18,6 @@ import { Group, Muted } from "@/components/ui";
 import { pickCoverImage } from "@/lib/pickImage";
 import { createCalendar, inviteUser } from "@/db/repo";
 import type { RangeField, TravelMode } from "@calder/core";
-import { isBackwards } from "@calder/core";
 
 import { describeZone, deviceTimeZone, offsetLabel } from "@/lib/timezones";
 import { space, type, useTheme } from "@/theme";
@@ -86,8 +85,10 @@ export default function NewCalendarScreen() {
   const [picking, setPicking] = useState<RangeField>("start");
 
   const zone = describeZone(tz);
-  const backwards = mode === "bounded" && isBackwards({ start: startDate, end: endDate });
-  const valid = name.trim().length > 0 && !backwards;
+  // The picker swaps a backwards pair rather than allowing one, so the date
+  // half of this is a belt-and-braces check on a state the UI cannot reach.
+  const valid =
+    name.trim().length > 0 && (mode === "continuous" || endDate >= startDate);
 
   const submit = () => {
     const calendarId = createCalendar({
@@ -276,14 +277,6 @@ export default function NewCalendarScreen() {
         ) : null}
 
         <View style={{ gap: space.sm }}>
-          {/* A greyed-out button with no reason beside it is the worst of both:
-              it refuses and does not say why. If Create is off, this says what
-              to fix. */}
-          {backwards ? (
-            <Text style={{ ...type.caption, color: t.color.danger, textAlign: "center" }}>
-              The last day is before the first day. Fix the dates above to carry on.
-            </Text>
-          ) : null}
           <PrimaryButton label="Create" onPress={submit} disabled={!valid} />
           <Text style={{ ...type.caption, color: t.color.textMuted, textAlign: "center" }}>
             You'll add the first thing next, then invite people.

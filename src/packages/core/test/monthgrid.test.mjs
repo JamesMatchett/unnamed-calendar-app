@@ -3,9 +3,11 @@ import { test } from "node:test";
 
 import {
   applyRangeTap,
+  dayAtPoint,
   daysBetween,
   isBackwards,
   monthWeeks,
+  moveEndpoint,
   positionIn,
   shiftMonth,
 } from "../dist/monthgrid.js";
@@ -71,8 +73,8 @@ test("picking a start moves you on to the end", () => {
 });
 
 test("moving the start moves only the start", () => {
-  const next = applyRangeTap(range, "start", "2026-09-20");
-  assert.deepEqual(next.range, { start: "2026-09-20", end: "2026-09-12" });
+  const next = applyRangeTap(range, "start", "2026-09-10");
+  assert.deepEqual(next.range, { start: "2026-09-10", end: "2026-09-12" });
 });
 
 test("picking an end after the start just sets the end", () => {
@@ -80,29 +82,89 @@ test("picking an end after the start just sets the end", () => {
   assert.deepEqual(next.range, { start: "2026-09-09", end: "2026-09-20" });
 });
 
-test("an end before the start is allowed, and reported", () => {
-  // Not silently corrected: the screen says so and refuses to save, which is
-  // honest about what was picked rather than moving a date nobody touched.
+test("an end before the start swaps the pair rather than refusing it", () => {
   const next = applyRangeTap(range, "end", "2026-09-05");
-  assert.deepEqual(next.range, { start: "2026-09-09", end: "2026-09-05" });
-  assert.equal(isBackwards(next.range), true);
+  assert.deepEqual(next.range, { start: "2026-09-05", end: "2026-09-09" });
 });
 
-test("a start after the end is reported the same way", () => {
-  const next = applyRangeTap(range, "start", "2026-09-30");
-  assert.equal(isBackwards(next.range), true);
+test("a start after the end swaps too", () => {
+  const next = applyRangeTap(range, "start", "2026-09-20");
+  assert.deepEqual(next.range, { start: "2026-09-12", end: "2026-09-20" });
 });
 
-test("a sound range is not reported, including a single day", () => {
-  assert.equal(isBackwards(range), false);
-  assert.equal(isBackwards({ start: "2026-09-09", end: "2026-09-09" }), false);
+test("a range is never backwards, whatever the order of taps", () => {
+  let state = { range, editing: "start" };
+  for (const day of ["2026-09-20", "2026-09-02", "2026-09-30", "2026-09-01", "2026-10-15"]) {
+    state = applyRangeTap(state.range, state.editing, day);
+    assert.equal(isBackwards(state.range), false, `${state.range.start} to ${state.range.end}`);
+  }
 });
 
-test("fixing a backwards range clears the warning", () => {
-  const broken = applyRangeTap(range, "end", "2026-09-01").range;
-  assert.equal(isBackwards(broken), true);
-  const fixed = applyRangeTap(broken, "end", "2026-09-11").range;
-  assert.equal(isBackwards(fixed), false);
+test("a swap hands the drag the end it is now holding", () => {
+  // Dragging the end back past the start: the day under the finger has become
+  // the START, and whatever is following the finger has to know.
+  const next = moveEndpoint(range, "end", "2026-09-05");
+  assert.deepEqual(next.range, { start: "2026-09-05", end: "2026-09-09" });
+  assert.equal(next.field, "start");
+});
+
+test("a move that does not swap keeps hold of the same end", () => {
+  const next = moveEndpoint(range, "end", "2026-09-15");
+  assert.equal(next.field, "end");
+  assert.deepEqual(next.range, { start: "2026-09-09", end: "2026-09-15" });
+});
+
+test("dragging an end onto the other end is a one day trip, not a swap", () => {
+  const next = moveEndpoint(range, "end", "2026-09-09");
+  assert.deepEqual(next.range, { start: "2026-09-09", end: "2026-09-09" });
+  assert.equal(next.field, "end");
+});
+
+// --- which day is under a finger --------------------------------------------
+
+const weeks = monthWeeks("2026-09");
+const grid = { width: 350, rowHeight: 38, rowGap: 8, weeks };
+
+test("a point lands on the day it is over", () => {
+  // 1 September 2026 is a Tuesday: row 0, column 1.
+  assert.equal(dayAtPoint({ ...grid, x: 75, y: 19 }), "2026-09-01");
+  // Column 0 of row 0 is padding before the month starts.
+  assert.equal(dayAtPoint({ ...grid, x: 25, y: 19 }), null);
+});
+
+test("rows are found past the gaps between them", () => {
+  // Row 1 starts at 1 * (38 + 8) = 46, and holds the 7th to the 13th.
+  assert.equal(dayAtPoint({ ...grid, x: 25, y: 65 }), "2026-09-07");
+  assert.equal(dayAtPoint({ ...grid, x: 349, y: 65 }), "2026-09-13");
+  // Row 2 starts at 92.
+  assert.equal(dayAtPoint({ ...grid, x: 25, y: 100 }), "2026-09-14");
+});
+
+test("a point in the gap between two rows is nobody's day", () => {
+  // 38 to 46 is the gap under the first row.
+  assert.equal(dayAtPoint({ ...grid, x: 75, y: 41 }), null);
+});
+
+test("points outside the grid are nobody's day", () => {
+  assert.equal(dayAtPoint({ ...grid, x: -1, y: 19 }), null);
+  assert.equal(dayAtPoint({ ...grid, x: 350, y: 19 }), null);
+  assert.equal(dayAtPoint({ ...grid, x: 75, y: -1 }), null);
+  assert.equal(dayAtPoint({ ...grid, x: 75, y: 9999 }), null);
+});
+
+test("every day of the month can be reached by a finger", () => {
+  const found = new Set();
+  for (let row = 0; row < weeks.length; row++) {
+    for (let col = 0; col < 7; col++) {
+      const day = dayAtPoint({
+        ...grid,
+        x: (350 / 7) * col + 5,
+        y: row * (38 + 8) + 19,
+      });
+      if (day) found.add(day);
+    }
+  }
+  assert.equal(found.size, 30);
 });
 
 test("a range can span months and years", () => {

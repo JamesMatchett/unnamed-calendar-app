@@ -2,15 +2,17 @@ import { Ionicons } from "@expo/vector-icons";
 import type { DateRange, RangeField } from "@calder/core";
 import {
   applyRangeTap,
+  dayAtPoint,
   daysBetween,
-  isBackwards,
   monthWeeks,
+  moveEndpoint,
   positionIn,
   shiftMonth as shiftMonthBy,
   todayIn,
 } from "@calder/core";
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Pressable, Text, View } from "react-native";
 
 import { radius, space, type, useTheme } from "@/theme";
@@ -212,31 +214,95 @@ export function RangeCalendar({
   const today = todayIn(tz);
   const [visible, setVisible] = useState(range.start.slice(0, 7));
   const weeks = useMemo(() => monthWeeks(visible), [visible]);
-  // A range that ends before it begins has no span to draw, so the two days
-  // stand alone in the danger colour and the footer says what is wrong.
-  const backwards = isBackwards(range);
+  const [width, setWidth] = useState(0);
+  /** Which end the finger is carrying, or null when nobody is dragging. */
+  const [dragging, setDragging] = useState<RangeField | null>(null);
+
+  /**
+   * Hold an end, then drag it.
+   *
+   * Tapping already moves whichever end is highlighted, which is quick but
+   * says nothing about the range you are shaping. Dragging an end is the
+   * gesture the picture invites: the bar grows and shrinks under your finger,
+   * so the length is something you feel rather than read.
+   *
+   * It waits for a hold rather than starting on contact, because this grid
+   * lives inside a scrolling form: a drag that began the moment a finger
+   * touched a date would swallow every attempt to scroll past it. The hold is
+   * also what makes the two gestures distinct, so a tap stays a tap.
+   *
+   * The live values are kept in a ref as well as in state: a gesture callback
+   * closes over the render that created it, and reading `range` from there
+   * would move the end relative to where it was when the drag started rather
+   * than where it is now.
+   */
+  const live = useRef({ range, dragging: null as RangeField | null });
+  live.current.range = range;
+
+  const hit = (x: number, y: number): string | null =>
+    width === 0
+      ? null
+      : dayAtPoint({ x, y, width, rowHeight: 38, rowGap: 0, weeks });
+
+  const drag = useMemo(
+    () =>
+      Gesture.Pan()
+        .activateAfterLongPress(220)
+        .onBegin((e) => {
+          const day = hit(e.x, e.y);
+          const where = day ? positionIn(day, live.current.range) : "none";
+          // Only the ends are draggable. Grabbing the middle of the bar to
+          // slide the whole range is a different gesture and a different
+          // promise, and offering it by accident would move both dates.
+          live.current.dragging =
+            where === "start" || where === "only"
+              ? "start"
+              : where === "end"
+                ? "end"
+                : null;
+        })
+        .onStart(() => {
+          if (live.current.dragging) setDragging(live.current.dragging);
+        })
+        .onUpdate((e) => {
+          const field = live.current.dragging;
+          if (!field) return;
+          const day = hit(e.x, e.y);
+          // Off the grid: hold the last good day rather than snapping the end
+          // somewhere arbitrary or dropping the drag.
+          if (!day) return;
+          const next = moveEndpoint(live.current.range, field, day);
+          if (next.range.start === live.current.range.start &&
+              next.range.end === live.current.range.end) return;
+          live.current.dragging = next.field;
+          setDragging(next.field);
+          onChange({ range: next.range, editing: next.field });
+        })
+        .onFinalize(() => {
+          live.current.dragging = null;
+          setDragging(null);
+        })
+        .runOnJS(true),
+    [weeks, width, onChange],
+  );
 
   return (
     <Frame
       month={visible}
       onShift={(delta) => setVisible(shiftMonthBy(visible, delta))}
       footer={
-        backwards ? (
-          <View style={{ flexDirection: "row", gap: space.sm, alignItems: "flex-start" }}>
-            <Ionicons name="alert-circle" size={16} color={t.color.danger} />
-            <Text style={{ ...type.caption, flex: 1, color: t.color.danger }}>
-              This ends before it starts. Pick a last day on or after{" "}
-              {readable(range.start)}.
-            </Text>
-          </View>
-        ) : (
-          <Text style={{ ...type.caption, color: t.color.textMuted }}>
-            {nights(range)}. Tap a day to move whichever of Starts or Ends is
-            highlighted above.
-          </Text>
-        )
+        <Text style={{ ...type.caption, color: t.color.textMuted }}>
+          {dragging
+            ? `${nights(range)}. Let go to keep it.`
+            : `${nights(range)}. Tap a day to move whichever of Starts or Ends is highlighted, or hold one end and drag it.`}
+        </Text>
       }
     >
+      <GestureDetector gesture={drag}>
+        {/* No gap between the rows: the bar has to be continuous down a week
+            boundary as well as across one, and the drag arithmetic wants a
+            grid it can divide rather than one with holes in it. */}
+        <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
       {weeks.map((week, wi) => (
         <View key={wi} style={{ flexDirection: "row" }}>
           {week.map((date, di) => {
@@ -244,22 +310,13 @@ export function RangeCalendar({
               return <View key={`blank-${di}`} style={{ flex: 1, height: 38 }} />;
             }
 
-            // With the range inverted there is no "between", so the two ends
-            // are marked on their own rather than shading half the month.
-            const where = backwards
-              ? date === range.start
-                ? "start"
-                : date === range.end
-                  ? "end"
-                  : "none"
-              : positionIn(date, range);
+            const where = positionIn(date, range);
             const isEnd = where === "start" || where === "end" || where === "only";
             // The span is one continuous bar, so the fill runs edge to edge and
             // only the outermost corners are rounded. Squaring the inner edge of
             // each end is what joins the bar to them rather than leaving two
             // pills with a stripe between.
             const round = (corner: "left" | "right") =>
-              backwards ||
               where === "only" ||
               (corner === "left" && where === "start") ||
               (corner === "right" && where === "end")
@@ -279,12 +336,15 @@ export function RangeCalendar({
                   alignItems: "center",
                   justifyContent: "center",
                   backgroundColor: isEnd
-                    ? backwards
-                      ? t.color.danger
-                      : t.color.accentFill
+                    ? t.color.accentFill
                     : where === "between"
                       ? t.color.accentSoft
                       : "transparent",
+                  // The end being carried is ringed rather than moved or
+                  // scaled: it is already under a fingertip, so the feedback
+                  // has to survive being covered by one.
+                  borderWidth: dragging === where ? 2 : 0,
+                  borderColor: t.color.text,
                   borderTopLeftRadius: round("left"),
                   borderBottomLeftRadius: round("left"),
                   borderTopRightRadius: round("right"),
@@ -322,6 +382,8 @@ export function RangeCalendar({
           })}
         </View>
       ))}
+        </View>
+      </GestureDetector>
     </Frame>
   );
 }
@@ -393,13 +455,6 @@ function Frame({
     </View>
   );
 }
-
-const readable = (date: string): string =>
-  new Date(`${date}T12:00:00.000Z`).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "long",
-    timeZone: "UTC",
-  });
 
 /** "Four nights", so the length of the trip is a word and not a subtraction. */
 function nights(range: DateRange): string {

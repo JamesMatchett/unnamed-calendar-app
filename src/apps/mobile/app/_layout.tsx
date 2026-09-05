@@ -2,6 +2,7 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import { useColorScheme } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -46,6 +47,9 @@ export default function RootLayout() {
 
   return (
     <ErrorBoundary>
+    {/* Gestures are delivered through this, and only under this: without it
+        the trip picker's drag never fires on Android. */}
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <ThemeProvider value={t}>
     <SafeAreaProvider>
       <StatusBar style={t.dark ? "light" : "dark"} />
@@ -95,6 +99,7 @@ export default function RootLayout() {
       </Stack>
     </SafeAreaProvider>
     </ThemeProvider>
+    </GestureHandlerRootView>
     </ErrorBoundary>
   );
 }

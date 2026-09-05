@@ -578,7 +578,7 @@ function OwnerControls({
         />
 
         {calendar.collect_availability === 1 ? (
-          <Field label="How are people getting there?">
+          <Field label="How are people mostly getting there?">
             <TravelModePicker
               value={calendar.travel_mode}
               onChange={(v) => updateCalendar(calendarId, { travelMode: v })}
