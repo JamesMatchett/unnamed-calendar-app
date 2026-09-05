@@ -285,8 +285,18 @@ it could not do its job rather than passing quietly:
   only one of the three environments is updated for. dev is planned on every pull
   request. staging and prod are not planned at all until an account exists for them, so
   a gap there stays invisible for months.
-- **`check:workflows`** — [actionlint](https://github.com/rhysd/actionlint), if installed
-  (`brew install actionlint`).
+- **`check:workflows`** — every action pinned to a 40-character commit, and each pin resolved
+  against the upstream repository to confirm it matches its version comment. Then
+  [actionlint](https://github.com/rhysd/actionlint), if installed (`brew install actionlint`).
+
+  The resolution step exists because a pin can be the right length and the wrong object: an
+  **annotated** tag's ref is the tag object, not the commit, and Actions cannot resolve it.
+  Nothing about the string says which you have. To get a pin by hand:
+
+  ```sh
+  git ls-remote https://github.com/OWNER/REPO 'vX.Y.Z^{}'   # empty means lightweight
+  git ls-remote https://github.com/OWNER/REPO 'vX.Y.Z'      # then this is the commit
+  ```
 
 The second matters more than it looks, and is deliberately *not* run in CI. An
 invalid workflow is the one mistake CI cannot catch: GitHub rejects the file rather
@@ -303,6 +313,15 @@ it names — a check that quietly does nothing is worse than no check.
 - **No long-lived AWS keys.** Everything authenticates by OIDC.
 - **Plan and apply roles are separate.** Plan is assumable from any pull request and carries
   `ReadOnlyAccess`; apply is assumable only from a protected Environment.
+- **"Read-only" means the configuration, not the contents.** `ReadOnlyAccess` on its own also
+  reads DynamoDB items, S3 objects, Secrets Manager values and SSM parameters. An inline Deny
+  on the plan role takes those back, along with log contents, Cognito user reads and
+  `sts:AssumeRole`. Deny beats Allow unconditionally, so it survives whatever the managed
+  policy grows to include. It is deliberately not least privilege: a data store added later
+  is readable until somebody adds it to that list.
+- **Every action is pinned to a commit, not a tag.** A tag is a mutable pointer in somebody
+  else's repository, and these jobs assume an AWS role. `check:workflows` refuses a tag, and
+  resolves each pin against upstream to confirm it is the commit the version comment claims.
 - **The apply role cannot manage IAM** (`PowerUserAccess`). Role and policy changes stay a
   deliberate, human act rather than something CI can do to itself. It *can* read IAM, via a
   small inline policy, because the roles live in the same state as everything else and
