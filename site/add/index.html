@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Add me on Cal&amp;der</title>
+  <meta name="robots" content="noindex">
+  <meta name="description" content="Plan things with the people you actually go places with.">
+  <!--
+    Where https://calandder.com/add/<handle>?n=<name> lands in a BROWSER.
+
+    On a phone with the app installed it never gets here at all: iOS and Android
+    hand the URL straight to Cal&der, which is the point of a universal link and
+    the reason the QR code carries this rather than a store link. A store link
+    would be useless to the people most likely to scan a code — they already
+    have the app — and an app-scheme link (calandder://) would be a dead end for
+    everybody who does not.
+
+    So this page is for exactly one person: somebody who scanned a code and has
+    not got the app. Its job is to say who invited them, send them to install
+    it, and carry the handle across so the app can offer to add that person on
+    the other side.
+
+    NOTE the deliberate absence of an automatic redirect into the app scheme.
+    Trying calandder:// first and falling back on a timer is the usual trick and
+    it is worse than nothing here: on iOS it produces an error dialog for
+    everybody without the app, which is precisely this page's whole audience.
+
+    Serve this for any /add/* path — a rewrite, not a redirect, so the handle
+    stays in the URL where the script below can read it. On CloudFront that is a
+    function on viewer-request; on Netlify or Vercel a rewrite rule.
+    Deployed as static files alongside /get.
+  -->
+  <style>
+    :root { color-scheme: light dark; --accent: #4C6FFF; --ink: #12141A; --bg: #F4F6FA; --muted: #5A6072; --card: #fff; }
+    @media (prefers-color-scheme: dark) { :root { --ink: #F2F4F9; --bg: #12141A; --muted: #9AA0B1; --card: #1B1E27; } }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100svh; display: grid; place-items: center; background: var(--bg); color: var(--ink);
+           font: 17px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 24px; }
+    main { max-width: 420px; text-align: center; }
+    .avatar { width: 84px; height: 84px; border-radius: 50%; margin: 0 auto 18px; background: var(--card);
+              display: grid; place-items: center; font-size: 34px; font-weight: 700; color: var(--muted);
+              box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+    h1 { font-size: 27px; margin: 0 0 4px; letter-spacing: -0.02em; }
+    .handle { color: var(--muted); margin: 0 0 20px; }
+    p.lead { margin: 0 0 22px; color: var(--muted); }
+    a.button { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600;
+               padding: 14px 28px; border-radius: 999px; }
+    .other { margin-top: 16px; font-size: 14px; color: var(--muted); }
+    .other a { color: var(--accent); }
+    .footnote { margin-top: 28px; font-size: 13px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="avatar" id="avatar" aria-hidden="true">&amp;</div>
+    <h1 id="name">Someone</h1>
+    <p class="handle" id="handle"></p>
+    <p class="lead">wants to plan things with you on Cal&amp;der.</p>
+    <a id="cta" class="button" href="#">Get the app</a>
+    <p class="other" id="other"></p>
+    <p class="footnote">Once it is installed, open this link again and Cal&amp;der will offer to add them.</p>
+  </main>
+  <script>
+    // Fill these in. TestFlight first; swap for the store links at launch.
+    const LINKS = {
+      ios: "https://testflight.apple.com/join/REPLACE_ME",
+      android: "https://play.google.com/store/apps/details?id=com.calandder.app",
+    };
+
+    // The name rides in the query string because there is no server here to
+    // look one up from the other.
+    //
+    // The handle is the segment AFTER "add", not simply the last one: on a bare /add or
+    // /add/ the last segment is the word "add" itself, and taking it would
+    // greet somebody as &add and offer to befriend a route.
+    const segments = location.pathname.split("/").filter(Boolean);
+    const after = segments[segments.indexOf("add") + 1] || "";
+    const handle = decodeURIComponent(after)
+      // Kept in step with normaliseHandle in @calder/core, character for
+      // character. A test parses this very expression back out of the page and
+      // runs both over the same inputs, because a scan that resolves to one
+      // handle in the app and another in a browser is the one failure nothing
+      // else here would catch.
+      .normalize("NFKD")
+      .replace(/\p{M}/gu, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]/g, "")
+      .replace(/[._-]{2,}/g, (run) => run[0])
+      .replace(/^[._-]+|[._-]+$/g, "")
+      .slice(0, 24)
+      .replace(/[._-]+$/, "");
+    const params = new URLSearchParams(location.search);
+    // Trimmed and capped, and inserted as TEXT rather than markup: this value
+    // comes off a QR code a stranger made, so it is never trusted as HTML.
+    const name = (params.get("n") || "").trim().slice(0, 60);
+
+    if (name) document.getElementById("name").textContent = name;
+    else if (handle) document.getElementById("name").textContent = "&" + handle;
+    if (handle && name) document.getElementById("handle").textContent = "&" + handle;
+    document.getElementById("avatar").textContent =
+      (name || handle || "&").charAt(0).toUpperCase();
+    if (handle) document.title = "Add " + (name || "&" + handle) + " on Cal&der";
+
+    // The handle rides on to the install page, so it survives the round trip
+    // through the store and the app can pick it up on first open.
+    const carry = handle ? "?from=" + encodeURIComponent(handle) : "";
+    const ua = navigator.userAgent || "";
+    const cta = document.getElementById("cta");
+    const other = document.getElementById("other");
+
+    if (/iPhone|iPad|iPod/i.test(ua)) {
+      cta.href = LINKS.ios;
+      cta.textContent = "Get it on TestFlight";
+      other.innerHTML = 'Not on an iPhone? <a href="' + LINKS.android + '">Android</a>';
+    } else if (/Android/i.test(ua)) {
+      cta.href = LINKS.android;
+      cta.textContent = "Get it on Google Play";
+      other.innerHTML = 'Not on Android? <a href="' + LINKS.ios + '">iPhone</a>';
+    } else {
+      cta.href = "/get" + carry;
+      cta.textContent = "Open this on your phone";
+      other.innerHTML = '<a href="' + LINKS.ios + '">iPhone</a> &middot; <a href="' + LINKS.android + '">Android</a>';
+    }
+  </script>
+</body>
+</html>

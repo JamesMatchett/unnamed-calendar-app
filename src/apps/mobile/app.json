@@ -1,0 +1,108 @@
+{
+  "expo": {
+    "name": "Cal&der",
+    "slug": "calder",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "//scheme": "Universal links carry invite tokens straight into the app when it is installed (Architecture.md §7.1, §13.9). The scheme and every machine-readable name derive from the domain, calandder.com.",
+    "scheme": "calandder",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.calandder.app",
+      "buildNumber": "1",
+      "associatedDomains": [
+        "applinks:calandder.com"
+      ],
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.calandder.app",
+      "versionCode": 1,
+      "edgeToEdgeEnabled": true,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#4C6FFF"
+      },
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "calandder.com",
+              "pathPrefix": "/join"
+            },
+            {
+              "scheme": "https",
+              "host": "calandder.com",
+              "pathPrefix": "/add"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-screen-orientation",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Cal&der uses your photos so you can put a cover picture on a calendar.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Cal&der uses your calendar so you can copy plans onto your phone, and bring events you already have into a shared calendar.",
+          "remindersPermission": false
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#4C6FFF",
+          "defaultChannel": "default"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain",
+          "backgroundColor": "#F4F6FA",
+          "dark": {
+            "backgroundColor": "#12141A"
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "//plugins.expo-image-picker": "Without this the Info.plist has no NSPhotoLibraryUsageDescription, so iOS shows no Photos row for the app in Settings and a real build crashes on the first request.",
+    "//plugins.expo-notifications": "Reminders are local notifications and work in Expo Go today. Remote push does NOT: it was removed from Expo Go in SDK 53, so news about other people reaches the lock screen only in a real build, and only once there is a server to send it. The plugin is here so the icon and Android channel are right when that build happens.",
+    "//plugins.expo-calendar": "Same reason: NSCalendarsFullAccessUsageDescription must exist before iOS will show the permission sheet at all. Reminders are switched off deliberately; the app reads and writes events and asking for reminders too would be requesting access it never uses. The code imports expo-calendar/legacy, not the package default, because the newer API in SDK 57 throws in Expo Go.",
+    "//name": "Display name only. The ampersand is illegal in bundle ids, npm package names, URL schemes and domains. The domain is calandder.com (cal-and-der), so every machine-readable form derives from that: com.calandder.app, the calandder scheme. @calder/core keeps its short name.",
+    "//orientation": "Portrait by default; screens that want landscape call unlockAsync themselves. Locking from the root layout instead raced the screens' own effects.",
+    "icon": "./assets/icon.png",
+    "//icon": "Drawn by tools/icon.py: the ampersand on a calendar page. Regenerate there, never edit the PNGs.",
+    "//associatedDomains": "Needs apple-app-site-association served at https://calandder.com/.well-known/ with this bundle id before universal links work; until then the calandder:// scheme still does."
+  }
+}

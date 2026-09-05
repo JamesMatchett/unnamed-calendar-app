@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.expo/
+*.log
+
+# macOS
+.DS_Store
+
+# Expo / Metro
+.expo-shared/
+web-build/

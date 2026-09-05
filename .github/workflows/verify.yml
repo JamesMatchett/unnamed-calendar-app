@@ -1,0 +1,47 @@
+name: verify
+
+# The application's own checks: 231 tests plus the static checks that exist
+# because each one caught a bug nothing else would have. Until now only
+# Terraform had a workflow, so none of this ran on a pull request — and a check
+# that runs only where somebody remembers to run it is a check that stops
+# running.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: tests and checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      # Terraform, because check:infra runs `fmt -check` when it can and says
+      # so plainly when it cannot. Installing it here means the answer is never
+      # "not checked" in the one place that gates a merge.
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.0"
+          terraform_wrapper: false
+
+      # `ci`, not `install`: it installs exactly the lockfile, including dev
+      # dependencies, and fails rather than silently updating anything. The
+      # missing eslint that prompted this workflow was a node_modules that had
+      # drifted from the lockfile on one machine.
+      - run: npm ci
+
+      - run: npm run verify

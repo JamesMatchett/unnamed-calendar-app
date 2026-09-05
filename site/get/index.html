@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cal&amp;der</title>
+  <meta name="description" content="Plan things with the people you actually go places with.">
+  <!--
+    The page every app invite points at: https://calandder.com/get
+
+    It does one job: send the person to the right place for the phone they are
+    holding. While the app is in TestFlight that place is the TestFlight link;
+    once it is in the stores it is the store. Set the three links below and
+    deploy this folder as static files (S3 + CloudFront, or anything).
+
+    An inviter id can ride along as ?from=<handle>, and the app can read it back
+    from the install referrer later, so the two are connected on sign-up.
+  -->
+  <style>
+    :root { color-scheme: light dark; --accent: #4C6FFF; --ink: #12141A; --bg: #F4F6FA; --muted: #5A6072; }
+    @media (prefers-color-scheme: dark) { :root { --ink: #F2F4F9; --bg: #12141A; --muted: #9AA0B1; } }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100svh; display: grid; place-items: center; background: var(--bg); color: var(--ink);
+           font: 17px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 24px; }
+    main { max-width: 420px; text-align: center; }
+    .mark { width: 96px; height: 96px; border-radius: 22px; margin: 0 auto 20px; background: linear-gradient(#4C6FFF, #3A58E0);
+            display: grid; place-items: center; box-shadow: 0 10px 30px rgba(76,111,255,.35); }
+    .mark span { color: #fff; font-weight: 800; font-size: 60px; line-height: 1; }
+    h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -0.02em; }
+    p { margin: 0 0 22px; color: var(--muted); }
+    a.button { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600;
+               padding: 14px 28px; border-radius: 999px; }
+    .other { margin-top: 16px; font-size: 14px; }
+    .other a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="mark" aria-hidden="true"><span>&amp;</span></div>
+    <h1>Cal&amp;der</h1>
+    <p id="lead">Plan things with the people you actually go places with.</p>
+    <a id="cta" class="button" href="#">Get the app</a>
+    <p class="other" id="other"></p>
+  </main>
+  <script>
+    // Fill these in. TestFlight first; swap for the store links at launch.
+    const LINKS = {
+      ios: "https://testflight.apple.com/join/REPLACE_ME",
+      android: "https://play.google.com/store/apps/details?id=com.calandder.app",
+      other: "https://calandder.com",
+    };
+    const ua = navigator.userAgent || "";
+    const ios = /iPhone|iPad|iPod/i.test(ua);
+    const android = /Android/i.test(ua);
+    const cta = document.getElementById("cta");
+    const other = document.getElementById("other");
+    const from = new URLSearchParams(location.search).get("from");
+
+    if (ios) {
+      cta.href = LINKS.ios;
+      cta.textContent = "Get it on TestFlight";
+      other.innerHTML = 'Not on an iPhone? <a href="' + LINKS.android + '">Android</a>';
+    } else if (android) {
+      cta.href = LINKS.android;
+      cta.textContent = "Get it on Google Play";
+      other.innerHTML = 'Not on Android? <a href="' + LINKS.ios + '">iPhone</a>';
+    } else {
+      cta.href = LINKS.ios;
+      cta.textContent = "Open this on your phone";
+      other.innerHTML = '<a href="' + LINKS.ios + '">iPhone</a> · <a href="' + LINKS.android + '">Android</a>';
+    }
+    if (from) {
+      document.getElementById("lead").textContent = "&" + from + " wants to plan things with you.";
+    }
+  </script>
+</body>
+</html>

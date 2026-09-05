@@ -1,0 +1,237 @@
+/**
+ * Who is around on a given day. Architecture.md §4.3 (`collectAvailability`).
+ *
+ * An arrival is not an event: nobody RSVPs to a flight landing, and putting it
+ * in the event list buries the actual information — that three people are here
+ * and two are not — inside something shaped like a dinner reservation. It is a
+ * fact about presence, so it gets its own representation.
+ *
+ * Pure, so both clients classify identically and the rules can be tested.
+ */
+
+import type { TravelMode } from "./entities.js";
+import type { Instant } from "./time.js";
+
+export interface PresenceInput {
+  readonly userId: string;
+  readonly displayName: string;
+  readonly arrivesAt?: Instant | null;
+  readonly departsAt?: Instant | null;
+  /**
+   * How this person is travelling, when they have said. `null` means they are
+   * following whatever the calendar says — which is not the same as having
+   * chosen the same thing, because if the organiser later changes the group's
+   * mode, the people who never chose should follow it.
+   */
+  readonly travelMode?: TravelMode | null;
+  /**
+   * How this person is getting home, when that differs from how they came.
+   *
+   * People fly in and get a lift back, or drive down and leave the car for
+   * someone else. `null` means "the same way I arrived", which then falls back
+   * to the calendar's mode if they never chose that either — so one stated mode
+   * still covers both directions, and the second is only recorded when it is
+   * genuinely a second answer.
+   */
+  readonly travelModeOut?: TravelMode | null;
+}
+
+/** Which leg of the trip a mode describes. */
+export type TravelDirection = "in" | "out";
+
+/**
+ * The mode to draw against one person for one direction.
+ *
+ * Exported because every caller that shows a travel icon has to make this same
+ * decision, and each one making it inline is how a departure ends up wearing
+ * the arrival's aeroplane.
+ */
+export function travelModeFor(
+  person: PresenceInput,
+  direction: TravelDirection,
+  fallback: TravelMode,
+): TravelMode {
+  if (direction === "out") {
+    return person.travelModeOut ?? person.travelMode ?? fallback;
+  }
+  return person.travelMode ?? fallback;
+}
+
+export interface DayPresence {
+  /** Arrived before today and not yet gone. */
+  readonly here: readonly PresenceInput[];
+  readonly arrivingToday: readonly PresenceInput[];
+  readonly leavingToday: readonly PresenceInput[];
+  /** Arriving after today. */
+  readonly stillToCome: readonly PresenceInput[];
+  readonly alreadyGone: readonly PresenceInput[];
+  /** Has not said when they are coming or going. */
+  readonly unknown: readonly PresenceInput[];
+}
+
+/**
+ * `dayStart` and `dayEnd` are the instants bounding the day **in the calendar's
+ * timezone** — the caller resolves that, because "which day is it" is a
+ * presentation question and the answer differs by where the trip is (§5.5).
+ *
+ * Someone arriving and leaving on the same day appears in both lists: that is
+ * genuinely two facts about them, and collapsing it would hide one.
+ */
+export function classifyPresence(
+  people: readonly PresenceInput[],
+  dayStart: Instant,
+  dayEnd: Instant,
+): DayPresence {
+  const here: PresenceInput[] = [];
+  const arrivingToday: PresenceInput[] = [];
+  const leavingToday: PresenceInput[] = [];
+  const stillToCome: PresenceInput[] = [];
+  const alreadyGone: PresenceInput[] = [];
+  const unknown: PresenceInput[] = [];
+
+  for (const p of people) {
+    const arrives = p.arrivesAt ?? null;
+    const departs = p.departsAt ?? null;
+
+    if (arrives === null && departs === null) {
+      unknown.push(p);
+      continue;
+    }
+
+    const arrivesToday = arrives !== null && arrives >= dayStart && arrives < dayEnd;
+    const leavesToday = departs !== null && departs >= dayStart && departs < dayEnd;
+
+    if (arrivesToday) arrivingToday.push(p);
+    if (leavesToday) leavingToday.push(p);
+    if (arrivesToday || leavesToday) continue;
+
+    if (departs !== null && departs < dayStart) {
+      alreadyGone.push(p);
+      continue;
+    }
+
+    if (arrives !== null && arrives >= dayEnd) {
+      stillToCome.push(p);
+      continue;
+    }
+
+    // Arrived earlier, not yet gone — or only ever said when they leave, which
+    // still implies being here until then.
+    here.push(p);
+  }
+
+  return { here, arrivingToday, leavingToday, stillToCome, alreadyGone, unknown };
+}
+
+/** How many people the day concerns at all, for a "3 of 5 are here" summary. */
+export const presenceTotal = (p: DayPresence): number =>
+  p.here.length +
+  p.arrivingToday.length +
+  p.stillToCome.length +
+  p.alreadyGone.length +
+  p.unknown.length;
+
+/**
+ * The icon for a group of people: theirs when they agree, the calendar's when
+ * they do not. Showing a plane over a row containing someone who is driving is
+ * exactly the small wrongness the per-person override exists to remove.
+ */
+export function sharedTravelMode(
+  people: readonly PresenceInput[],
+  fallback: TravelMode,
+  direction: TravelDirection = "in",
+): TravelMode {
+  const modes = new Set(people.map((p) => travelModeFor(p, direction, fallback)));
+  if (modes.size !== 1) return fallback;
+  const [only] = [...modes];
+  return only ?? fallback;
+}
+
+export interface TravelGroup {
+  readonly mode: TravelMode;
+  readonly people: readonly PresenceInput[];
+  /** The earliest time in this group, or null when nobody has given one. */
+  readonly earliest: Instant | null;
+}
+
+/**
+ * Split a set of movements into one group per mode of transport.
+ *
+ * People leaving a trip do not leave together: three drive off after lunch, two
+ * catch an evening flight. One line reading "5 leave" with a single icon is a
+ * summary of nothing anyone can act on, whereas "the car goes at 14:00, the
+ * flight at 19:40" is the actual shape of the day.
+ *
+ * Ordering is by time throughout: people within a group by their own time, and
+ * the groups themselves by their earliest person, so reading down the rows is
+ * reading the day in order. A group where nobody has given a time sorts last —
+ * it cannot be placed, and guessing a position for it would be a lie.
+ *
+ * `fallback` is the calendar's mode, which covers everyone who has not chosen:
+ * not having chosen means following the group, so if the organiser changes the
+ * calendar's mode, those people move with it (§4.3).
+ */
+export function groupByTravelMode(
+  people: readonly PresenceInput[],
+  fallback: TravelMode,
+  field: "arrivesAt" | "departsAt",
+): TravelGroup[] {
+  const byMode = new Map<TravelMode, PresenceInput[]>();
+
+  const direction: TravelDirection = field === "departsAt" ? "out" : "in";
+
+  for (const person of people) {
+    const mode = travelModeFor(person, direction, fallback);
+    const bucket = byMode.get(mode);
+    if (bucket) bucket.push(person);
+    else byMode.set(mode, [person]);
+  }
+
+  const groups: TravelGroup[] = [];
+  for (const [mode, members] of byMode) {
+    const sorted = [...members].sort((a, b) => compareTimes(a[field], b[field]));
+    groups.push({
+      mode,
+      people: sorted,
+      earliest: sorted[0]?.[field] ?? null,
+    });
+  }
+
+  return groups.sort((a, b) => compareTimes(a.earliest, b.earliest));
+}
+
+/** Missing times sort last rather than first, where they would misread as "earliest". */
+function compareTimes(a: Instant | null | undefined, b: Instant | null | undefined): number {
+  if (!a && !b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+export interface TravelSelection {
+  readonly arrival: TravelMode | null;
+  /** Null means "the same way I came", not "unanswered". */
+  readonly departure: TravelMode | null;
+}
+
+/**
+ * What a tap on one travel icon means.
+ *
+ * The control is two answers on one row of icons, so the rule has to be
+ * unambiguous or people end up unable to say "fly there, drive back". It reads:
+ * the first tap answers the way in, the next answers the way out, and a tap
+ * after both are answered starts again — which makes correcting a mistake one
+ * tap rather than hunting for a reset.
+ *
+ * Pure and here rather than in the component so the sequence can be tested as a
+ * sequence, which is the only way it is ever experienced.
+ */
+export function nextTravelSelection(
+  current: TravelSelection,
+  tapped: TravelMode,
+): TravelSelection {
+  if (current.arrival === null || current.departure !== null) {
+    return { arrival: tapped, departure: null };
+  }
+  return { arrival: current.arrival, departure: tapped };
+}

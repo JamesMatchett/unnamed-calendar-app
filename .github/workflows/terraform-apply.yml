@@ -1,0 +1,108 @@
+name: terraform apply
+
+# Promotes a merged change through dev, staging and prod in order. Each job
+# names a GitHub Environment: that is what gates the apply role (the trust
+# policy in modules/github-oidc requires `environment:<name>` in the OIDC
+# subject) and where required-reviewer rules live. Add reviewers to the `prod`
+# environment in repository settings — without them, prod applies unattended.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/terraform/**"
+      - ".github/workflows/terraform-apply.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  # Must be >= the newest Terraform that has applied any environment. State
+  # records the version that wrote it and an older binary refuses to read it, so
+  # a laptop on a newer release silently locks CI out of the state it just
+  # wrote. Bumping a local install means bumping this in the same commit.
+  # tools/check-infra.mjs holds the two workflows and required_version together.
+  TF_VERSION: "1.16.0"
+  AWS_REGION: eu-west-2
+  # Must match `project` in src/terraform/*/variables.tf: the role ARNs below
+  # are built by convention, so a prefix that disagrees fails at the point of
+  # assuming the role, with an error that names a role nobody ever created.
+  # tools/check-infra.mjs holds the two in step.
+  PROJECT: calder
+
+jobs:
+  dev:
+    name: apply (dev)
+    # Not configured yet means nothing to apply. A skipped job also skips the
+    # ones that need it, which is the right order of events.
+    if: vars.AWS_ACCOUNT_ID_DEV != ''
+    runs-on: ubuntu-latest
+    environment: dev
+    concurrency:
+      group: terraform-dev
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/${{ env.PROJECT }}-dev-ci-apply
+          role-session-name: gha-apply-dev-${{ github.run_id }}
+      - run: terraform -chdir=src/terraform/envs/dev init
+      - run: terraform -chdir=src/terraform/envs/dev apply -auto-approve -lock-timeout=5m
+
+  staging:
+    name: apply (staging)
+    # Not configured yet means nothing to apply. A skipped job also skips the
+    # ones that need it, which is the right order of events.
+    if: vars.AWS_ACCOUNT_ID_STAGING != ''
+    needs: dev
+    runs-on: ubuntu-latest
+    environment: staging
+    concurrency:
+      group: terraform-staging
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_STAGING }}:role/${{ env.PROJECT }}-staging-ci-apply
+          role-session-name: gha-apply-staging-${{ github.run_id }}
+      - run: terraform -chdir=src/terraform/envs/staging init
+      - run: terraform -chdir=src/terraform/envs/staging apply -auto-approve -lock-timeout=5m
+
+  prod:
+    name: apply (prod)
+    # Not configured yet means nothing to apply. A skipped job also skips the
+    # ones that need it, which is the right order of events.
+    if: vars.AWS_ACCOUNT_ID_PROD != ''
+    needs: staging
+    runs-on: ubuntu-latest
+    environment: prod
+    concurrency:
+      group: terraform-prod
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_PROD }}:role/${{ env.PROJECT }}-prod-ci-apply
+          role-session-name: gha-apply-prod-${{ github.run_id }}
+      - run: terraform -chdir=src/terraform/envs/prod init
+
+      # Plan and apply as separate steps so the approval reviewer sees the plan
+      # in the log immediately above the change it authorised.
+      - run: terraform -chdir=src/terraform/envs/prod plan -lock-timeout=5m -out=tfplan
+      - run: terraform -chdir=src/terraform/envs/prod apply -lock-timeout=5m tfplan
