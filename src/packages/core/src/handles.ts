@@ -17,6 +17,37 @@
 export const HANDLE_MAX = 24;
 
 /**
+ * The shortest. Two-character handles are the ones people fight over, and a
+ * handle is permanent enough to be worth a floor.
+ */
+export const HANDLE_MIN = 3;
+
+export type HandleFault = "empty" | "too_short" | "taken";
+
+/**
+ * Why a handle cannot be used, or null if it can.
+ *
+ * Here rather than in each screen because there were two screens applying two
+ * different rules to the same field: onboarding required three characters and
+ * the profile screen required one, so a name you could not sign up with could
+ * be set an hour later. Worse, only one of the two reasons had anything to say
+ * for itself — a handle that was merely too short greyed the button out and
+ * left the ordinary hint underneath it, which is a dead button with no
+ * explanation, and somebody called Jo would hit it without typing anything at
+ * all, because the suggestion from their own name is two letters long.
+ *
+ * Takes `taken` rather than looking it up: whether a handle is free is a
+ * question for a database, and every other part of this is not.
+ */
+export function handleFault(raw: string, taken: boolean): HandleFault | null {
+  const handle = normaliseHandle(raw);
+  if (handle.length === 0) return "empty";
+  if (handle.length < HANDLE_MIN) return "too_short";
+  if (taken) return "taken";
+  return null;
+}
+
+/**
  * Lower case, letters, digits, dots and underscores, no leading sigil.
  *
  * Both "&" and "@" are stripped from the front. "&" is ours; "@" is what

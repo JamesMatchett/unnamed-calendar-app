@@ -10,10 +10,12 @@ import {
   deleteMyProfile,
   getProfile,
   handleAvailable,
+  normaliseHandle,
   profileFootprint,
   updateProfile,
 } from "@/db/repo";
 import { pickCoverImage } from "@/lib/pickImage";
+import { handleHint } from "@/lib/handles";
 import { useQuery } from "@/lib/useQuery";
 import { radius, space, type, useTheme } from "@/theme";
 
@@ -32,9 +34,13 @@ export default function ProfileScreen() {
   const [name, setName] = useState(profile.displayName);
   const [handle, setHandle] = useState(profile.handle);
 
-  const trimmedHandle = handle.trim().replace(/^[&@]+/, "");
-  const handleTaken =
-    trimmedHandle.length > 0 && !handleAvailable(trimmedHandle);
+  // normaliseHandle, not a hand-rolled trim. This screen used to strip a
+  // leading sigil and nothing else, so it would happily store "James M" or
+  // "A/B?c" as a handle — and since the QR link normalises on the way out, a
+  // handle stored like that produces a code for &jamesm, which is somebody
+  // else, or nobody.
+  const trimmedHandle = normaliseHandle(handle);
+  const hint = handleHint(handle, !handleAvailable(trimmedHandle));
 
   const commitName = () => {
     const next = name.trim();
@@ -45,7 +51,11 @@ export default function ProfileScreen() {
   };
 
   const commitHandle = () => {
-    if (trimmedHandle.length === 0 || handleTaken) return setHandle(profile.handle);
+    // Reverts on anything the hint is complaining about, which now includes a
+    // handle that is too short: this screen used to accept one character while
+    // onboarding demanded three, so a handle nobody could sign up with could be
+    // set an hour later.
+    if (!hint.ok) return setHandle(profile.handle);
     if (trimmedHandle !== profile.handle) updateProfile({ handle: trimmedHandle });
   };
 
@@ -147,11 +157,7 @@ export default function ProfileScreen() {
 
         <Field
           label="Your handle"
-          hint={
-            handleTaken
-              ? "That one is taken. Try another."
-              : "How friends find you: &jamesm. Letters, numbers and dots."
-          }
+          hint={hint.message}
         >
           {/* The & is part of the field furniture, not of the value: it can
               never be deleted, and the handle we store and compare never

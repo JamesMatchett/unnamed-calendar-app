@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { HANDLE_MAX, normaliseHandle, suggestHandle } from "../dist/index.js";
+import {
+  HANDLE_MAX,
+  HANDLE_MIN,
+  handleFault,
+  normaliseHandle,
+  suggestHandle,
+} from "../dist/index.js";
 
 test("a plain handle is left alone", () => {
   assert.equal(normaliseHandle("james"), "james");
@@ -55,6 +61,50 @@ test("a first name becomes a reasonable first guess", () => {
   assert.equal(suggestHandle("Maya Okonkwo"), "maya");
   assert.equal(suggestHandle("  Luke   Spray "), "luke");
   assert.equal(suggestHandle(""), "");
+});
+
+// --- why a handle cannot be used ---------------------------------------------
+
+test("a good, free handle has no fault", () => {
+  assert.equal(handleFault("james", false), null);
+});
+
+test("taken is a fault, and only when it is actually taken", () => {
+  assert.equal(handleFault("james", true), "taken");
+  assert.equal(handleFault("james", false), null);
+});
+
+test("too short is its own fault, not silence", () => {
+  // The bug: onboarding greyed the button out for these and left the ordinary
+  // hint underneath, so the button was dead with nothing saying why.
+  assert.equal(handleFault("jo", false), "too_short");
+  assert.equal(handleFault("a", false), "too_short");
+  assert.equal(handleFault("a-b", false), "too_short", "normalises to two");
+});
+
+test("empty is distinguished from too short", () => {
+  // They want different sentences: one is "you have not picked one yet", the
+  // other is "the one you picked is not long enough".
+  assert.equal(handleFault("", false), "empty");
+  assert.equal(handleFault("&", false), "empty");
+  assert.equal(handleFault("!!!", false), "empty");
+});
+
+test("length is judged after normalising, never before", () => {
+  // "a-b-c" looks like five characters and is three.
+  assert.equal(handleFault("a-b-c", false), null);
+  assert.equal(handleFault("&&&jo", false), "too_short");
+});
+
+test("a handle at exactly the minimum is allowed", () => {
+  assert.equal(normaliseHandle("abc").length, HANDLE_MIN);
+  assert.equal(handleFault("abc", false), null);
+});
+
+test("being too short beats being taken", () => {
+  // Only one sentence fits under the field, and the one to act on is the one
+  // that is true regardless of who else exists.
+  assert.equal(handleFault("jo", true), "too_short");
 });
 
 // --- the copy that cannot import this one -----------------------------------

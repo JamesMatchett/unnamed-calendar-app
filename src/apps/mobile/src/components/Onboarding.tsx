@@ -14,6 +14,7 @@ import {
 
 import { PrimaryButton, TextField } from "@/components/form";
 import { Muted } from "@/components/ui";
+import { handleHint } from "@/lib/handles";
 import {
   handleAvailable,
   normaliseHandle,
@@ -356,8 +357,9 @@ function Identity({
 
   const effectiveHandle = touchedHandle ? normaliseHandle(handle) : suggestHandle(name);
   const nameOk = name.trim().length >= 2;
-  const free = effectiveHandle.length >= 3 && handleAvailable(effectiveHandle);
-  const taken = effectiveHandle.length >= 3 && !handleAvailable(effectiveHandle);
+  // One lookup, not two: handleAvailable is a database read and it used to run
+  // once for "free" and again for "taken" on every keystroke.
+  const hint = handleHint(effectiveHandle, !handleAvailable(effectiveHandle));
 
   return (
     <KeyboardAvoidingView
@@ -400,16 +402,22 @@ function Identity({
           autoCapitalize="none"
           maxLength={24}
         />
-        <Muted>
-          {taken
-            ? `&${effectiveHandle} is taken. Try another.`
-            : "Your &handle is how friends find you. Letters, numbers, dots and underscores."}
-        </Muted>
+        {/* Coloured when it is a reason rather than a hint. Grey said "taken"
+            in the same voice as "letters, numbers and dots", next to a button
+            that had quietly stopped working. */}
+        <Text
+          style={{
+            ...type.caption,
+            color: hint.fault ? t.color.danger : t.color.textMuted,
+          }}
+        >
+          {hint.message}
+        </Text>
 
         <View style={{ paddingTop: space.md }}>
           <PrimaryButton
             label="That's me"
-            disabled={!nameOk || !free}
+            disabled={!nameOk || !hint.ok}
             onPress={() => {
               setIdentity(name, effectiveHandle);
               onDone();

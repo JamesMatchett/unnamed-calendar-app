@@ -1751,9 +1751,16 @@ export function updateProfile(changes: {
   defaultGrants?: FriendGrants;
 }): void {
   const db = getDb();
+  // Normalised here as well as in the screen that offers the field. A handle
+  // now travels into a URL path and back out of a scan, so the rule has to hold
+  // at the point of storage rather than only at the point of typing: the screen
+  // is one caller, and a handle that reaches the database malformed produces a
+  // QR code for a different person.
+  const handle =
+    changes.handle === undefined ? undefined : normaliseHandle(changes.handle);
 
   db.withTransactionSync(() => {
-    if (changes.displayName !== undefined || changes.handle !== undefined) {
+    if (changes.displayName !== undefined || handle !== undefined) {
       const current = db.getFirstSync<{ handle: string; display_name: string }>(
         "SELECT handle, display_name FROM directory WHERE user_id = ?",
         [CURRENT_USER_ID],
@@ -1764,9 +1771,9 @@ export function updateProfile(changes: {
          ON CONFLICT (user_id) DO UPDATE SET handle = ?, display_name = ?`,
         [
           CURRENT_USER_ID,
-          changes.handle ?? current?.handle ?? "you",
+          handle ?? current?.handle ?? "you",
           changes.displayName ?? current?.display_name ?? "You",
-          changes.handle ?? current?.handle ?? "you",
+          handle ?? current?.handle ?? "you",
           changes.displayName ?? current?.display_name ?? "You",
         ],
       );
