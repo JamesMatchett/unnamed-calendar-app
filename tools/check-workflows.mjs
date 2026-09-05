@@ -84,7 +84,7 @@ function resolveUpstream(repo, version) {
   const out = execFileSync(
     "git",
     ["ls-remote", `https://github.com/${repo}`, version, `${version}^{}`],
-    { encoding: "utf8", timeout: 20000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } },
+    { encoding: "utf8", timeout: 8000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } },
   );
   const refs = new Map();
   for (const line of out.trim().split("\n").filter(Boolean)) {
@@ -98,17 +98,33 @@ function resolveUpstream(repo, version) {
   return ref === null && peeled === null ? null : { commit: peeled ?? ref, tagObject: ref };
 }
 
-const wrong = [];
+// One lookup per distinct repo and version, run together rather than in turn.
+// Serially, five repositories at a 20-second timeout each is a check that can
+// sit silent for a minute and a half with nothing on screen, which is
+// indistinguishable from a hang — and this file exists to save time, not spend
+// it.
+const distinct = new Map();
+for (const pin of pinned) {
+  if (pin.version) distinct.set(`${pin.repo}@${pin.version}`, pin);
+}
+
+const resolved = new Map();
 let resolvable = true;
+
+await Promise.all(
+  [...distinct.values()].map(async ({ repo, version }) => {
+    try {
+      resolved.set(`${repo}@${version}`, resolveUpstream(repo, version));
+    } catch {
+      resolvable = false;
+    }
+  }),
+);
+
+const wrong = [];
 for (const { file, line, repo, sha, version } of pinned) {
-  if (!version) continue; // nothing to check it against
-  let upstream;
-  try {
-    upstream = resolveUpstream(repo, version);
-  } catch {
-    resolvable = false;
-    break;
-  }
+  if (!version || !resolvable) continue; // nothing to check it against
+  const upstream = resolved.get(`${repo}@${version}`);
   if (upstream === null) {
     wrong.push(`${DIR}/${file}:${line}: ${repo} has no tag ${version}`);
   } else if (upstream.commit !== sha) {

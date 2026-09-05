@@ -24,7 +24,10 @@ import dynalite from "dynalite";
  * silently absent from every row.
  */
 
-const TF = new URL("../../../terraform/modules/data/main.tf", import.meta.url);
+const TF = new URL(
+  "../../../terraform/modules/data/main.tf",
+  import.meta.url,
+);
 
 /** The GSI1 projection, as Terraform declares it. */
 export function projectedAttributes(source = readFileSync(TF, "utf8")) {
@@ -36,16 +39,31 @@ export function projectedAttributes(source = readFileSync(TF, "utf8")) {
 export const TABLE = "calder-test-main";
 export const INDEX = "GSI1";
 
-let port = 4600;
-
-/** A fresh table on a fresh in-memory engine. Returns a document client. */
+/**
+ * A fresh table on a fresh in-memory engine. Returns a document client.
+ *
+ * Port 0, so the OS assigns one. `node --test` runs each test FILE in its own
+ * process, concurrently, so any fixed port is a collision between files rather
+ * than within one — and a counter does not help, because each process starts it
+ * again from the same number. The first version of this bound 4600 and hung
+ * forever: `listen` reported EADDRINUSE on the error channel, and the promise
+ * wrapped only the callback, so nothing ever settled it.
+ */
 export async function freshTable(tfSource) {
   const server = dynalite({ createTableMs: 0 });
-  const listening = port++;
-  await new Promise((resolve) => server.listen(listening, resolve));
+
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+
+  const { port } = server.address();
 
   const base = new DynamoDBClient({
-    endpoint: `http://localhost:${listening}`,
+    endpoint: `http://localhost:${port}`,
     region: "eu-west-2",
     credentials: { accessKeyId: "local", secretAccessKey: "local" },
   });
