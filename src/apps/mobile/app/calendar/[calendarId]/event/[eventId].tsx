@@ -57,6 +57,13 @@ export default function EventScreen() {
   const rsvps = useQuery(`rsvps-event:${eventId}`, () => listRsvps(eventId));
   const slots = useQuery(`slots:${eventId}`, () => listSlots(eventId));
   const slotVotes = useQuery(`slot-votes:${eventId}`, () => listSlotVotes(eventId));
+  // Every hook has to be above the early return below. Deleting an event makes
+  // getEvent return null on the very next render, so a hook underneath it is a
+  // hook that stops being called, and React refuses to carry on: "rendered
+  // fewer hooks than expected", from a screen that is about to disappear.
+  const sent = useQuery(`sent-invites:${eventId}`, () =>
+    listInvitesSentForEvent(eventId),
+  );
 
   if (!event) {
     return <EmptyState title="Event not found" body="It may have been deleted." />;
@@ -90,10 +97,6 @@ export default function EventScreen() {
       status: "active",
     }),
   });
-  const sent = useQuery(`sent-invites:${eventId}`, () =>
-    listInvitesSentForEvent(eventId),
-  );
-
   const lookingNames = members
     .filter(
       (m) =>
