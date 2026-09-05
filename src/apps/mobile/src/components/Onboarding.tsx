@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -24,7 +25,8 @@ import {
   suggestHandle,
 } from "@/db/repo";
 import type { Provider } from "@/lib/auth";
-import { PROVIDER_LABEL, providersFor, signIn } from "@/lib/auth";
+import { apiConfig, type ApiConfig } from "@/lib/api";
+import { PROVIDER_LABEL, SignInFailed, providersFrom, signIn } from "@/lib/auth";
 import { LOCAL_ONLY } from "@/config";
 import type { Appearance } from "@/theme";
 import { radius, space, type, useTheme } from "@/theme";
@@ -233,6 +235,21 @@ function SignIn({
   const t = useTheme();
   const [busy, setBusy] = useState<Provider | null>(null);
 
+  // Which providers the server has actually configured. Null while asking, and
+  // null for good if it cannot be reached — in which case the platform's own
+  // list is used, because the app works offline and onboarding should not be
+  // the one screen that does not.
+  const [config, setConfig] = useState<ApiConfig | null>(null);
+  useEffect(() => {
+    let live = true;
+    void apiConfig().then((result) => {
+      if (live && result.ok) setConfig(result.value);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
   const choose = async (provider: Provider) => {
     setBusy(provider);
     try {
@@ -240,6 +257,16 @@ function SignIn({
       if (!account) return; // They backed out of the provider's own sheet.
       setAuthProvider(provider);
       onPicked(provider);
+    } catch (cause) {
+      // Saying nothing is the worst option: a failed sign-in and a cancelled
+      // one look identical from an unchanged screen, and somebody will tap the
+      // button again rather than tell us it broke.
+      Alert.alert(
+        `Could not sign in with ${PROVIDER_LABEL[provider]}`,
+        cause instanceof SignInFailed
+          ? cause.detail
+          : "Something went wrong. Please try again.",
+      );
     } finally {
       setBusy(null);
     }
@@ -266,7 +293,7 @@ function SignIn({
       </View>
 
       <View style={{ gap: space.md }}>
-        {providersFor().map((provider) => {
+        {providersFrom(config).map((provider) => {
           const { label, icon } = BUTTONS[provider];
           // Apple's button is black on white and white on black, and is the one
           // whose look is not ours to invent. Google's is a light surface with

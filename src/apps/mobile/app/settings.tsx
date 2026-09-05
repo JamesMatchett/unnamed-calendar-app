@@ -20,8 +20,9 @@ import {
   setAppearance,
   setBoolPref,
 } from "@/db/repo";
-import { health } from "@/lib/api";
+import { health, me } from "@/lib/api";
 import { providerLabel } from "@/lib/auth";
+import { isFresh, loadSession } from "@/lib/session";
 import { buildLabel, sendFeedback } from "@/lib/feedback";
 import { useQuery } from "@/lib/useQuery";
 import type { Appearance } from "@/theme";
@@ -48,6 +49,7 @@ export default function SettingsScreen() {
   const provider = useQuery("auth:provider", () => getAuthProvider());
   const notify = useQuery("notify:prefs", () => getNotifyPrefs());
   const [server, setServer] = useState<string>(ENVIRONMENT);
+  const [account, setAccount] = useState<string>("Tap to check");
 
   return (
     <>
@@ -190,6 +192,12 @@ export default function SettingsScreen() {
             />
             <RowButton
               bare
+              label="Account"
+              value={account}
+              onPress={() => void checkAccount(setAccount)}
+            />
+            <RowButton
+              bare
               label="Show the welcome again"
               value={provider ? `Signed in with ${providerLabel(provider)}` : ""}
               onPress={() =>
@@ -251,6 +259,53 @@ async function checkServer(set: (value: string) => void): Promise<void> {
       ? `${answered}, ${result.value.commit.slice(0, 7)}`
       : `WRONG: ${answered}`,
   );
+}
+
+/**
+ * Ask the API who this phone is.
+ *
+ * The end of the whole chain in one tap: a token in the Keychain, accepted by
+ * API Gateway's authoriser, carrying a ULID that the Pre Token Generation
+ * trigger minted on first sign-in and wrote to the table. If this shows an id,
+ * every piece between the phone and DynamoDB is working.
+ *
+ * The states are told apart on purpose. Never signed in, signed in but expired,
+ * and signed in and rejected are three different problems, and "not signed in"
+ * for all three is how a token bug gets reported as a login bug.
+ */
+async function checkAccount(set: (value: string) => void): Promise<void> {
+  set("checking...");
+  const session = await loadSession();
+
+  if (session === null) {
+    set("Not signed in");
+    return;
+  }
+  if (!isFresh(session)) {
+    // Refreshing is not wired up yet, so this is honest rather than hidden:
+    // the session exists and has aged out.
+    set("Session expired");
+    return;
+  }
+
+  const result = await me(session.idToken);
+  if (!result.ok) {
+    const { error } = result;
+    set(
+      error.kind === "status" && error.status === 401
+        ? "Token rejected"
+        : error.kind === "offline"
+          ? "no connection"
+          : error.kind === "timeout"
+            ? "no answer"
+            : "error",
+    );
+    return;
+  }
+
+  // The first eight characters of a ULID are its timestamp, so this is enough
+  // to tell two accounts apart and to see that it is stable across sign-ins.
+  set(result.value.userId?.slice(0, 8) ?? "no id in token");
 }
 
 /**

@@ -31,14 +31,20 @@ export type ApiResult<T> = { ok: true; value: T } | { ok: false; error: ApiFailu
  * ours, and a 401 is neither — it means the token is stale. Collapsing them
  * into one "something went wrong" is how a network bug becomes unreportable.
  */
-async function request<T>(path: string): Promise<ApiResult<T>> {
+async function request<T>(path: string, token?: string): Promise<ApiResult<T>> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
     const response = await fetch(`${API_BASE}${path}`, {
       signal: controller.signal,
-      headers: { accept: "application/json" },
+      headers: {
+        accept: "application/json",
+        // The ID token, not the access token: it is the one carrying the `uid`
+        // claim, because putting a custom claim in an access token would have
+        // required Cognito's Essentials plan (decision 40).
+        ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
+      },
     });
 
     if (!response.ok) {
@@ -87,3 +93,34 @@ export interface Health {
  * failure this is really for.
  */
 export const health = (): Promise<ApiResult<Health>> => request<Health>("/v1/health");
+
+export interface ApiConfig {
+  userPoolId: string;
+  clientId: string;
+  authDomain: string;
+  /** Cognito's names: "SignInWithApple", "Google". Empty until one is set up. */
+  providers: string[];
+}
+
+/**
+ * What this environment needs to sign somebody in.
+ *
+ * Fetched rather than compiled in. The Cognito client id is generated rather
+ * than declared, so nothing can hold a copy of it in step with the truth, and a
+ * stale one in a build already on somebody's phone fails sign-in with an error
+ * naming nothing useful. None of it is secret: the client id is in every
+ * redirect URL the browser sees, and PKCE is what makes knowing it worthless.
+ */
+export const apiConfig = (): Promise<ApiResult<ApiConfig>> =>
+  request<ApiConfig>("/v1/config");
+
+export interface Me {
+  /** Cognito's subject. Deliberately not the user id (§3.2). */
+  sub: string;
+  /** Our own ULID, minted on first sign-in. Null only for a token that predates it. */
+  userId: string | null;
+  tokenUse: string | null;
+}
+
+export const me = (idToken: string): Promise<ApiResult<Me>> =>
+  request<Me>("/v1/me", idToken);
