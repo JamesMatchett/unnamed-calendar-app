@@ -28,13 +28,13 @@ repeated on every profile.
 ```ini
 [sso-session jmatch]
 sso_start_url = https://jmatch.awsapps.com/start
-sso_region = eu-west-2
+sso_region = eu-north-1
 sso_registration_scopes = sso:account:access
 
 [profile calder-dev]
 sso_session      = jmatch
 sso_account_id   = 392852903961
-sso_role_name    = AdministratorAccess
+sso_role_name    = AdministratorAccess   # must be assigned to you first, see below
 region           = eu-west-2
 output           = json
 ```
@@ -42,9 +42,10 @@ output           = json
 Two things people get wrong here.
 
 **`sso_region` is not `region`.** The first is where the Identity Center *directory* lives,
-the second is where this project's resources go. They may be the same value and they are
-different settings; setting only one produces an authentication error that mentions neither.
-`aws configure sso` prompts for both if you would rather answer questions than edit a file.
+the second is where this project's resources go. Here they genuinely differ — the directory
+is in `eu-north-1` and every resource is in `eu-west-2` — which is why they are two
+settings. `aws configure sso` prompts for both, and detects the directory region, if you
+would rather answer questions than edit a file.
 
 **The start URL has no `#/`.** What the browser shows is
 `https://jmatch.awsapps.com/start/#/`, and everything after the `#` is a fragment the
@@ -81,6 +82,34 @@ Use `AdministratorAccess` for the first apply in an account. After that CI owns 
 through its own roles, so the human permission set only has to be enough to *look* at things
 — and note that `SystemAdministrator` cannot read the table either, so it is a poor fit for
 this project even then.
+
+Assigning it is a console job, in Identity Center rather than in this repo: **IAM Identity
+Center → Permission sets → Create** (`AdministratorAccess` is a predefined one), then **AWS
+accounts →** the account **→ Assign users or groups**. Naming it in `~/.aws/config` does not
+create it.
+
+### When it says "No access"
+
+```
+ForbiddenException ... GetRoleCredentials operation: No access
+```
+
+after a login that reported success. The login and the profile fail separately: `aws sso
+login` establishes a session with the *portal*, which works as long as you can sign in at
+all, and `sso_account_id` + `sso_role_name` are only checked when something asks for
+credentials. So this means the portal knows you and that account-and-permission-set pair is
+not assigned to you — most often because the config names a permission set that does not
+exist yet.
+
+The error does not say which of the two is wrong, so ask the portal what you do have:
+
+```sh
+aws configure sso --profile calder-dev
+```
+
+It reuses the session you already have and lists the accounts and permission sets actually
+available to you, then writes the answers to the file. The browser portal shows the same
+list under the account.
 
 ## First-time setup, per account
 
