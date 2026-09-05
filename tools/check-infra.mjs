@@ -200,6 +200,54 @@ for (const env of envs) {
   }
 }
 
+// --- the app's API hostnames match the ones Terraform creates ---------------
+//
+// app.config.ts carries a hostname per environment, in source, and it has to:
+// the URL is compiled into the bundle, so a build cannot look it up. That makes
+// it the fourth copy of a name Terraform already owns, and the same shape as
+// every other drift this file exists to catch — except worse, because the
+// symptom appears on somebody else's phone. A build shipped to TestFlight with
+// a hostname nothing answers on cannot be fixed by an apply; it needs another
+// build, and a review.
+//
+// Terraform's `api_domain` default per environment is the truth. This holds the
+// app's map to it.
+
+const CONFIG = "src/apps/mobile/app.config.ts";
+const appConfig = readOrNull(CONFIG);
+
+if (appConfig === null) {
+  fail(CONFIG, "is missing, so the app's API hostnames were not checked");
+} else {
+  const block = appConfig.match(/const API_URL[^=]*=\s*\{([\s\S]*?)\}/);
+  if (!block) {
+    fail(CONFIG, "has no API_URL map, or it has been renamed");
+  } else {
+    const inApp = new Map(
+      [...block[1].matchAll(/(\w+)\s*:\s*"https:\/\/([^"]+)"/g)].map((m) => [m[1], m[2]]),
+    );
+
+    for (const env of envs) {
+      const declared = tfDefault(`${TF}/envs/${env}/variables.tf`, "api_domain");
+      const used = inApp.get(env);
+
+      if (declared === null) {
+        fail(`${TF}/envs/${env}/variables.tf`, "has no api_domain default");
+      } else if (used === undefined) {
+        fail(CONFIG, `API_URL has no entry for ${env}, which Terraform serves at ${declared}`);
+      } else if (used !== declared) {
+        fail(CONFIG, `API_URL.${env} is ${used}; Terraform creates ${declared}`);
+      }
+    }
+
+    for (const env of inApp.keys()) {
+      if (!envs.includes(env)) {
+        fail(CONFIG, `API_URL has an entry for ${env}, which is not an environment`);
+      }
+    }
+  }
+}
+
 // --- formatting, if there is anything here that can judge it ---------------
 //
 // CI runs `terraform fmt -check -recursive`, so unformatted HCL fails the first

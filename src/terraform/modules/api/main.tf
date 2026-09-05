@@ -259,3 +259,81 @@ resource "aws_lambda_permission" "api" {
   # Scoped to this API, so another API in the same account cannot invoke it.
   source_arn = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
 }
+
+# --- a name that outlives the API -------------------------------------------
+
+# REGIONAL, and therefore in this region. An edge-optimised domain would need
+# the certificate in us-east-1; HTTP APIs are regional only, so there is no
+# choice to make here, just a trap to avoid.
+resource "aws_acm_certificate" "api" {
+  domain_name       = var.domain_name
+  validation_method = "DNS"
+
+  lifecycle {
+    # ACM cannot swap a certificate on a domain in place. Without this, any
+    # change that reissues it deletes the certificate the custom domain is
+    # using before the replacement is validated, and the API is unreachable for
+    # as long as validation takes.
+    create_before_destroy = true
+  }
+}
+
+resource "aws_route53_record" "validation" {
+  for_each = {
+    for option in aws_acm_certificate.api.domain_validation_options :
+    option.domain_name => {
+      name   = option.resource_record_name
+      record = option.resource_record_value
+      type   = option.resource_record_type
+    }
+  }
+
+  zone_id = var.zone_id
+  name    = each.value.name
+  type    = each.value.type
+  records = [each.value.record]
+  ttl     = 60
+
+  # ACM rewrites the validation record's value when a certificate is reissued,
+  # and the old one is not ours to keep.
+  allow_overwrite = true
+}
+
+# Blocks until ACM has seen the record and issued. Without it the custom domain
+# below is created against a PENDING_VALIDATION certificate and the apply fails
+# with an error about the certificate rather than about DNS.
+resource "aws_acm_certificate_validation" "api" {
+  certificate_arn         = aws_acm_certificate.api.arn
+  validation_record_fqdns = [for record in aws_route53_record.validation : record.fqdn]
+}
+
+resource "aws_apigatewayv2_domain_name" "api" {
+  domain_name = var.domain_name
+
+  domain_name_configuration {
+    certificate_arn = aws_acm_certificate_validation.api.certificate_arn
+    endpoint_type   = "REGIONAL"
+    security_policy = "TLS_1_2"
+  }
+}
+
+resource "aws_apigatewayv2_api_mapping" "api" {
+  api_id      = aws_apigatewayv2_api.main.id
+  domain_name = aws_apigatewayv2_domain_name.api.id
+  stage       = aws_apigatewayv2_stage.default.id
+}
+
+# Alias rather than CNAME, so this works at a zone apex too. Production's zone
+# IS api.calandder.com, so the record there is the apex and a CNAME would be
+# illegal beside the zone's own SOA and NS records.
+resource "aws_route53_record" "api" {
+  zone_id = var.zone_id
+  name    = var.domain_name
+  type    = "A"
+
+  alias {
+    name                   = aws_apigatewayv2_domain_name.api.domain_name_configuration[0].target_domain_name
+    zone_id                = aws_apigatewayv2_domain_name.api.domain_name_configuration[0].hosted_zone_id
+    evaluate_target_health = false
+  }
+}

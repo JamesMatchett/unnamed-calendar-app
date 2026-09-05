@@ -26,8 +26,17 @@ output "ci_apply_role_arn" {
   value       = module.github_oidc.apply_role_arn
 }
 
+output "api_url" {
+  description = "The stable base URL, and the one a build should carry."
+  value       = module.api.api_url
+}
+
 output "api_endpoint" {
-  description = "Base URL. GET <this>/v1/health answers 200 with no token; /v1/me answers 401 without one."
+  description = <<-EOT
+    The generated execute-api URL. Still the quickest thing to curl, and useful
+    for telling "the API is broken" apart from "the custom domain is broken",
+    but never the URL to put in a build.
+  EOT
   value       = module.api.api_endpoint
 }
 

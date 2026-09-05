@@ -24,3 +24,12 @@ output "access_log_group" {
   description = "Where the API's per-request logs go, including why a 401 happened."
   value       = aws_cloudwatch_log_group.access.name
 }
+
+output "api_url" {
+  description = <<-EOT
+    The stable base URL, and what a build should carry. Depends on the mapping
+    rather than on the domain name alone, so reading it means the domain is
+    actually pointed at a stage.
+  EOT
+  value       = "https://${aws_apigatewayv2_api_mapping.api.domain_name}"
+}

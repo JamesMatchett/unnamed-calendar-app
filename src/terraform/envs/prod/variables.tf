@@ -65,3 +65,12 @@ variable "commit" {
   type        = string
   default     = "unknown"
 }
+
+variable "api_domain" {
+  # Not the apex. calandder.com serves the site, the invite pages and
+  # .well-known/apple-app-site-association, and a universal link only works
+  # from the host that serves that file, so the API lives beside it.
+  description = "The hostname the API answers on. Must sit inside zone_name."
+  type        = string
+  default     = "api.calandder.com"
+}

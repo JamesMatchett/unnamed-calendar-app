@@ -65,3 +65,9 @@ variable "commit" {
   type        = string
   default     = "unknown"
 }
+
+variable "api_domain" {
+  description = "The hostname the API answers on. Must sit inside zone_name."
+  type        = string
+  default     = "api.dev.calandder.com"
+}
