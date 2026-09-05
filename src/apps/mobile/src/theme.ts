@@ -25,6 +25,11 @@ const palette = {
   accentDark: "#8AA0FF",
 
   going: "#1F9D6B",
+  // A second green, darker than `going`, because these two are read in
+  // different places. `going` is a chip on a surface at chip size; this is
+  // caption text on the page background, where #1F9D6B manages 3.19:1 and is
+  // not readable enough for something small that carries an answer.
+  success: "#0F7A52",
   maybe: "#C98A16",
   notGoing: "#B4485A",
 
@@ -53,6 +58,12 @@ export interface Theme {
     readonly accentFill: string;
     readonly onAccent: string;
     readonly going: string;
+    /**
+     * "Yes, that worked." Its own token rather than borrowing `going`: one is
+     * an answer to an invitation, the other is a field accepting what you
+     * typed, and a colour that means two things stops meaning either.
+     */
+    readonly success: string;
     readonly maybe: string;
     readonly notGoing: string;
     readonly danger: string;
@@ -73,6 +84,7 @@ const light: Theme = {
     accentFill: palette.accent,
     onAccent: palette.white,
     going: palette.going,
+    success: palette.success,
     maybe: palette.maybe,
     notGoing: palette.notGoing,
     danger: palette.danger,
@@ -93,6 +105,9 @@ const dark: Theme = {
     accentFill: "#3F58D6",
     onAccent: "#FFFFFF",
     going: "#3FBF8B",
+    // Lighter than the light theme's, not darker: on ink900 this reads at
+    // 7.92:1 where the light-mode green would nearly vanish.
+    success: "#3FBF8B",
     maybe: "#E0A93A",
     notGoing: "#D9697B",
     danger: "#D9697B",

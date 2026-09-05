@@ -415,7 +415,7 @@ function Identity({
               hint.tone === "bad"
                 ? t.color.danger
                 : hint.tone === "good"
-                  ? t.color.accent
+                  ? t.color.success
                   : t.color.textMuted,
           }}
         >

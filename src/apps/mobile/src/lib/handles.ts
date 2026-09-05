@@ -67,7 +67,7 @@ export function handleHint(
   }
 
   return changed
-    ? { ok: true, changed, fault: null, tone: "good", message: `&${handle} is free.` }
+    ? { ok: true, changed, fault: null, tone: "good", message: `&${handle} is free` }
     : {
         ok: true,
         changed,
