@@ -115,54 +115,63 @@ variable "callback_urls" {
   type        = list(string)
 }
 
-# --- federation, which stays off until there are credentials -----------------
+# --- federation --------------------------------------------------------------
 #
-# Every one of these defaults to empty and each provider is created only when
-# its values are present. That means this module applies cleanly today, before
-# Apple and Google are configured, and lights up when they are — rather than
-# being a half-built thing that fails until somebody finishes it.
+# Two questions, deliberately separated: whether a provider EXISTS, and what it
+# is configured WITH. Only the second is ever a secret.
 #
-# NONE of these belong in a committed tfvars. Pass them at apply time:
+# The first version of this conflated them. `count` was gated on whether the
+# credentials happened to be present, and every one of them defaulted to "" —
+# so an apply run without them did not skip the provider, it DESTROYED it, took
+# it off the app client, and emptied the list of sign-in buttons the app is
+# served. CI does exactly that on every merge: terraform-apply.yml passes
+# TF_VAR_commit and nothing else. Absence of a secret must never mean "delete
+# this", which is what `*_enabled` is for.
+#
+# The identifiers now come from SSM Parameter Store rather than a variable, so
+# CI and a laptop read the same values and neither has to be told them. They
+# live under a path named `public` because that is a promise about what may go
+# there: the CI plan role can read that prefix and nothing else in SSM, and a
+# plan runs on any pull request from anyone.
+#
+# The private key is the one thing still passed in, and only when the provider
+# is first created:
 #
 #   export TF_VAR_apple_private_key="$(cat ~/Downloads/AuthKey_XXXXXXXXXX.p8)"
 #
-# The key is in Terraform state either way (decision recorded in §3.2): the
-# point of keeping it out of the repository is that a file in git is forever and
-# readable by anyone who ever clones it.
+# After that `ignore_changes` holds it, so later applies — CI's included — leave
+# it alone without ever holding it. It is in Terraform state either way (§3.2);
+# keeping it out of the repository is because a file in git is forever.
 
-variable "apple_services_id" {
-  description = "Apple Services ID, e.g. com.calandder.signin. NOT the bundle id."
-  type        = string
-  default     = ""
+variable "apple_enabled" {
+  description = <<-EOT
+    Whether Sign in with Apple should exist in this pool. Declared intent, in a
+    committed tfvars, NOT inferred from whether credentials are to hand. Turning
+    it off removes the provider and signs everyone who used it out for good.
+  EOT
+  type        = bool
+  default     = false
 }
 
-variable "apple_team_id" {
-  description = "Apple Team ID, ten characters, from Membership details."
-  type        = string
-  default     = ""
-}
-
-variable "apple_key_id" {
-  description = "Key ID of the Sign in with Apple key."
-  type        = string
-  default     = ""
+variable "google_enabled" {
+  description = "Whether Google should exist in this pool. See apple_enabled."
+  type        = bool
+  default     = false
 }
 
 variable "apple_private_key" {
-  description = "Contents of the .p8. Pass via TF_VAR_apple_private_key; never commit it."
+  description = <<-EOT
+    Contents of the .p8, needed only on the apply that CREATES the provider.
+    Pass via TF_VAR_apple_private_key; never commit it, never put it in SSM
+    under the public prefix.
+  EOT
   type        = string
   default     = ""
   sensitive   = true
 }
 
-variable "google_client_id" {
-  description = "OAuth 2.0 web client id from the Google Cloud console."
-  type        = string
-  default     = ""
-}
-
 variable "google_client_secret" {
-  description = "Its secret. Pass via TF_VAR_google_client_secret; never commit it."
+  description = "Its secret, needed only at creation. Pass via TF_VAR_google_client_secret."
   type        = string
   default     = ""
   sensitive   = true

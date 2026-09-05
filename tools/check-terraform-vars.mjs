@@ -16,6 +16,21 @@
  *   - every module variable without a default is passed by every caller
  *   - every key set in a .tfvars is declared in that directory
  *   - every module.NAME.OUTPUT reads an output that module actually declares
+ *   - no resource's count or for_each depends on a SENSITIVE variable
+ *
+ * That last one is a scar. `count = local.apple_ready ? 1 : 0`, where
+ * apple_ready meant "the credentials are in this shell", read as a sensible way
+ * to leave a provider unbuilt until it could be configured. What it actually
+ * said was that an apply run WITHOUT the secret should destroy the provider —
+ * and CI's apply passes TF_VAR_commit and nothing else, so every merge silently
+ * deleted Sign in with Apple and served the app an empty list of sign-in
+ * buttons. Existence is declared intent; a secret is what a thing is configured
+ * with. Gate count on a bool and read the secret separately.
+ *
+ * The check resolves locals before looking, because the original went through
+ * one, and it deliberately does NOT unwrap nonsensitive() — laundering a
+ * secret's sensitivity to get a cleaner plan is how the first version was
+ * written, and it is exactly the thing worth catching.
  *
  * The parsing is regular expressions rather than HCL, which is honest about
  * what it is: this repository's Terraform is small, formatted by `terraform
@@ -67,7 +82,11 @@ function declaredVariables(dir) {
     // because everything here has been through `terraform fmt`.
     const blocks = src.matchAll(/^variable\s+"([^"]+)"\s*\{\n([\s\S]*?)^\}/gm);
     for (const [, name, body] of blocks) {
-      found.set(name, { file, hasDefault: /^\s{2}default\s*=/m.test(body) });
+      found.set(name, {
+        file,
+        hasDefault: /^\s{2}default\s*=/m.test(body),
+        sensitive: /^\s{2}sensitive\s*=\s*true/m.test(body),
+      });
     }
   }
   return found;
@@ -137,6 +156,55 @@ function tfvarsKeys(dir) {
   return found;
 }
 
+/**
+ * `locals` assignments in a directory, as name -> raw expression.
+ *
+ * Enough to follow one hop from a count to a secret, which is all the shape
+ * this catches needs. Values run to the next assignment at the same indent.
+ */
+function declaredLocals(dir) {
+  const found = new Map();
+  for (const file of tfFiles(dir)) {
+    const src = stripComments(readFileSync(file, "utf8"));
+    for (const [, body] of src.matchAll(/^locals\s*\{\n([\s\S]*?)^\}/gm)) {
+      for (const [, name, value] of body.matchAll(
+        /^ {2}([A-Za-z_][A-Za-z0-9_-]*)\s*=\s*([\s\S]*?)(?=^ {2}[A-Za-z_][A-Za-z0-9_-]*\s*=|\s*$)/gm,
+      )) {
+        found.set(name, value);
+      }
+    }
+  }
+  return found;
+}
+
+/** An expression with local.X replaced by its definition, to a fixed depth. */
+function expandLocals(expression, locals, depth = 4) {
+  let out = expression;
+  for (let i = 0; i < depth; i += 1) {
+    const next = out.replace(
+      /\blocal\.([A-Za-z_][A-Za-z0-9_-]*)/g,
+      (whole, name) => locals.get(name) ?? whole,
+    );
+    if (next === out) break;
+    out = next;
+  }
+  return out;
+}
+
+/** Every count/for_each expression in a directory, with where it was written. */
+function existenceExpressions(dir) {
+  const found = [];
+  for (const file of tfFiles(dir)) {
+    const src = stripComments(readFileSync(file, "utf8"));
+    for (const [, keyword, expression] of src.matchAll(
+      /^ {2}(count|for_each)\s*=\s*(.*)$/gm,
+    )) {
+      found.push({ file, keyword, expression });
+    }
+  }
+  return found;
+}
+
 const problems = [];
 const dirs = dirsUnder(ROOT);
 const declaredBy = new Map(dirs.map((d) => [d, declaredVariables(d)]));
@@ -162,6 +230,19 @@ for (const dir of dirs) {
       problems.push(
         `${where(file)}: reads module.${name}.${output}, which ${where(call.dir)} does not output`,
       );
+    }
+  }
+
+  const locals = declaredLocals(dir);
+  for (const { file, keyword, expression } of existenceExpressions(dir)) {
+    const expanded = expandLocals(expression, locals);
+    for (const [, name] of expanded.matchAll(/\bvar\.([A-Za-z_][A-Za-z0-9_-]*)/g)) {
+      if (declared.get(name)?.sensitive === true) {
+        problems.push(
+          `${where(file)}: ${keyword} depends on var.${name}, which is sensitive — ` +
+            "absence of a secret would destroy the resource; gate existence on a declared bool instead",
+        );
+      }
     }
   }
 

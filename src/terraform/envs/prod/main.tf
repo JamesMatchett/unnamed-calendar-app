@@ -61,14 +61,13 @@ module "auth" {
   domain_prefix = var.auth_domain_prefix
   callback_urls = var.callback_urls
 
-  # Empty until Apple and Google are configured, at which point each provider
-  # appears. Supplied at apply time, never in a committed file:
+  # Whether each provider exists is declared in the tfvars. What it is
+  # configured with comes from SSM, except the secret, which is needed only on
+  # the apply that creates the provider:
   #   export TF_VAR_apple_private_key="$(cat AuthKey_XXXXXXXXXX.p8)"
-  apple_services_id    = var.apple_services_id
-  apple_team_id        = var.apple_team_id
-  apple_key_id         = var.apple_key_id
+  apple_enabled        = var.apple_enabled
+  google_enabled       = var.google_enabled
   apple_private_key    = var.apple_private_key
-  google_client_id     = var.google_client_id
   google_client_secret = var.google_client_secret
 }
 

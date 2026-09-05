@@ -327,41 +327,67 @@ locals {
   # before the providers rather than beside them.
   redirect_uri = "https://${aws_cognito_user_pool_domain.main.domain}.auth.${data.aws_region.current.region}.amazoncognito.com/oauth2/idpresponse"
 
-  # nonsensitive() around the secret comparisons only.
+  # Which providers exist, from DECLARED INTENT rather than from whether a
+  # credential happens to be in the environment. See the long note in
+  # variables.tf: the previous version of this derived the list from the secrets
+  # themselves, which meant an apply without them quietly tore federation down.
   #
-  # Terraform propagates sensitivity through every expression that touches a
-  # sensitive value, so without this the derived list of PROVIDER NAMES is
-  # treated as secret and the root output is refused. That is the right default
-  # and the wrong answer here: marking the output sensitive would hide
-  # ["Google", "SignInWithApple"], which is not a secret and is the one thing
-  # somebody wants to read after configuring them.
-  #
-  # What is asserted is narrow and true: whether a key is empty is not the key.
-  apple_ready  = var.apple_services_id != "" && var.apple_team_id != "" && var.apple_key_id != "" && nonsensitive(var.apple_private_key != "")
-  google_ready = var.google_client_id != "" && nonsensitive(var.google_client_secret != "")
-
+  # It also had to launder the answer through nonsensitive(), because Terraform
+  # propagates sensitivity through every expression that touches a secret and
+  # the root output was refused. Gating on a bool removes the need: a list of
+  # provider names derived from two booleans is not sensitive to begin with.
   providers_configured = compact([
-    local.apple_ready ? "SignInWithApple" : "",
-    local.google_ready ? "Google" : "",
+    var.apple_enabled ? "SignInWithApple" : "",
+    var.google_enabled ? "Google" : "",
   ])
+
+  # Non-secret configuration, read from Parameter Store so that CI and a laptop
+  # see the same values without either being handed them. Bootstrapped once per
+  # environment with `aws ssm put-parameter` (src/terraform/README.md); NOT
+  # created here, because Terraform would need the values in order to write them
+  # and that is the circle this breaks.
+  ssm_public = "/${var.project}/${var.environment}/public/auth"
 }
 
 data "aws_region" "current" {}
+
+# One parameter each rather than one JSON blob: a plan that fails because
+# `key_id` is missing says so, where a blob says "invalid JSON" about a value
+# nobody can read from the error.
+data "aws_ssm_parameter" "apple_services_id" {
+  count = var.apple_enabled ? 1 : 0
+  name  = "${local.ssm_public}/apple/services_id"
+}
+
+data "aws_ssm_parameter" "apple_team_id" {
+  count = var.apple_enabled ? 1 : 0
+  name  = "${local.ssm_public}/apple/team_id"
+}
+
+data "aws_ssm_parameter" "apple_key_id" {
+  count = var.apple_enabled ? 1 : 0
+  name  = "${local.ssm_public}/apple/key_id"
+}
+
+data "aws_ssm_parameter" "google_client_id" {
+  count = var.google_enabled ? 1 : 0
+  name  = "${local.ssm_public}/google/client_id"
+}
 
 # The BUILT-IN Apple provider, not a generic OIDC one. They produce an identical
 # sign-in and are billed a hundredfold differently: social providers get the
 # 10,000-MAU free tier, generic OIDC gets fifty (§13, decision 42).
 resource "aws_cognito_identity_provider" "apple" {
-  count = local.apple_ready ? 1 : 0
+  count = var.apple_enabled ? 1 : 0
 
   user_pool_id  = aws_cognito_user_pool.main.id
   provider_name = "SignInWithApple"
   provider_type = "SignInWithApple"
 
   provider_details = {
-    client_id        = var.apple_services_id
-    team_id          = var.apple_team_id
-    key_id           = var.apple_key_id
+    client_id        = data.aws_ssm_parameter.apple_services_id[0].value
+    team_id          = data.aws_ssm_parameter.apple_team_id[0].value
+    key_id           = data.aws_ssm_parameter.apple_key_id[0].value
     private_key      = var.apple_private_key
     authorize_scopes = "email name"
   }
@@ -378,20 +404,24 @@ resource "aws_cognito_identity_provider" "apple" {
 
   lifecycle {
     # Terraform cannot read the key back, so every plan would otherwise propose
-    # rewriting it. Changing the key means removing this line deliberately.
+    # rewriting it. It also carries the weight of letting an apply run WITHOUT
+    # the key at all: the variable is empty in CI, and this is what stops that
+    # emptiness reaching Cognito. Changing the key means removing this line
+    # deliberately. Prove it with a plan, not by reasoning about it: a plan run
+    # with no TF_VAR_apple_private_key exported must report no changes here.
     ignore_changes = [provider_details["private_key"]]
   }
 }
 
 resource "aws_cognito_identity_provider" "google" {
-  count = local.google_ready ? 1 : 0
+  count = var.google_enabled ? 1 : 0
 
   user_pool_id  = aws_cognito_user_pool.main.id
   provider_name = "Google"
   provider_type = "Google"
 
   provider_details = {
-    client_id        = var.google_client_id
+    client_id        = data.aws_ssm_parameter.google_client_id[0].value
     client_secret    = var.google_client_secret
     authorize_scopes = "openid email profile"
   }
@@ -404,6 +434,7 @@ resource "aws_cognito_identity_provider" "google" {
   }
 
   lifecycle {
+    # As above: also what lets an apply run without the secret in hand.
     ignore_changes = [provider_details["client_secret"]]
   }
 }
