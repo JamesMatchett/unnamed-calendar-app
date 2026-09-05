@@ -24,7 +24,7 @@ import {
   setIdentity,
   suggestHandle,
 } from "@/db/repo";
-import type { Provider } from "@/lib/auth";
+import type { Account, Provider } from "@/lib/auth";
 import { apiConfig, type ApiConfig } from "@/lib/api";
 import { PROVIDER_LABEL, SignInFailed, providersFrom, signIn } from "@/lib/auth";
 import { LOCAL_ONLY } from "@/config";
@@ -90,6 +90,8 @@ export function Onboarding({
 }) {
   const [step, setStep] = useState<Step>("welcome");
   const [provider, setProvider] = useState<Provider | null>(null);
+  // What the provider called them, when it said. Null is the ordinary case.
+  const [given, setGiven] = useState<string | null>(null);
 
   return (
     <Modal visible animationType="fade" statusBarTranslucent>
@@ -97,14 +99,15 @@ export function Onboarding({
       {step === "signin" ? (
         <SignIn
           onBack={() => setStep("welcome")}
-          onPicked={(p) => {
+          onPicked={(p, account) => {
             setProvider(p);
+            setGiven(account?.displayName ?? null);
             setStep("identity");
           }}
         />
       ) : null}
       {step === "identity" ? (
-        <Identity provider={provider} onDone={() => setStep("appearance")} />
+        <Identity provider={provider} given={given} onDone={() => setStep("appearance")} />
       ) : null}
       {step === "appearance" ? (
         <AppearanceStep value={appearance} onPreview={onPreviewAppearance} />
@@ -230,7 +233,7 @@ function SignIn({
   onPicked,
 }: {
   onBack: () => void;
-  onPicked: (provider: Provider) => void;
+  onPicked: (provider: Provider, account: Account | null) => void;
 }) {
   const t = useTheme();
   const [busy, setBusy] = useState<Provider | null>(null);
@@ -256,7 +259,7 @@ function SignIn({
       const account = await signIn(provider);
       if (!account) return; // They backed out of the provider's own sheet.
       setAuthProvider(provider);
-      onPicked(provider);
+      onPicked(provider, account);
     } catch (cause) {
       // Saying nothing is the worst option: a failed sign-in and a cancelled
       // one look identical from an unchanged screen, and somebody will tap the
@@ -371,13 +374,18 @@ function SignIn({
 
 function Identity({
   provider,
+  given,
   onDone,
 }: {
   provider: Provider | null;
+  /** What the provider called them, or null. */
+  given: string | null;
   onDone: () => void;
 }) {
   const t = useTheme();
-  const [name, setName] = useState("");
+  // Prefilled, not locked. Whatever Apple or Google calls somebody is not
+  // necessarily what their friends do, and this is the name that goes on plans.
+  const [name, setName] = useState(given ?? "");
   const [handle, setHandle] = useState("");
   const [touchedHandle, setTouchedHandle] = useState(false);
   const scroller = useRef<ScrollView>(null);
@@ -403,10 +411,9 @@ function Identity({
             What should people call you?
           </Text>
           <Text style={{ ...type.body, color: t.color.textMuted }}>
-            This goes on the plans you add.
-            {provider && LOCAL_ONLY
-              ? ` Once accounts are live, ${PROVIDER_LABEL[provider]} will fill this in for you.`
-              : ""}
+            {given === null
+              ? "This goes on the plans you add."
+              : `This goes on the plans you add. ${provider ? PROVIDER_LABEL[provider] : "Your account"} gave us this one, so change it if it is not what your friends call you.`}
           </Text>
         </View>
 

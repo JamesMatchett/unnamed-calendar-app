@@ -122,6 +122,16 @@ export function route(event: HttpEvent, now: number = Date.now()): HttpResult {
         // the type: the moment a handler writes USER#{...} keys, putting a sub
         // where a ULID belongs stops compiling.
         sub: asCognitoSub(sub),
+        // From the provider, via Cognito's attribute mapping, and null far more
+        // often than it looks. Google sends a name on every sign-in; Apple
+        // sends one on the FIRST authorisation and never again, and only if the
+        // person agreed to share it (§3.2). Whatever arrives is stored on the
+        // pool, so a later token carries it even though Apple has stopped
+        // sending it — but if it was missed once, it is missed for good.
+        name: claim(claims, "name") ?? null,
+        // With Apple's Hide My Email this is a per-app relay address, which is
+        // why nothing in the table is ever keyed on it (§3.2, §7.2).
+        email: claim(claims, "email") ?? null,
         // Minted and injected by the Pre Token Generation trigger. Null only
         // if a token predates the trigger, which is worth being able to see
         // rather than crashing on.

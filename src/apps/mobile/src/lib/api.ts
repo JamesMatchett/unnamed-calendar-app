@@ -117,6 +117,14 @@ export const apiConfig = (): Promise<ApiResult<ApiConfig>> =>
 export interface Me {
   /** Cognito's subject. Deliberately not the user id (§3.2). */
   sub: string;
+  /**
+   * What the provider called them, or null. Null is the ordinary case, not the
+   * exceptional one: Google sends a name every time, Apple sends one on the
+   * first authorisation only and only with consent.
+   */
+  name: string | null;
+  /** A per-app relay address when Apple's Hide My Email is used. Never a key. */
+  email: string | null;
   /** Our own ULID, minted on first sign-in. Null only for a token that predates it. */
   userId: string | null;
   tokenUse: string | null;

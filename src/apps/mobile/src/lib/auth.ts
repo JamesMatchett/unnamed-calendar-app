@@ -3,7 +3,7 @@ import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
 
 import { LOCAL_ONLY } from "@/config";
-import { apiConfig, type ApiConfig } from "@/lib/api";
+import { apiConfig, me, type ApiConfig } from "@/lib/api";
 import { saveSession } from "@/lib/session";
 
 // Closes the authentication sheet when the redirect comes back. Without it the
@@ -177,5 +177,20 @@ export async function signIn(provider: Provider): Promise<Account | null> {
     provider,
   });
 
-  return { provider, displayName: null, email: null };
+  // Ask the API rather than reading the token here. It costs one request and
+  // buys two things: the claims come back having been verified by the
+  // authoriser, and a token that will not work is discovered now, during a
+  // sign-in somebody is watching, instead of later during something they are
+  // not.
+  //
+  // A failure is not fatal. They are signed in; we simply do not know their
+  // name, which is the same state as Apple declining to send one, and the next
+  // screen asks.
+  const profile = await me(tokens.idToken);
+
+  return {
+    provider,
+    displayName: profile.ok ? profile.value.name : null,
+    email: profile.ok ? profile.value.email : null,
+  };
 }

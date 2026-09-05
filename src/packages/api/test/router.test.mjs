@@ -51,9 +51,29 @@ test("health is never cached", () => {
 });
 
 test("me returns the verified subject", () => {
-  const result = route(request("GET /v1/me", { sub: "abc-123", token_use: "access" }));
+  const result = route(request("GET /v1/me", { sub: "abc-123", token_use: "id" }));
   assert.equal(result.statusCode, 200);
-  assert.deepEqual(body(result), { sub: "abc-123", userId: null, tokenUse: "access" });
+  assert.deepEqual(body(result), {
+    sub: "abc-123",
+    name: null,
+    email: null,
+    userId: null,
+    tokenUse: "id",
+  });
+});
+
+test("me passes on the name and email when the provider gave them", () => {
+  const claims = { sub: "abc-123", name: "James", email: "j@example.com" };
+  const got = body(route(request("GET /v1/me", claims)));
+  assert.equal(got.name, "James");
+  assert.equal(got.email, "j@example.com");
+});
+
+test("a missing name is null rather than an empty string", () => {
+  // Apple sends a name on the first authorisation only, and only with consent,
+  // so absent is the common case rather than the exception. An empty string
+  // would prefill a field with nothing and look like the answer.
+  assert.equal(body(route(request("GET /v1/me", { sub: "abc-123" }))).name, null);
 });
 
 test("me reports the ULID the Pre Token Generation trigger injects", () => {
