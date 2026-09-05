@@ -47,17 +47,24 @@ export interface HttpResult {
 /**
  * A JSON response.
  *
- * `no-store` on everything: there is no route here yet whose response is worth
- * caching, and a health check that a proxy answers from cache is worse than no
- * health check, since it reports the last time the service was up rather than
+ * `no-store` by default, because most of what this API returns is either
+ * personal or a liveness claim. A health check answered from a cache is worse
+ * than no health check: it reports the last time the service was up rather than
  * whether it is up now.
+ *
+ * `maxAge` is the exception, for a response that is public, identical for
+ * everybody, and changes about once a year. Without it every cold start of
+ * every app invokes a Lambda to be told the same four strings — a bill anybody
+ * can run up on an unauthenticated route, since it is one that cannot be
+ * authenticated even in principle: the app needs it to begin authenticating.
  */
-export function json(statusCode: number, body: unknown): HttpResult {
+export function json(statusCode: number, body: unknown, maxAge?: number): HttpResult {
   return {
     statusCode,
     headers: {
       "content-type": "application/json",
-      "cache-control": "no-store",
+      "cache-control":
+        maxAge === undefined ? "no-store" : `public, max-age=${maxAge}`,
     },
     body: JSON.stringify(body),
   };

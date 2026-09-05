@@ -102,6 +102,10 @@ test("config serves what the app needs to sign in", () => {
   try {
     const result = route(request("GET /v1/config"));
     assert.equal(result.statusCode, 200);
+    // The one cacheable response here, and the reason the parameter exists:
+    // an unauthenticated route that cannot be authenticated even in principle
+    // should not invoke a function to repeat four constants.
+    assert.equal(result.headers["cache-control"], "public, max-age=300");
     assert.deepEqual(body(result), {
       userPoolId: "eu-west-2_test",
       clientId: "abc123",

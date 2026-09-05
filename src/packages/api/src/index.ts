@@ -82,15 +82,22 @@ export function route(event: HttpEvent, now: number = Date.now()): HttpResult {
       // `providers` is the list actually configured, so the sign-in screen
       // offers Apple alone until Google exists rather than offering a button
       // that fails.
-      return json(200, {
-        userPoolId: env("CALDER_USER_POOL_ID"),
-        clientId: env("CALDER_CLIENT_ID"),
-        authDomain: env("CALDER_AUTH_DOMAIN"),
-        providers: (process.env["CALDER_PROVIDERS"] ?? "")
-          .split(",")
-          .map((p) => p.trim())
-          .filter(Boolean),
-      });
+      return json(
+        200,
+        {
+          userPoolId: env("CALDER_USER_POOL_ID"),
+          clientId: env("CALDER_CLIENT_ID"),
+          authDomain: env("CALDER_AUTH_DOMAIN"),
+          providers: (process.env["CALDER_PROVIDERS"] ?? "")
+            .split(",")
+            .map((p) => p.trim())
+            .filter(Boolean),
+        },
+        // Five minutes. Long enough that a launch spike costs one invocation
+        // rather than thousands, short enough that adding Google is visible in
+        // the app without waiting for anything to expire.
+        300,
+      );
 
     case "GET /v1/me": {
       const claims = event.requestContext?.authorizer?.jwt?.claims;
