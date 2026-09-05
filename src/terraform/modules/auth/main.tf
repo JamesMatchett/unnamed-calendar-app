@@ -66,6 +66,13 @@ resource "aws_cognito_user_pool" "main" {
     }
   }
 
+  # `pre_token_generation`, not `pre_token_generation_config`: the plain
+  # attribute is trigger version 1, which is what the Lite plan allows and what
+  # writes to the ID token. See the trigger's own comment below.
+  lambda_config {
+    pre_token_generation = aws_lambda_function.trigger.arn
+  }
+
   lifecycle {
     # The pool is the one resource here whose loss cannot be repaired by
     # reapplying: the table survives, but every item keyed on a departed `sub`
@@ -163,4 +170,121 @@ resource "aws_cognito_user_pool_client" "test" {
 
   enable_token_revocation       = true
   prevent_user_existence_errors = "ENABLED"
+}
+
+# --- the Pre Token Generation trigger ----------------------------------------
+#
+# §3.2 decides that the user id is a ULID we mint and NOT Cognito's `sub`, so
+# that rebuilding this pool or changing identity provider does not invalidate
+# every key in the table. Something has to turn one into the other, and doing it
+# here means it happens once per token rather than once per request.
+#
+# VERSION 1, deliberately. Version 2 can write claims into the ACCESS token and
+# requires the Essentials feature plan; version 1 is available on Lite and can
+# only write to the ID token. That is roughly $850/month at 100k MAU for one
+# claim, so the API validates the ID token instead. §13 open question 1.
+#
+# The function lives in this module rather than in modules/api because it is
+# part of what the pool does, not a route. It shares the API's bundle: same zip,
+# different handler.
+
+data "archive_file" "trigger" {
+  type        = "zip"
+  source_dir  = var.bundle_dir
+  output_path = "${path.module}/.build/${var.environment}-trigger.zip"
+}
+
+data "aws_iam_policy_document" "trigger_assume" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "trigger" {
+  name               = "${local.name}-pretoken"
+  description        = "Pre Token Generation trigger for the ${local.name} user pool"
+  assume_role_policy = data.aws_iam_policy_document.trigger_assume.json
+}
+
+resource "aws_iam_role_policy_attachment" "trigger_basic" {
+  role       = aws_iam_role.trigger.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+data "aws_iam_policy_document" "trigger_table" {
+  # Read the mapping, and write it once. No Query, no Scan, no Delete: this
+  # function resolves one item by primary key and creates two if they are
+  # missing, and nothing it is allowed to do should exceed that.
+  statement {
+    effect = "Allow"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+    ]
+    resources = [var.table_arn]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "kms:Decrypt",
+      "kms:GenerateDataKey",
+    ]
+    resources = [var.table_kms_key_arn]
+  }
+}
+
+resource "aws_iam_role_policy" "trigger_table" {
+  name   = "identity-mapping"
+  role   = aws_iam_role.trigger.id
+  policy = data.aws_iam_policy_document.trigger_table.json
+}
+
+resource "aws_cloudwatch_log_group" "trigger" {
+  name              = "/aws/lambda/${local.name}-pretoken"
+  retention_in_days = var.log_retention_days
+}
+
+resource "aws_lambda_function" "trigger" {
+  function_name = "${local.name}-pretoken"
+  role          = aws_iam_role.trigger.arn
+
+  filename         = data.archive_file.trigger.output_path
+  source_code_hash = data.archive_file.trigger.output_base64sha256
+
+  handler       = "index.preTokenGeneration"
+  runtime       = "nodejs22.x"
+  architectures = ["arm64"]
+
+  # This runs on the sign-in path, so its cold start is a person waiting. Small
+  # and quick rather than cheap: it does one GetItem and usually nothing else.
+  memory_size = 512
+  timeout     = 5
+
+  environment {
+    variables = {
+      CALDER_TABLE                        = var.table_name
+      CALDER_ENVIRONMENT                  = var.environment
+      AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.trigger,
+    aws_iam_role_policy_attachment.trigger_basic,
+  ]
+}
+
+resource "aws_lambda_permission" "trigger" {
+  statement_id  = "AllowExecutionFromCognito"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.trigger.function_name
+  principal     = "cognito-idp.amazonaws.com"
+  source_arn    = aws_cognito_user_pool.main.arn
 }

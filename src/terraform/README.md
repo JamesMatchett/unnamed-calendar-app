@@ -222,19 +222,37 @@ aws cognito-idp admin-create-user --user-pool-id "$POOL" \
 aws cognito-idp admin-set-user-password --user-pool-id "$POOL" \
   --username you@example.com --password '<a long one>' --permanent --profile calder-dev
 
+# IdToken, not AccessToken. The ULID rides in the ID token because putting a
+# custom claim in an access token needs Pre Token Generation v2, which needs the
+# Essentials plan (decision 40). The JWT authoriser matches its `aud` against
+# the app client id, which is what it already does.
 TOKEN=$(aws cognito-idp admin-initiate-auth --user-pool-id "$POOL" \
   --client-id "$CLIENT" --auth-flow ADMIN_USER_PASSWORD_AUTH \
   --auth-parameters USERNAME=you@example.com,PASSWORD='<a long one>' \
-  --profile calder-dev --query 'AuthenticationResult.AccessToken' --output text)
+  --profile calder-dev --query 'AuthenticationResult.IdToken' --output text)
 
 curl -s "$API/v1/me" -H "Authorization: Bearer $TOKEN"
 ```
 
-That answers 200 with the `sub` and a null `userId`. Null is correct for now: the user id is
-a ULID minted at first sign-in and injected as a custom claim by a Pre Token Generation
-trigger (§3.2), and neither exists yet. **Delete the test client and the user once federation
-is in.**
+That answers 200 with the `sub` and a real `userId`: a ULID minted on the first
+sign-in by the Pre Token Generation trigger, which also writes the
+`IDENTITY#{sub}` mapping and the `USER#` profile. Sign in twice and the id is
+the same; that is the whole point of the mapping, since a second ULID would
+orphan every key built on the first and look to the user like an emptied
+account.
 
+If a sign-in fails outright rather than returning a token, read the trigger's
+log group — the function throws rather than issuing a token without the claim.
+A session whose token cannot identify its own user is an app that appears to
+have lost everything, and it gets reported as data loss rather than as a login
+problem:
+
+```sh
+aws logs tail "/aws/lambda/$(terraform -chdir=envs/dev output -raw trigger_function_name)" \
+  --follow --profile calder-dev
+```
+
+**Delete the test client and the user once federation is in.**
 If `/v1/me` ever answers 200 with `"detail": "no verified claims reached the handler"`, the
 authoriser has come off the route. That body exists to say so: API Gateway answers 401 itself
 while the authoriser is attached, so the handler can only see an unauthenticated request when

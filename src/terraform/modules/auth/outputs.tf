@@ -35,3 +35,8 @@ output "audiences" {
   EOT
   value       = compact([aws_cognito_user_pool_client.app.id, one(aws_cognito_user_pool_client.test[*].id)])
 }
+
+output "trigger_function_name" {
+  description = "The Pre Token Generation function, for logs when a sign-in fails."
+  value       = aws_lambda_function.trigger.function_name
+}

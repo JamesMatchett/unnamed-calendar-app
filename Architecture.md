@@ -152,7 +152,7 @@ One Cognito **user pool** and **no identity pool** — identity pools exist to v
 credentials to clients, and nothing here needs them: clients talk to API Gateway with a JWT,
 and S3 uploads use presigned URLs minted by Lambda. No hosted-UI sign-up screens either,
 though federation still needs a user pool **domain** for the OAuth redirect, so configure a
-custom one (`auth.calder.app`) — users see that hostname in the browser sheet, and the default
+custom one (`auth.dev.calandder.com`, `auth.calandder.com`) — users see that hostname in the browser sheet, and the default
 `*.amazoncognito.com` visibly costs conversion. **Apple and Google only for v1** — no email/password (§8.6), which means no
 reset flow and no password support burden. Email/password and Microsoft are v2 candidates.
 The trade being accepted: losing access to your Google account means losing your calendars,
@@ -167,8 +167,16 @@ Two things to get right at the very start, both effectively unfixable later:
 - **Apple's Hide My Email** issues a per-app relay address, which is why email-addressed
   invites cannot reliably match Apple users and why §7.2 exists.
 
-- API Gateway HTTP API validates the Cognito access token **natively** — no Lambda
-  authoriser, so no cold start and no extra invocation on every request.
+- API Gateway HTTP API validates the Cognito **ID** token **natively** — no Lambda
+  authoriser, so no cold start and no extra invocation on every request. **Amended
+  5 September 2026 (decision 40): the ID token, not the access token.** Custom claims in an
+  access token need Pre Token Generation version 2, which needs the Essentials feature plan;
+  version 1 runs on Lite and can only write to the ID token. That is roughly $850/month at
+  100k MAU for one claim, and it answers §13's first open question in the cheap direction.
+  The objection to authorising with an ID token is that it describes a user rather than
+  granting a permission, which matters when handing one to a third party; the pool and the
+  API are the same trust domain and there is no third party. Revisit if Essentials becomes
+  necessary for something else.
 - Authorisation (is this user a member of this calendar?) happens **inside** each handler
   as a single `GetItem` on `PK=CAL#{id}, SK=MEMBER#{uid}` — ~0.5 RRU, sub-millisecond,
   about £0.10 per million checks. Do **not** try to encode memberships in the token;
@@ -194,9 +202,15 @@ Two things to get right at the very start, both effectively unfixable later:
   "where did my calendars go?". Link in a **Pre Sign-Up** trigger via
   `AdminLinkProviderForUser`, on **verified** emails only. It cannot help when Apple issues a
   relay address — nothing can — but it covers the common case.
-- **Three Lambda triggers, no more**: Pre Sign-Up (linking); Post Confirmation (mint the
-  ULID, write the `USER#` profile, capture the Apple display name — idempotent); Pre Token
-  Generation (inject the ULID claim, and nothing else — memberships never go in the token).
+- **Three Lambda triggers, no more**: Pre Sign-Up (linking); Post Confirmation (capture the
+  Apple display name — idempotent); Pre Token Generation (resolve the `sub` to a ULID,
+  minting it on first sight, and inject it as the `uid` claim — memberships never go in the
+  token). **Amended 5 September 2026 (decision 41): the ULID is minted in Pre Token
+  Generation, not Post Confirmation.** Post Confirmation does not fire for an
+  administratively created user, which is the only kind that exists before federation, so a
+  mint-on-confirmation design could not be exercised at all until then and would ship
+  unexercised. Minting where the claim is issued also survives a user arriving by a route
+  nobody anticipated, which over a pool's lifetime is most of them.
 - **Token lifetimes**: access and ID tokens at the default hour. The 30-day refresh token
   default is too short for an offline-first app — someone on a long trip should not routinely
   fall back to §5.6's read-only mode — so extend it substantially and **test refresh-token
@@ -593,13 +607,24 @@ Two notes on `lastUpdatedBy` and `allowSuggestions`:
 | 8 | Author approves a change | `TransactWriteItems`: update `EVENT#`, mark `SUGG#` accepted |
 | 9 | Set my arrival/departure | `PutItem SK=AVAIL#{uid}` |
 | 10 | Group availability view | from pattern 3 |
-| 11 | Delta sync since seq N | `Query PK=CAL#{cid}, SK > CHG#{N:012d}` |
+| 11 | Delta sync since seq N | `Query PK=CAL#{cid}, SK BETWEEN CHG#{N+1:012d} AND CHG#\uffff` |
 | 12 | Redeem an invite | `GetItem PK=INVITE#{hash}` then `TransactWriteItems` to add membership + increment use count |
 | 13 | My upcoming events across all calendars | `Query GSI1 PK=USER#{uid}, SK begins_with RSVP#` |
 | 14 | My inbox | `Query PK=USER#{uid}, SK begins_with NOTIF#` (descending, paginated) |
 | 15 | Invites waiting for me at first sign-in | `Query PK=PENDING#{sha256(email)}` then claim into memberships |
 | 16 | Join requests awaiting my approval | `Query PK=CAL#{cid}, SK begins_with JOINREQ#` |
 | 17 | All recurring series in a calendar | `Query GSI1 PK=CAL#{cid}, SK begins_with SERIES#` |
+
+Pattern 11 was wrong until it was executed, and is worth keeping as a warning. It read
+`SK > CHG#{N:012d}`, which is a lexicographic bound with no upper limit — and `CHG#` sorts
+before `EVENT#`, `JOINREQ#`, `MEMBER#`, `META`, `RSVP#` and `SUGG#`. Every delta sync would
+have returned the entire calendar partition, billed and transferred on every poll, with the
+client handed items it would try to read as changes. It would have looked correct in any
+small test. DynamoDB will not let `begins_with` be combined with `>` on the same sort key,
+which is presumably how the shape arose; a `BETWEEN` with an upper sentinel does both jobs,
+and the fixed-width padding in `padSeq` is what makes the bound numeric rather than
+alphabetical. `src/packages/api/test/access-patterns.test.mjs` executes all seventeen
+against a real DynamoDB engine and keeps the original form as a regression case.
 
 Pattern 3 is the one to appreciate: **opening a calendar is a single DynamoDB query**.
 No joins, no N+1, one round trip, single-digit milliseconds. That is the whole reason to
@@ -1537,10 +1562,37 @@ Choose the Cognito tier deliberately, and keep auth behind an interface so you c
 
 ## 13. Open questions
 
-1. **Cognito tier** — Lite looks sufficient now that v1 is SSO-only with no passkeys, but
-   **confirm how Apple/Google federation is billed** before relying on it: OIDC federation
-   is priced separately with only 50 free MAUs, and the difference is roughly $850/month at
-   100k MAU.
+1. ~~Cognito tier~~ **Resolved (5 September 2026): Lite, and build our own auth if it stops
+   being enough.** The federation worry does not apply — Apple and Google are **social**
+   identity providers in Cognito and bill exactly like direct sign-ins, with the full
+   10,000-MAU free tier. The $0.015 rate with 50 free MAUs is for **generic OIDC and SAML**
+   only. That distinction is a setting, not a consequence: configuring Apple as the built-in
+   Sign in with Apple provider and configuring it as a generic OIDC provider give an
+   identical login experience and a 100x difference in the bill. Use the built-in one.
+
+   Lite costs nothing to 10,000 MAU, then $0.0055 for the next 90,000 and $0.0046 beyond:
+   $220/month at 50,000 and $495/month at 100,000. Decision 40's choice of the ID token is
+   what keeps us off Essentials, which would be $1,350/month at 100,000.
+
+   **Trigger for revisiting: $220/month, which is 50,000 MAU** (decision 42). At that point
+   compare against running auth ourselves. The case is better than it usually is, because v1
+   has no passwords: no credential storage, no reset flow, no login to rate-limit. What is
+   left is the code-with-PKCE exchange against two providers, verifying their `id_token`
+   against cached JWKS, and issuing our own — signed by a KMS asymmetric key with a static
+   JWKS on CloudFront, which keeps API Gateway's native authoriser and changes no handler.
+   Roughly $15/month in compute against $220 and rising.
+
+   What we would be taking on: Apple's client secret is a JWT we sign ourselves, valid six
+   months at most, so it has to be regenerated on a schedule or sign-in stops for everyone
+   on a date nobody has written down. Plus refresh-token rotation and reuse detection, our
+   own signing-key rotation, nonce and state validation, and account linking.
+
+   The swap stays cheap because of decision 27: nothing in the table is keyed on Cognito's
+   `sub`, only on our own ULID, and the `IDENTITY#{sub}` mapping absorbs a change of issuer.
+
+   Bring it forward if a feature-plan gate bites again. Passkeys or device-level session
+   control push Cognito to Essentials or Plus, and at $1,350–1,800/month at 100k MAU the
+   comparison stops being close.
 2. ~~Region~~ **Resolved:** **eu-west-2 (London)** — UK latency and data residency. Note
    prices in §10 are us-east-1 and London runs a little higher; re-cost before quoting.
 3. **Festival licensing** — which sources permit caching and redistribution? Blocks §6.
@@ -1611,6 +1663,9 @@ assumption, and an amendment from a mistake.
 | 37 | Terraform owns the Lambda bundle until deploys outpace infrastructure changes; amends 28 | §3.6 |
 | 38 | A delegated DNS zone per environment in its own account; the apex stays with the site | §3.6 |
 | 39 | A dev-only admin-password Cognito client, so the JWT authoriser can be proved to accept as well as reject | §3.2 |
+| 40 | The API validates the ID token, not the access token, so the ULID claim works on the Lite plan; amends §3.2 | §3.2, §13 |
+| 41 | The ULID is minted lazily in Pre Token Generation, not in Post Confirmation | §3.2 |
+| 42 | Cognito on Lite; revisit against self-hosted auth at 50,000 MAU (~$220/month), or sooner if a feature plan forces an upgrade | §13 |
 
 ---
 

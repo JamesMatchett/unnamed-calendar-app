@@ -54,6 +54,11 @@ output "app_client_id" {
   value       = module.auth.app_client_id
 }
 
+output "trigger_function_name" {
+  description = "The Pre Token Generation function. Its log group is where a failed sign-in explains itself."
+  value       = module.auth.trigger_function_name
+}
+
 output "test_client_id" {
   description = "The admin-password client, or null where it is not enabled."
   value       = module.auth.test_client_id

@@ -19,6 +19,18 @@
 import { asCognitoSub } from "@calder/core";
 
 import { type HttpEvent, type HttpResult, json } from "./http.js";
+import { UID_CLAIM } from "./identity.js";
+
+// The Cognito trigger, in the same bundle as the routes. One artifact, two
+// functions: Terraform points them at the same zip with different handlers,
+// so there is one build, one version, and no way for the two to drift.
+export { preTokenGeneration } from "./identity.js";
+
+// Also exported for the tests, which run against this bundle rather than the
+// sources because the bundle is what Lambda executes — and bundling has its own
+// ways to fail. `useClient` exists only so a test can point the trigger at a
+// local engine; nothing in the running system calls it.
+export { UID_CLAIM, resolveUserId, useClient } from "./identity.js";
 
 /**
  * Read per request rather than captured at module scope, so that a test can set
@@ -77,10 +89,10 @@ export function route(event: HttpEvent, now: number = Date.now()): HttpResult {
         // the type: the moment a handler writes USER#{...} keys, putting a sub
         // where a ULID belongs stops compiling.
         sub: asCognitoSub(sub),
-        // Injected by the Pre Token Generation trigger, which does not exist
-        // yet. Null rather than absent, so a client can tell "no ULID minted"
-        // from "field not implemented".
-        userId: claim(claims, "custom:uid") ?? null,
+        // Minted and injected by the Pre Token Generation trigger. Null only
+        // if a token predates the trigger, which is worth being able to see
+        // rather than crashing on.
+        userId: claim(claims, UID_CLAIM) ?? null,
         tokenUse: claim(claims, "token_use") ?? null,
       });
     }
