@@ -3,7 +3,7 @@
     "apps": [],
     "details": [
       {
-        "appID": "TEAMID.com.calandder.app",
+        "appID": "K9S677LMQS.com.calandder.app",
         "paths": ["/join/*", "/add/*"]
       }
     ]
