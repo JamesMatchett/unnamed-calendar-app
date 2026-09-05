@@ -113,16 +113,32 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
-      # TEMPORARY, remove once the OIDC chain is proven. AWS answers every
-      # trust failure with the same sentence and refuses to say which condition
-      # failed: a missing role, a wrong account, a mismatched sub and a bad
-      # audience are indistinguishable from the outside. So read both sides out
-      # loud instead of inferring them — the ARN this job is about to assume,
-      # and the claims GitHub actually minted for it.
+      - name: assume plan role
+        id: assume
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/${{ env.PROJECT }}-${{ matrix.environment }}-ci-plan
+          role-session-name: gha-plan-${{ matrix.environment }}-${{ github.run_id }}
+
+      # Only when the line above has failed, which is the one case where the
+      # answer is not in the log. AWS returns "Not authorized to perform
+      # sts:AssumeRoleWithWebIdentity" for a role that does not exist, an
+      # account id that is wrong, an audience the provider will not accept and
+      # a subject that does not match, and it will not say which. Four causes,
+      # one sentence, and no way to tell them apart from outside the account.
+      #
+      # Both halves of the comparison are knowable, so print them rather than
+      # guess. This step is why the first failure was diagnosed at all: the
+      # subject GitHub sends carries numeric owner and repository ids that no
+      # example policy mentions, and every condition in the trust policy was
+      # individually correct, so nothing short of reading the claim would have
+      # found it. It stays for the next person, including the next me.
       #
       # The token itself is never echoed. Only its middle segment is decoded,
       # which is the claim set: public information, and unusable on its own.
-      - name: what this job is sending
+      - name: what this job sent
+        if: failure() && steps.assume.outcome == 'failure'
         env:
           ROLE: arn:aws:iam::${{ matrix.account_id }}:role/${{ env.PROJECT }}-${{ matrix.environment }}-ci-plan
         run: |
@@ -145,12 +161,7 @@ jobs:
           printf '%s' "$payload" | tr '_-' '/+' | base64 -d \
             | jq '{iss, aud, sub, repository, repository_owner, event_name, ref}'
 
-      - name: assume plan role
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/${{ env.PROJECT }}-${{ matrix.environment }}-ci-plan
-          role-session-name: gha-plan-${{ matrix.environment }}-${{ github.run_id }}
+          echo "Compare sub against the trust policy in modules/github-oidc."
 
       - name: terraform init
         run: terraform -chdir=src/terraform/envs/${{ matrix.environment }} init

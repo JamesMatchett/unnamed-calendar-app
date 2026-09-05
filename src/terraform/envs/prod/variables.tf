@@ -26,6 +26,18 @@ variable "github_repository" {
   default     = "JamesMatchett/unnamed-calendar-app"
 }
 
+variable "github_owner_id" {
+  description = "Numeric id of the GitHub account owning the repository. Part of the OIDC subject claim; see modules/github-oidc."
+  type        = string
+  default     = "30292929"
+}
+
+variable "github_repository_id" {
+  description = "Numeric id of the GitHub repository. Part of the OIDC subject claim; see modules/github-oidc."
+  type        = string
+  default     = "1354994048"
+}
+
 variable "deletion_protection" {
   description = "DynamoDB deletion protection. See modules/data/variables.tf."
   type        = bool

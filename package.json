@@ -15,11 +15,12 @@
     "test:core": "npm test --workspace @calder/core",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "check:db": "node tools/check-transactions.mjs",
-    "verify": "npm run build:core && npm run test:core && npm run check:db && npm run check:sql && npm run check:chars && npm run check:routes && npm run check:infra && npm run check:workflows && npm run check:hooks && npm run typecheck",
+    "verify": "npm run build:core && npm run test:core && npm run check:db && npm run check:sql && npm run check:chars && npm run check:routes && npm run check:infra && npm run check:tfvars && npm run check:workflows && npm run check:hooks && npm run typecheck",
     "check:sql": "node tools/check-sql.mjs",
     "check:chars": "node tools/check-chars.mjs",
     "check:routes": "node tools/check-routes.mjs",
     "check:infra": "node tools/check-infra.mjs",
+    "check:tfvars": "node tools/check-terraform-vars.mjs",
     "check:workflows": "node tools/check-workflows.mjs",
     "check:hooks": "eslint \"src/apps/mobile/**/*.{ts,tsx}\""
   },

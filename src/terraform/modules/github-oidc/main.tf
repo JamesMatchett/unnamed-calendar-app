@@ -17,6 +17,33 @@ data "aws_caller_identity" "current" {}
 locals {
   oidc_host = "token.actions.githubusercontent.com"
   oidc_arn  = var.create_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/${local.oidc_host}"
+
+  # The repository half of the subject claim, in GitHub's immutable form:
+  #
+  #   repo:OWNER@OWNER_ID/REPO@REPO_ID
+  #
+  # rather than the repo:OWNER/REPO that every example still shows. A
+  # repository created after 15 July 2026 mints this by default, and a rename
+  # or transfer after that date moves an older one onto it. The numeric ids are
+  # the control and the names are decoration: a name can be given up and taken
+  # by somebody else, and the point of the ids is that the stranger who takes
+  # it cannot then mint a token this account already trusts.
+  #
+  # The ids are threaded in rather than derived, because nothing in Terraform
+  # can look them up without a GitHub credential, and a security boundary that
+  # depends on a lookup is a security boundary that fails open.
+  #
+  # This is what CI's first "Not authorized to perform
+  # sts:AssumeRoleWithWebIdentity" meant. AWS answers a missing role, a wrong
+  # account id, an audience the provider does not accept and a subject that
+  # does not match with that one sentence, and will not say which, so from the
+  # outside all four look identical — and every condition here was individually
+  # correct. The failure diagnostic in terraform-plan.yml exists because of it:
+  # it prints the claim GitHub actually sent, which is the only thing that
+  # tells the four apart.
+  repo_owner = split("/", var.github_repository)[0]
+  repo_name  = split("/", var.github_repository)[1]
+  subject    = "repo:${local.repo_owner}@${var.github_owner_id}/${local.repo_name}@${var.github_repository_id}"
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
@@ -55,7 +82,7 @@ data "aws_iam_policy_document" "plan_assume" {
     condition {
       test     = "StringLike"
       variable = "${local.oidc_host}:sub"
-      values   = ["repo:${var.github_repository}:*"]
+      values   = ["${local.subject}:*"]
     }
   }
 }
@@ -116,7 +143,7 @@ data "aws_iam_policy_document" "apply_assume" {
     condition {
       test     = "StringEquals"
       variable = "${local.oidc_host}:sub"
-      values   = ["repo:${var.github_repository}:environment:${var.environment}"]
+      values   = ["${local.subject}:environment:${var.environment}"]
     }
   }
 }

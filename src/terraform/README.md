@@ -159,17 +159,50 @@ apply. A human does it once with admin credentials.
    them. **Add required reviewers to `prod`** — otherwise production applies unattended,
    which is the one thing this arrangement exists to prevent.
 
+6. **Pin the repository's numeric ids.** `github_owner_id` and `github_repository_id` in
+   each `envs/*/variables.tf` are part of the OIDC subject claim and have to match the
+   repository CI runs from. They are already set for this one; they only change if the
+   repository is recreated, or if this configuration is reused for a different repository.
+
+   GitHub mints the subject in its immutable form:
+
+   ```
+   repo:OWNER@OWNER_ID/REPO@REPO_ID:pull_request
+   ```
+
+   not the `repo:OWNER/REPO:...` that every guide and every example trust policy still
+   shows. Repositories created after 15 July 2026 use it by default, and a rename or
+   transfer moves an older one onto it. The ids are the point: a repository name can be
+   given up and taken by a stranger, and pinning the name alone would let that stranger
+   mint tokens this account already trusts.
+
+   Read them from the `repository_owner_id` and `repository_id` claims on a token, or from
+   GitHub's subject-claim preview. If they are wrong, `assume plan role` fails with
+   `Not authorized to perform sts:AssumeRoleWithWebIdentity`, which is also what AWS says
+   for a missing role, a wrong account id and an audience the provider will not accept.
+   It will not tell you which of the four it meant — that is what the `what this job sent`
+   step in `terraform-plan.yml` is for. It runs only when the assume fails, and prints the
+   claim GitHub actually sent next to the ARN the job actually built.
+
 After that, CI owns it: pull requests plan all three environments, and merges to `main`
 apply dev → staging → prod in order.
 
 ## Checking before you push
 
-`npm run verify` includes two infrastructure checks, and both say plainly when
-they could not do their job rather than passing quietly:
+`npm run verify` includes three infrastructure checks, and each says plainly when
+it could not do its job rather than passing quietly:
 
 - **`check:infra`** — names agree across Terraform and the workflows, no environment
   is half configured, one region, one Terraform version. Also runs `fmt -check` when
   `terraform` or `tofu` is on PATH.
+- **`check:tfvars`** — every `var.x` is declared where it is used, every module argument
+  is a variable that module has, every module variable without a default is passed by
+  every caller, and every key in a `.tfvars` is a real variable. `terraform validate`
+  covers most of this but needs a provider download; this needs nothing, and it catches
+  the case validate never reaches, which is a module gaining a required variable that
+  only one of the three environments is updated for. dev is planned on every pull
+  request. staging and prod are not planned at all until an account exists for them, so
+  a gap there stays invisible for months.
 - **`check:workflows`** — [actionlint](https://github.com/rhysd/actionlint), if installed
   (`brew install actionlint`).
 
