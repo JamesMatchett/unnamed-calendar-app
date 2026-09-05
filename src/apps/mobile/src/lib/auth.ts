@@ -210,12 +210,6 @@ export async function signIn(provider: Provider): Promise<Account | null> {
   // screen asks.
   const profile = await me(tokens.idToken);
 
-  // The response, not the token. Cognito holds the name on the user, so if it
-  // is null here the claim is not reaching the ID token; if it is present here
-  // the loss is further up, in the screen. Nothing secret: a name and a relay
-  // address the person just typed into Apple's own sheet.
-  if (__DEV__) console.log(`[auth] me = ${JSON.stringify(profile)}`);
-
   return {
     provider,
     displayName: profile.ok ? profile.value.name : null,

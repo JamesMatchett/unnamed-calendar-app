@@ -4,7 +4,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
-  Modal,
+  StyleSheet,
   Platform,
   Pressable,
   ScrollView,
@@ -96,7 +96,23 @@ export function Onboarding({
   const [given, setGiven] = useState<string | null>(null);
 
   return (
-    <Modal visible animationType="fade" statusBarTranslucent>
+    // An overlay inside the root view, NOT a <Modal>.
+    //
+    // A Modal is a presented view controller, and iOS silently discards a
+    // presentation requested while another controller is mid-dismiss. Replaying
+    // the first run from a sheet — signing out, deleting a profile, "show the
+    // welcome again" — did exactly that: the gate opened, this component
+    // rendered, and nothing appeared. The screen behind it stayed put, which
+    // reads as a button that does nothing.
+    //
+    // As an overlay there is no presentation to lose. It mounts underneath the
+    // sheet and is revealed when the sheet goes, so the order of the two stops
+    // mattering and no waiting is needed. It has to be the LAST child of the
+    // root view to paint above the Stack.
+    //
+    // Android note: a Modal also swallows the hardware back button and this
+    // does not. Worth a BackHandler before Android is a target.
+    <View style={StyleSheet.absoluteFill}>
       {step === "welcome" ? <Welcome onNext={() => setStep("signin")} /> : null}
       {step === "signin" ? (
         <SignIn
@@ -114,7 +130,7 @@ export function Onboarding({
       {step === "appearance" ? (
         <AppearanceStep value={appearance} onPreview={onPreviewAppearance} />
       ) : null}
-    </Modal>
+    </View>
   );
 }
 

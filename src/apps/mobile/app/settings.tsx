@@ -3,7 +3,7 @@ import { NOTIFY_GROUPS } from "@calder/core";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
 import { useState } from "react";
-import { Alert, InteractionManager, ScrollView, Text, View } from "react-native";
+import { Alert, ScrollView, Text, View } from "react-native";
 
 import { RowButton, Segmented, ToggleRow } from "@/components/form";
 import { Group, Muted } from "@/components/ui";
@@ -208,17 +208,14 @@ export default function SettingsScreen() {
                     { text: "Cancel", style: "cancel" },
                     {
                       text: "Show it",
-                      // Leave this sheet first and replay once it has gone.
-                      // Onboarding is a native <Modal> and iOS drops a
-                      // presentation made while another is mid-dismiss, so
-                      // replaying from here does nothing at all. Same shape as
-                      // profile.tsx, where the reasoning is written out.
+                      // Replay, then leave: the first run is an overlay in
+                      // the root view, so it mounts under this sheet and is
+                      // revealed as it goes. See profile.tsx for why it is not
+                      // a Modal any more.
                       onPress: () => {
+                        replayOnboarding();
                         router.dismissAll();
                         router.replace("/");
-                        InteractionManager.runAfterInteractions(() =>
-                          replayOnboarding(),
-                        );
                       },
                     },
                   ],

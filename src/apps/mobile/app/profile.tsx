@@ -2,15 +2,7 @@ import { HANDLE_MAX } from "@calder/core";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
 import { useState } from "react";
-import {
-  Alert,
-  Image,
-  InteractionManager,
-  Pressable,
-  ScrollView,
-  Text,
-  View,
-} from "react-native";
+import { Alert, Image, Pressable, ScrollView, Text, View } from "react-native";
 
 import { Field, PrimaryButton, RowButton, TextField, ToggleRow } from "@/components/form";
 import { Card, Muted } from "@/components/ui";
@@ -358,24 +350,20 @@ export default function ProfileScreen() {
   }
 
   /**
-   * Leave the sheet, THEN put the first run back.
+   * Put the first run back, then leave.
    *
-   * Onboarding is a native <Modal>, and this screen is presented as one too.
-   * iOS silently drops a presentation requested while another controller is
-   * mid-dismiss, so clearing the flag first mounts Onboarding into a window
-   * that is on its way out and the first run never appears — you land on the
-   * agenda instead, looking signed in.
-   *
-   * runAfterInteractions waits for the dismissal animation to finish rather
-   * than guessing at a delay.
+   * Onboarding is an overlay in the root view rather than a presented Modal,
+   * so it mounts UNDERNEATH this sheet and is revealed as the sheet goes.
+   * That is the whole reason the order is safe: there is no presentation to
+   * lose and nothing to wait for. It was a Modal until this stopped working —
+   * iOS discards a presentation made while another controller is dismissing,
+   * so the first run rendered and was never shown.
    */
   function leaveThenReplay(also?: () => void) {
+    also?.();
+    replayOnboarding();
     router.dismissAll();
     router.replace("/");
-    InteractionManager.runAfterInteractions(() => {
-      also?.();
-      replayOnboarding();
-    });
   }
 
   function cycleGrants(current: FriendGrants) {
