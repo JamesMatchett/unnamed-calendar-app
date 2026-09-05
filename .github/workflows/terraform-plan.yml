@@ -113,6 +113,38 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
+      # TEMPORARY, remove once the OIDC chain is proven. AWS answers every
+      # trust failure with the same sentence and refuses to say which condition
+      # failed: a missing role, a wrong account, a mismatched sub and a bad
+      # audience are indistinguishable from the outside. So read both sides out
+      # loud instead of inferring them — the ARN this job is about to assume,
+      # and the claims GitHub actually minted for it.
+      #
+      # The token itself is never echoed. Only its middle segment is decoded,
+      # which is the claim set: public information, and unusable on its own.
+      - name: what this job is sending
+        env:
+          ROLE: arn:aws:iam::${{ matrix.account_id }}:role/${{ env.PROJECT }}-${{ matrix.environment }}-ci-plan
+        run: |
+          # Square brackets so trailing whitespace in the repository variable is
+          # visible rather than invisible, which is the failure mode that looks
+          # exactly like a correct value.
+          echo "role-to-assume: [$ROLE]"
+
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "no id-token request URL: the id-token: write permission did not reach this job"
+            exit 0
+          fi
+
+          token=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" | jq -r '.value')
+          payload=$(printf '%s' "$token" | cut -d. -f2)
+          # base64url, and base64 -d wants the padding back on.
+          pad=$(( (4 - ${#payload} % 4) % 4 ))
+          while [ "$pad" -gt 0 ]; do payload="${payload}="; pad=$((pad - 1)); done
+          printf '%s' "$payload" | tr '_-' '/+' | base64 -d \
+            | jq '{iss, aud, sub, repository, repository_owner, event_name, ref}'
+
       - name: assume plan role
         uses: aws-actions/configure-aws-credentials@v4
         with:
