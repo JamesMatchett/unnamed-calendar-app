@@ -13,3 +13,11 @@ web-build/
 # The zip archive_file builds from the Lambda bundle. Derived from dist/, which
 # is also ignored, and rebuilt by every plan.
 .build/
+
+# Private keys, so that a hurried `git add -A` cannot commit one. Apple's .p8
+# downloads exactly once and signs the client secrets for Sign in with Apple;
+# a key in git history is a key you have to revoke, not one you can delete.
+*.p8
+*.pem
+*.key
+*.mobileprovision
