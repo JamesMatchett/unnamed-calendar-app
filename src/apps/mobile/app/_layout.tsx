@@ -108,8 +108,11 @@ export default function RootLayout() {
           name="calendar/[calendarId]/settings"
           options={{ title: "Calendar settings" }}
         />
-        {/* Where universal links land: calandder.com/join/<token> (§7.1). */}
+        <Stack.Screen name="connect" options={{ presentation: "modal" }} />
+        {/* Where universal links land: calandder.com/join/<token> (§7.1) and
+            calandder.com/add/<handle> (§7.3). */}
         <Stack.Screen name="join/[token]" options={{ presentation: "modal" }} />
+        <Stack.Screen name="add/[handle]" options={{ presentation: "modal" }} />
       </Stack>
     </SafeAreaProvider>
     </ThemeProvider>

@@ -27,3 +27,4 @@ export * from "./lifecycle.js";
 export * from "./monthgrid.js";
 export * from "./devicesync.js";
 export * from "./reminders.js";
+export * from "./handles.js";

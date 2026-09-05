@@ -22,7 +22,6 @@ import {
   sendFriendRequest,
 } from "@/db/repo";
 import { formatDateRange, formatEventTime } from "@/lib/format";
-import { shareAppInvite } from "@/lib/share";
 import { useQuery } from "@/lib/useQuery";
 import { radius, space, type, useTheme } from "@/theme";
 
@@ -62,14 +61,15 @@ export default function PeopleScreen() {
     router.push({ pathname: "/person/[userId]", params: { userId } });
 
   /**
-   * The OS share sheet rather than an in-app invite form: the person being
-   * invited is not in Cal&der, so the only way to reach them is whatever the two
-   * of them already use. Anything we built here would be a worse WhatsApp.
+   * Your own code, which carries the share sheet with it.
    *
-   * Shared as a link rather than a sentence containing one, so the sheet offers
-   * the people and the messaging apps this person actually uses. See lib/share.
+   * This used to open the sheet directly. That covers somebody you are
+   * messaging and misses the commonest case entirely: two people stood next to
+   * each other, where the natural move is to hold up a phone. The code screen
+   * does both, and putting the sheet one tap further away costs the remote case
+   * almost nothing.
    */
-  const inviteToApp = shareAppInvite;
+  const inviteToApp = () => router.push("/connect");
 
   return (
     <>
@@ -222,7 +222,7 @@ export default function PeopleScreen() {
               keeping it visible the rest of the time means nobody has to search
               for a person they know is missing to find it. */}
           <Pressable
-            onPress={() => void inviteToApp()}
+            onPress={inviteToApp}
             accessibilityRole="button"
             style={{
               flexDirection: "row",
@@ -233,7 +233,7 @@ export default function PeopleScreen() {
           >
             <Ionicons name="person-add-outline" size={15} color={t.color.accent} />
             <Text style={{ ...type.caption, color: t.color.accent }}>
-              Invite someone to the app
+              Show my code, or invite someone
             </Text>
           </Pressable>
 
@@ -242,7 +242,7 @@ export default function PeopleScreen() {
               <Card style={{ gap: space.sm }}>
                 <Muted>Nobody matching "{query.trim()}".</Muted>
                 <Pressable
-                  onPress={() => void inviteToApp()}
+                  onPress={inviteToApp}
                   accessibilityRole="button"
                 >
                   <Text style={{ ...type.label, color: t.color.accent }}>

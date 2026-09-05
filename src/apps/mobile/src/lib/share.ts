@@ -1,3 +1,4 @@
+import { normaliseHandle } from "@calder/core";
 import { Platform, Share } from "react-native";
 
 import { SITE } from "@/config";
@@ -10,6 +11,28 @@ import { SITE } from "@/config";
  * TestFlight it points there instead. See site/get/index.html.
  */
 export const APP_INVITE_URL = `${SITE}/get`;
+
+/**
+ * A link that adds you as a friend, or installs the app trying (§7.1, §7.3).
+ *
+ * One URL doing both jobs, which is the whole point of a universal link: the
+ * phone hands it to Cal&der if Cal&der is installed, and to the browser if it
+ * is not, where site/add/index.html sends them on to the store. A store link
+ * on the QR would be useless to the people most likely to scan it, who already
+ * have the app; an app-scheme link would be a dead end for everybody else.
+ *
+ * The name rides along in the query string because there is no server to ask
+ * who a handle belongs to. It is a display hint, chosen by whoever made the
+ * code, and nothing treats it as proof: the handle is the part that gets
+ * verified once there is something to verify it against.
+ */
+export const friendUrl = (handle: string, displayName: string): string =>
+  // Normalised on the way in as well as on the way out. A stored handle can
+  // never contain anything that needs escaping, so this changes nothing today;
+  // it means the URL cannot become the one place a bad handle gets through,
+  // which is the sort of thing that is only ever noticed by the person whose
+  // code silently adds the wrong account.
+  `${SITE}/add/${normaliseHandle(handle)}?n=${encodeURIComponent(displayName.trim().slice(0, 60))}`;
 
 /**
  * Sharing a link, in the shape the OS wants it.

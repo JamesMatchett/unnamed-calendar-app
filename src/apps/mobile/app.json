@@ -36,6 +36,11 @@
               "scheme": "https",
               "host": "calandder.com",
               "pathPrefix": "/join"
+            },
+            {
+              "scheme": "https",
+              "host": "calandder.com",
+              "pathPrefix": "/add"
             }
           ],
           "category": [

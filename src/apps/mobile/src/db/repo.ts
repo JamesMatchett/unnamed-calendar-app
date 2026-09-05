@@ -24,6 +24,7 @@ import {
   DEFAULT_NOTIFY_PREFS,
   DEFAULT_SYNC_PREFS,
   SERIES_DEFAULT,
+  normaliseHandle,
   classifyPresence,
   isActionable,
   newCalendarId,
@@ -538,6 +539,58 @@ export function sendFriendRequest(userId: string): void {
     [userId, new Date().toISOString()],
   );
   notifyChanged();
+}
+
+/** One person by their exact handle, however it was written. */
+export function personByHandle(handle: string): PersonRow | null {
+  const tag = normaliseHandle(handle);
+  if (tag.length === 0) return null;
+  return (
+    getDb().getFirstSync<PersonRow>(`${PERSON_SELECT} WHERE d.handle = ?`, [tag]) ??
+    null
+  );
+}
+
+export const isMe = (handle: string): boolean =>
+  personByHandle(handle)?.user_id === CURRENT_USER_ID;
+
+/**
+ * Somebody scanned from a code, who this phone has never heard of (§7.3).
+ *
+ * In a finished app this would not exist: the handle would go to the server,
+ * which knows who it belongs to. There is no server, so the code carries the
+ * name as well as the handle and this writes both down locally, which is what
+ * makes scanning work between two people in the same room today.
+ *
+ * The user id is derived from the handle rather than random, so scanning the
+ * same code twice updates one row instead of making a second person. It is
+ * marked local: when sync arrives, these rows are claims to be reconciled
+ * against real accounts, not accounts themselves, and a prefix is how that
+ * reconciliation will find them.
+ *
+ * The name is a hint, from the code, chosen by whoever made it. The handle is
+ * the part that will be verified later, so nothing here treats the name as
+ * proof of anything.
+ */
+export function rememberScannedPerson(handle: string, displayName: string): string | null {
+  const tag = normaliseHandle(handle);
+  if (tag.length === 0) return null;
+
+  const existing = personByHandle(tag);
+  if (existing) return existing.user_id;
+
+  const db = getDb();
+  const userId = `local:${tag}`;
+  const name = displayName.trim().slice(0, 60) || `&${tag}`;
+
+  db.runSync(
+    `INSERT INTO directory (user_id, handle, display_name, email)
+     VALUES (?,?,?,NULL)
+     ON CONFLICT (user_id) DO UPDATE SET display_name = excluded.display_name`,
+    [userId, tag, name],
+  );
+  notifyChanged();
+  return userId;
 }
 
 export function acceptFriendRequest(userId: string): void {
@@ -2672,21 +2725,12 @@ export function setIdentity(displayName: string, handle: string): void {
   notifyChanged();
 }
 
-/** Lower case, letters, digits, dots and underscores, no leading sigil. */
-export function normaliseHandle(raw: string): string {
-  return raw
-    .trim()
-    .replace(/^[&@]+/, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9._]/g, "")
-    .slice(0, 24);
-}
-
-/** A first guess at a handle from a name: "Maya Okonkwo" -> "maya". */
-export function suggestHandle(displayName: string): string {
-  const first = displayName.trim().split(/\s+/)[0] ?? "";
-  return normaliseHandle(first);
-}
+// The rule lives in @calder/core: the same handle has to survive being typed
+// into a field, encoded into a QR code and read back off one, and three copies
+// of the regular expression is how a code that scans on one phone resolves to
+// somebody else on another. Re-exported so the screens keep importing it from
+// the place they already do.
+export { normaliseHandle, suggestHandle } from "@calder/core";
 
 // --- example data (alpha) ---------------------------------------------------
 
