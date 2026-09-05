@@ -162,6 +162,22 @@ apply. A human does it once with admin credentials.
 After that, CI owns it: pull requests plan all three environments, and merges to `main`
 apply dev → staging → prod in order.
 
+## Checking before you push
+
+`npm run verify` includes two infrastructure checks, and both say plainly when
+they could not do their job rather than passing quietly:
+
+- **`check:infra`** — names agree across Terraform and the workflows, no environment
+  is half configured, one region, one Terraform version. Also runs `fmt -check` when
+  `terraform` or `tofu` is on PATH.
+- **`check:workflows`** — [actionlint](https://github.com/rhysd/actionlint), if installed
+  (`brew install actionlint`).
+
+The second matters more than it looks. An invalid workflow is the one mistake CI
+cannot catch: GitHub rejects the file rather than running it, so there is no job and
+no log, only an annotation with a line number. Everything else fails somewhere you
+can read; this fails before there is anywhere to read.
+
 ## Conventions
 
 - **No long-lived AWS keys.** Everything authenticates by OIDC.

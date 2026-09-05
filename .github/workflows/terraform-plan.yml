@@ -32,6 +32,14 @@ jobs:
   fmt:
     name: fmt and validate
     runs-on: ubuntu-latest
+
+    # Which environments have an account behind them. Decided here rather than
+    # per job because a job-level `if` cannot see `matrix` — the matrix is
+    # expanded after that condition is evaluated — so the skip has to happen by
+    # building the matrix itself.
+    outputs:
+      environments: ${{ steps.configured.outputs.environments }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -53,27 +61,45 @@ jobs:
             echo "::endgroup::"
           done
 
+      # Repository variables are the record of which accounts exist. An
+      # environment with none is not ready, and is left out rather than run and
+      # failed: two permanently red jobs on every pull request is how a red
+      # check stops meaning anything.
+      - name: which environments are configured
+        id: configured
+        env:
+          DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          STAGING: ${{ vars.AWS_ACCOUNT_ID_STAGING }}
+          PROD: ${{ vars.AWS_ACCOUNT_ID_PROD }}
+        run: |
+          list='[]'
+          for pair in "dev:$DEV" "staging:$STAGING" "prod:$PROD"; do
+            name="${pair%%:*}"
+            account="${pair#*:}"
+            if [ -n "$account" ]; then
+              list=$(jq -cn --argjson l "$list" --arg e "$name" --arg a "$account" \
+                '$l + [{environment: $e, account_id: $a}]')
+            fi
+          done
+          echo "environments=$list" >> "$GITHUB_OUTPUT"
+          echo "configured: $list"
+
   plan:
     name: plan (${{ matrix.environment }})
     needs: fmt
     runs-on: ubuntu-latest
 
-    # Skip an environment whose account is not set up yet, rather than failing
-    # it. Dev exists first and staging and prod follow; without this, every pull
-    # request carries two permanently red jobs, which is how a red check stops
-    # meaning anything.
-    if: vars[matrix.account_var] != ''
+    # An empty matrix is an error rather than an empty run, so the job is
+    # skipped outright when nothing is configured. `needs` is readable here;
+    # `matrix` is not.
+    if: needs.fmt.outputs.environments != '[]'
 
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - environment: dev
-            account_var: AWS_ACCOUNT_ID_DEV
-          - environment: staging
-            account_var: AWS_ACCOUNT_ID_STAGING
-          - environment: prod
-            account_var: AWS_ACCOUNT_ID_PROD
+        # Only the environments that exist, each carrying its own account id, so
+        # nothing here has to look a variable up by a name built at runtime.
+        include: ${{ fromJSON(needs.fmt.outputs.environments) }}
 
     # A plan takes the state lock, so never run two against one environment.
     concurrency:
@@ -91,7 +117,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: arn:aws:iam::${{ vars[matrix.account_var] }}:role/${{ env.PROJECT }}-${{ matrix.environment }}-ci-plan
+          role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/${{ env.PROJECT }}-${{ matrix.environment }}-ci-plan
           role-session-name: gha-plan-${{ matrix.environment }}-${{ github.run_id }}
 
       - name: terraform init
