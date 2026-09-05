@@ -4,7 +4,7 @@ import { Platform } from "react-native";
 
 import { LOCAL_ONLY } from "@/config";
 import { apiConfig, me, type ApiConfig } from "@/lib/api";
-import { saveSession } from "@/lib/session";
+import { clearSession, loadSession, saveSession } from "@/lib/session";
 
 // Closes the authentication sheet when the redirect comes back. Without it the
 // sheet stays open behind the app and the promise never settles.
@@ -188,9 +188,59 @@ export async function signIn(provider: Provider): Promise<Account | null> {
   // screen asks.
   const profile = await me(tokens.idToken);
 
+  // The response, not the token. Cognito holds the name on the user, so if it
+  // is null here the claim is not reaching the ID token; if it is present here
+  // the loss is further up, in the screen. Nothing secret: a name and a relay
+  // address the person just typed into Apple's own sheet.
+  if (__DEV__) console.log(`[auth] me = ${JSON.stringify(profile)}`);
+
   return {
     provider,
     displayName: profile.ok ? profile.value.name : null,
     email: profile.ok ? profile.value.email : null,
   };
+}
+
+/**
+ * Signing out.
+ *
+ * Two halves, and only one of them can fail. Cognito is asked to revoke the
+ * refresh token, which is what stops it being usable by anyone who has a copy;
+ * `enable_token_revocation` on the client is what makes that request mean
+ * something. Then the Keychain is cleared, which is what stops it being usable
+ * here.
+ *
+ * The revoke is best effort ON PURPOSE. Somebody signing out on a train has to
+ * end up signed out, and a network error must not leave the token sitting in
+ * the Keychain because a request failed. Clearing locally always happens; the
+ * revoke is the part that also protects a token already exfiltrated, which is
+ * the rarer case.
+ *
+ * The ID token is not revoked because it cannot be: it is valid until it
+ * expires, an hour at most, and nothing can recall it. That is the trade the
+ * whole design makes by validating tokens at the gateway rather than looking
+ * them up.
+ */
+export async function signOut(): Promise<void> {
+  const session = await loadSession();
+
+  if (session?.refreshToken != null) {
+    try {
+      const config = await apiConfig();
+      if (config.ok) {
+        await fetch(`https://${config.value.authDomain}/oauth2/revoke`, {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            token: session.refreshToken,
+            client_id: config.value.clientId,
+          }).toString(),
+        });
+      }
+    } catch {
+      // Offline, or Cognito unreachable. The local half below still runs.
+    }
+  }
+
+  await clearSession();
 }
