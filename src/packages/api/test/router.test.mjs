@@ -6,7 +6,7 @@ import { test } from "node:test";
 // artifact Terraform zips and Lambda runs, so testing anything else would leave
 // the one thing that actually ships untested — and the bundler is a real part
 // of the build, with real ways to go wrong.
-import { handler, route } from "../dist/index.mjs";
+import { UID_CLAIM, handler, route } from "../dist/index.mjs";
 
 const BUNDLE = new URL("../dist/index.mjs", import.meta.url);
 
@@ -56,9 +56,21 @@ test("me returns the verified subject", () => {
   assert.deepEqual(body(result), { sub: "abc-123", userId: null, tokenUse: "access" });
 });
 
-test("me reports the ULID claim once something injects it", () => {
-  const claims = { sub: "abc-123", "custom:uid": "01K4ABCDEFGHJKMNPQRSTVWXYZ" };
+test("me reports the ULID the Pre Token Generation trigger injects", () => {
+  // UID_CLAIM rather than the literal, because the name is shared with the
+  // trigger that writes it and this test found the drift the one time it was
+  // hard-coded: the claim was renamed from `custom:uid` to `uid` — `custom:`
+  // implies a pool attribute, and §3.2 keeps the pool thin — and the handler
+  // moved while this did not.
+  const claims = { sub: "abc-123", [UID_CLAIM]: "01K4ABCDEFGHJKMNPQRSTVWXYZ" };
   assert.equal(body(route(request("GET /v1/me", claims))).userId, "01K4ABCDEFGHJKMNPQRSTVWXYZ");
+});
+
+test("a claim under the old name is not read", () => {
+  // Belt and braces on the rename: a token minted before it would report no
+  // user rather than the wrong one, which is the safe direction.
+  const claims = { sub: "abc-123", "custom:uid": "01K4ABCDEFGHJKMNPQRSTVWXYZ" };
+  assert.equal(body(route(request("GET /v1/me", claims))).userId, null);
 });
 
 test("me distinguishes a detached authoriser from a missing token", () => {
