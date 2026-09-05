@@ -11,9 +11,8 @@ import {
   todayIn,
 } from "@calder/core";
 import type { ReactNode } from "react";
-import { useMemo, useRef, useState } from "react";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { Pressable, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { PanResponder, Pressable, Text, View } from "react-native";
 
 import { radius, space, type, useTheme } from "@/theme";
 
@@ -30,6 +29,10 @@ import { radius, space, type, useTheme } from "@/theme";
  */
 
 const WEEKDAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
+
+const ROW_HEIGHT = 38;
+/** Long enough not to fire while scrolling past, short enough not to feel stuck. */
+const HOLD_MS = 220;
 
 export function TripDatePicker({
   value,
@@ -129,7 +132,7 @@ export function TripDatePicker({
                 accessibilityLabel={`${date}${within ? "" : ", outside the calendar's dates"}`}
                 style={{
                   flex: 1,
-                  height: 38,
+                  height: ROW_HEIGHT,
                   alignItems: "center",
                   justifyContent: "center",
                   borderRadius: radius.sm,
@@ -217,74 +220,142 @@ export function RangeCalendar({
   const [width, setWidth] = useState(0);
   /** Which end the finger is carrying, or null when nobody is dragging. */
   const [dragging, setDragging] = useState<RangeField | null>(null);
+  /** The hold has registered, but the finger has not moved yet. */
+  const [holding, setHolding] = useState<RangeField | null>(null);
 
   /**
    * Hold an end, then drag it.
    *
    * Tapping already moves whichever end is highlighted, which is quick but
-   * says nothing about the range you are shaping. Dragging an end is the
-   * gesture the picture invites: the bar grows and shrinks under your finger,
-   * so the length is something you feel rather than read.
+   * says nothing about the range being shaped. Dragging an end is the gesture
+   * the picture invites: the bar grows and shrinks under the finger, so the
+   * length of the trip is felt rather than read.
    *
    * It waits for a hold rather than starting on contact, because this grid
    * lives inside a scrolling form: a drag that began the moment a finger
-   * touched a date would swallow every attempt to scroll past it. The hold is
-   * also what makes the two gestures distinct, so a tap stays a tap.
+   * landed on a date would swallow every attempt to scroll past it. The hold
+   * is also what keeps a tap a tap.
    *
-   * The live values are kept in a ref as well as in state: a gesture callback
-   * closes over the render that created it, and reading `range` from there
-   * would move the end relative to where it was when the drag started rather
-   * than where it is now.
+   * PanResponder rather than a gesture library, deliberately. The modern
+   * gesture API needs a native module version that has to match whatever the
+   * host app was built with, and in Expo Go it does not: the JS calls a native
+   * method the bundled binary has never heard of. PanResponder is part of React
+   * Native itself, so there is no version to line up, and this gesture is
+   * simple enough not to need anything cleverer.
    */
-  const live = useRef({ range, dragging: null as RangeField | null });
+  const live = useRef({
+    range,
+    field: null as RangeField | null,
+    /** When the finger went down, and where, in window coordinates. */
+    downAt: 0,
+    origin: { x: 0, y: 0 },
+  });
   live.current.range = range;
 
-  const hit = (x: number, y: number): string | null =>
+  const gridRef = useRef<View>(null);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (holdTimer.current) clearTimeout(holdTimer.current);
+    },
+    [],
+  );
+
+  const dayAt = (pageX: number, pageY: number): string | null =>
     width === 0
       ? null
-      : dayAtPoint({ x, y, width, rowHeight: 38, rowGap: 0, weeks });
+      : dayAtPoint({
+          x: pageX - live.current.origin.x,
+          y: pageY - live.current.origin.y,
+          width,
+          rowHeight: ROW_HEIGHT,
+          rowGap: 0,
+          weeks,
+        });
 
-  const drag = useMemo(
+  const responder = useMemo(
     () =>
-      Gesture.Pan()
-        .activateAfterLongPress(220)
-        .onBegin((e) => {
-          const day = hit(e.x, e.y);
-          const where = day ? positionIn(day, live.current.range) : "none";
-          // Only the ends are draggable. Grabbing the middle of the bar to
-          // slide the whole range is a different gesture and a different
-          // promise, and offering it by accident would move both dates.
-          live.current.dragging =
-            where === "start" || where === "only"
-              ? "start"
-              : where === "end"
-                ? "end"
-                : null;
-        })
-        .onStart(() => {
-          if (live.current.dragging) setDragging(live.current.dragging);
-        })
-        .onUpdate((e) => {
-          const field = live.current.dragging;
+      PanResponder.create({
+        /**
+         * Capture, and deliberately return false: this watches the touch begin
+         * without claiming it, so the day underneath still handles a tap and
+         * the form still scrolls.
+         *
+         * The grid is measured here rather than at layout because it sits in a
+         * scroll view, where its position on screen changes without any layout
+         * happening at all.
+         */
+        onStartShouldSetPanResponderCapture: (e) => {
+          const { pageX, pageY } = e.nativeEvent;
+          live.current.downAt = Date.now();
+          live.current.field = null;
+          if (holdTimer.current) clearTimeout(holdTimer.current);
+
+          gridRef.current?.measureInWindow((x, y) => {
+            live.current.origin = { x, y };
+            const day = dayAt(pageX, pageY);
+            const where = day ? positionIn(day, live.current.range) : "none";
+            // Only the ends are draggable. Grabbing the middle of the bar to
+            // slide the whole range is a different gesture and a different
+            // promise, and offering it by accident would move both dates.
+            live.current.field =
+              where === "start" || where === "only"
+                ? "start"
+                : where === "end"
+                  ? "end"
+                  : null;
+
+            // Purely so the hold is visibly acknowledged before anything
+            // moves. The drag itself is gated on elapsed time, not on this.
+            if (live.current.field) {
+              holdTimer.current = setTimeout(
+                () => setHolding(live.current.field),
+                HOLD_MS,
+              );
+            }
+          });
+          return false;
+        },
+
+        // A drag is a move that comes after a hold on one of the ends. Moving
+        // sooner than that is somebody scrolling the form.
+        onMoveShouldSetPanResponder: () =>
+          live.current.field !== null && Date.now() - live.current.downAt >= HOLD_MS,
+
+        onPanResponderGrant: () => setDragging(live.current.field),
+
+        onPanResponderMove: (e) => {
+          const field = live.current.field;
           if (!field) return;
-          const day = hit(e.x, e.y);
+          const day = dayAt(e.nativeEvent.pageX, e.nativeEvent.pageY);
           // Off the grid: hold the last good day rather than snapping the end
           // somewhere arbitrary or dropping the drag.
           if (!day) return;
           const next = moveEndpoint(live.current.range, field, day);
-          if (next.range.start === live.current.range.start &&
-              next.range.end === live.current.range.end) return;
-          live.current.dragging = next.field;
+          if (
+            next.range.start === live.current.range.start &&
+            next.range.end === live.current.range.end
+          ) {
+            return;
+          }
+          // After a swap the day under the finger is the OTHER end, and the
+          // drag has to follow it or the finger ends up moving the wrong date.
+          live.current.field = next.field;
           setDragging(next.field);
           onChange({ range: next.range, editing: next.field });
-        })
-        .onFinalize(() => {
-          live.current.dragging = null;
+        },
+
+        onPanResponderEnd: () => {
+          live.current.field = null;
+          if (holdTimer.current) clearTimeout(holdTimer.current);
           setDragging(null);
-        })
-        .runOnJS(true),
+          setHolding(null);
+        },
+      }),
     [weeks, width, onChange],
   );
+
+  const carrying = dragging ?? holding;
 
   return (
     <Frame
@@ -292,17 +363,20 @@ export function RangeCalendar({
       onShift={(delta) => setVisible(shiftMonthBy(visible, delta))}
       footer={
         <Text style={{ ...type.caption, color: t.color.textMuted }}>
-          {dragging
+          {carrying
             ? `${nights(range)}. Let go to keep it.`
             : `${nights(range)}. Tap a day to move whichever of Starts or Ends is highlighted, or hold one end and drag it.`}
         </Text>
       }
     >
-      <GestureDetector gesture={drag}>
-        {/* No gap between the rows: the bar has to be continuous down a week
-            boundary as well as across one, and the drag arithmetic wants a
-            grid it can divide rather than one with holes in it. */}
-        <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+      {/* No gap between the rows: the bar has to be continuous down a week
+          boundary as well as across one, and the drag arithmetic wants a grid
+          it can divide rather than one with holes in it. */}
+      <View
+        ref={gridRef}
+        onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+        {...responder.panHandlers}
+      >
       {weeks.map((week, wi) => (
         <View key={wi} style={{ flexDirection: "row" }}>
           {week.map((date, di) => {
@@ -332,7 +406,7 @@ export function RangeCalendar({
                 accessibilityLabel={label(date, where)}
                 style={{
                   flex: 1,
-                  height: 38,
+                  height: ROW_HEIGHT,
                   alignItems: "center",
                   justifyContent: "center",
                   backgroundColor: isEnd
@@ -343,7 +417,7 @@ export function RangeCalendar({
                   // The end being carried is ringed rather than moved or
                   // scaled: it is already under a fingertip, so the feedback
                   // has to survive being covered by one.
-                  borderWidth: dragging === where ? 2 : 0,
+                  borderWidth: carrying === where ? 2 : 0,
                   borderColor: t.color.text,
                   borderTopLeftRadius: round("left"),
                   borderBottomLeftRadius: round("left"),
@@ -382,8 +456,7 @@ export function RangeCalendar({
           })}
         </View>
       ))}
-        </View>
-      </GestureDetector>
+      </View>
     </Frame>
   );
 }
