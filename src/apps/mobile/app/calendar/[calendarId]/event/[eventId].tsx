@@ -1,8 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import type { RsvpStatus, TicketStatus } from "@calder/core";
-import { canEditEvent } from "@calder/core";
+import { canEditEvent, deleteStep } from "@calder/core";
 import { Link, Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { Linking, Pressable, ScrollView, Text, View } from "react-native";
+import { Alert, Linking, Pressable, ScrollView, Text, View } from "react-native";
 
 import { Cover } from "@/components/Cover";
 import { RsvpControl } from "@/components/RsvpControl";
@@ -11,6 +11,7 @@ import { TicketControl } from "@/components/TicketControl";
 import { Card, EmptyState, Muted } from "@/components/ui";
 import {
   clearRsvp,
+  deleteEvent,
   getCalendar,
   getEvent,
   listInvitesSentForEvent,
@@ -20,6 +21,7 @@ import {
   listSlots,
   myMembership,
   resolveForUser,
+  setEventCancelled,
   setMyTicketStatus,
   setRsvp,
   tallyForEvent,
@@ -75,6 +77,19 @@ export default function EventScreen() {
   const author = members.find((m) => m.user_id === event.created_by);
   /** A calendar of one. The same rule the agenda rows use. */
   const solo = members.length <= 1;
+  const removal = deleteStep({
+    status: event.status,
+    solo,
+    // Whether they could edit it if it were active: the cancelled check is
+    // deliberately NOT applied here, or a called-off event could never be
+    // removed by the person who called it off.
+    allowed: canEditEvent({
+      createdBy: event.created_by,
+      userId: CURRENT_USER_ID,
+      role: me?.role ?? null,
+      status: "active",
+    }),
+  });
   const sent = useQuery(`sent-invites:${eventId}`, () =>
     listInvitesSentForEvent(eventId),
   );
@@ -421,6 +436,54 @@ export default function EventScreen() {
         ) : null}
 
         {author ? <Muted>Added by {author.display_name}</Muted> : null}
+
+        {/* Removing for good (§8.2, §8.4). In a shared calendar this only
+            appears once the event has been called off, so the two-step that
+            stops one tap destroying something people organised around is
+            kept; in a calendar of one there is nobody to warn, so it is here
+            from the start. Bringing a called-off event back sits beside it,
+            because the same people who can remove it are the ones who might
+            have called it off by mistake. */}
+        {removal === "delete" ? (
+          <View style={{ gap: space.xs, paddingTop: space.md }}>
+            {event.status === "cancelled" && !solo ? (
+              <Pressable
+                onPress={() => setEventCancelled(eventId, false)}
+                accessibilityRole="button"
+              >
+                <Text style={{ ...type.label, color: t.color.accent, textAlign: "center", paddingVertical: space.md }}>
+                  Bring it back
+                </Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              onPress={() =>
+                Alert.alert(
+                  `Remove ${event.title}?`,
+                  solo
+                    ? "It goes for good. Nobody else can see it, so there is nobody to tell."
+                    : "It disappears from the calendar for everyone, along with everyone's answers. This can't be undone.",
+                  [
+                    { text: "Keep it", style: "cancel" },
+                    {
+                      text: "Remove",
+                      style: "destructive",
+                      onPress: () => {
+                        deleteEvent(eventId);
+                        router.back();
+                      },
+                    },
+                  ],
+                )
+              }
+              accessibilityRole="button"
+            >
+              <Text style={{ ...type.label, color: t.color.danger, textAlign: "center", paddingVertical: space.md }}>
+                Remove this event
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
       </ScrollView>
     </>
   );

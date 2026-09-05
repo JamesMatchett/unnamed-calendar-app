@@ -16,8 +16,10 @@ import { Cover, CoverPlaceholder } from "@/components/Cover";
 import { SlotDialog } from "@/components/SlotDialog";
 import { EmptyState, Group, Muted } from "@/components/ui";
 import {
+  deleteEvent,
   getCalendar,
   getEvent,
+  listMembers,
   myMembership,
   proposeSlot,
   startPoll,
@@ -77,6 +79,7 @@ export default function EditEventScreen() {
   const event = useQuery(`event:${eventId}`, () => getEvent(eventId));
   const calendar = useQuery(`calendar:${calendarId}`, () => getCalendar(calendarId));
   const me = useQuery(`me:${calendarId}`, () => myMembership(calendarId));
+  const members = useQuery(`members:${calendarId}`, () => listMembers(calendarId));
 
   const tz = event?.tz ?? calendar?.default_tz ?? "Europe/London";
 
@@ -183,6 +186,24 @@ export default function EditEventScreen() {
       imageKey,
     });
     router.back();
+  };
+
+  const solo = members.length <= 1;
+
+  const removeEvent = () => {
+    Alert.alert(`Remove ${event.title}?`, "It goes for good.", [
+      { text: "Keep it", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: () => {
+          deleteEvent(event.event_id);
+          // Two screens deep: the edit sheet and the event under it, both
+          // now about something that does not exist.
+          router.dismissAll();
+        },
+      },
+    ]);
   };
 
   const cancelEvent = () => {
@@ -373,8 +394,13 @@ export default function EditEventScreen() {
         <PrimaryButton label="Save changes" onPress={save} disabled={!valid} />
 
         {/* Calling it off lives here rather than on the event, where it would sit
-            next to the RSVP buttons and get tapped by mistake. */}
-        <Pressable onPress={cancelEvent} accessibilityRole="button">
+            next to the RSVP buttons and get tapped by mistake. In a calendar
+            of one there is nobody to call it off TO, so the only sensible
+            reverse is removal. */}
+        <Pressable
+          onPress={solo ? removeEvent : cancelEvent}
+          accessibilityRole="button"
+        >
           <Text
             style={{
               ...type.label,
@@ -383,7 +409,7 @@ export default function EditEventScreen() {
               paddingVertical: space.md,
             }}
           >
-            Call this event off
+            {solo ? "Remove this event" : "Call this event off"}
           </Text>
         </Pressable>
 

@@ -1,7 +1,15 @@
 import { Platform, Share } from "react-native";
 
-/** Where somebody who has not got the app yet is sent. */
-export const APP_INVITE_URL = "https://calder.app/get";
+import { SITE } from "@/config";
+
+/**
+ * Where somebody who has not got the app yet is sent.
+ *
+ * A page on the domain rather than a store link, because the store depends on
+ * the phone at the other end: the page works that out, and while the app is in
+ * TestFlight it points there instead. See site/get/index.html.
+ */
+export const APP_INVITE_URL = `${SITE}/get`;
 
 /**
  * Sharing a link, in the shape the OS wants it.

@@ -11,12 +11,13 @@ import {
   myMembership,
   rotateInviteLink,
 } from "@/db/repo";
+import { SITE } from "@/config";
 import { shareLink } from "@/lib/share";
 import { useQuery } from "@/lib/useQuery";
 import { radius, space, type, useTheme } from "@/theme";
 
 /** Where a scanned or tapped invite lands. Universal links point here (§7.1). */
-const inviteUrl = (token: string) => `https://calder.app/join/${token}`;
+const inviteUrl = (token: string) => `${SITE}/join/${token}`;
 
 /**
  * The share screen.

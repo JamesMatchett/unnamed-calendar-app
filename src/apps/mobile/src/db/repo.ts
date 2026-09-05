@@ -29,7 +29,13 @@ import {
 import type { Appearance } from "@/theme";
 
 import { getDb, notifyChanged } from "./client";
-import { CURRENT_USER_ID, OWN_PLANS_ID } from "./seed";
+import {
+  CURRENT_USER_ID,
+  ensureOwnPlans,
+  fixturesWanted,
+  loadFixtures,
+  OWN_PLANS_ID,
+} from "./seed";
 
 export interface CalendarRow {
   calendar_id: string;
@@ -143,7 +149,7 @@ export function listAgenda(limit = 100): (EventRow & { calendar_name: string })[
        FROM events e
        JOIN calendars c ON c.calendar_id = e.calendar_id
        JOIN members m ON m.calendar_id = e.calendar_id AND m.user_id = ?
-      WHERE m.status = 'active' AND e.start_utc >= ?
+      WHERE m.status = 'active' AND c.status = 'active' AND e.start_utc >= ?
       ORDER BY e.start_utc
       LIMIT ?`,
     [CURRENT_USER_ID, new Date().toISOString(), limit],
@@ -809,10 +815,26 @@ export function setMemberStatus(
   userId: string,
   status: "left" | "removed",
 ): void {
-  getDb().runSync(
-    "UPDATE members SET status = ? WHERE calendar_id = ? AND user_id = ?",
-    [status, calendarId, userId],
-  );
+  const db = getDb();
+  const now = new Date().toISOString();
+  db.withTransactionSync(() => {
+    db.runSync(
+      "UPDATE members SET status = ? WHERE calendar_id = ? AND user_id = ?",
+      [status, calendarId, userId],
+    );
+    // Queued like every other write, so leaving on a plane still leaves.
+    db.runSync(
+      `INSERT OR REPLACE INTO mutation_queue (mutation_id, calendar_id, method, path, body, queued_at)
+       VALUES (?,?, 'DELETE', ?, ?, ?)`,
+      [
+        `member:${calendarId}:${userId}:${status}`,
+        calendarId,
+        `/v1/calendars/${calendarId}/members/${userId}`,
+        JSON.stringify({ status }),
+        now,
+      ],
+    );
+  });
   notifyChanged();
 }
 
@@ -1254,7 +1276,8 @@ export function listAgendaBetween(
        FROM events e
        JOIN calendars c ON c.calendar_id = e.calendar_id
        JOIN members m ON m.calendar_id = e.calendar_id AND m.user_id = ?
-      WHERE m.status = 'active' AND e.start_utc >= ? AND e.start_utc < ?
+      WHERE m.status = 'active' AND c.status = 'active'
+        AND e.start_utc >= ? AND e.start_utc < ?
       ORDER BY e.start_utc`,
     [CURRENT_USER_ID, fromUtc, toUtc],
   );
@@ -1291,10 +1314,11 @@ export function rsvpCountsByDay(
   }>(
     `SELECT e.start_utc AS start_utc, e.status AS event_status, r.status AS status
        FROM events e
+       JOIN calendars c ON c.calendar_id = e.calendar_id
        JOIN members m ON m.calendar_id = e.calendar_id AND m.user_id = ?
        LEFT JOIN rsvps r
          ON r.event_id = e.event_id AND r.user_id = ? AND r.occurrence = ?
-      WHERE m.status = 'active'
+      WHERE m.status = 'active' AND c.status = 'active'
         AND e.start_utc >= ? AND e.start_utc < ?`,
     [CURRENT_USER_ID, CURRENT_USER_ID, SERIES_DEFAULT, fromUtc, toUtc],
   );
@@ -2359,5 +2383,164 @@ export function answerEventInvite(inviteId: string, accept: boolean): void {
       [accept ? "accepted" : "declined", now, copyId, inviteId],
     );
   });
+  notifyChanged();
+}
+
+// --- undoing things (§8.4) ----------------------------------------------------
+//
+// The reverse direction. Every one of these is a local write that lands at once
+// and queues for the server, exactly like creating; the difference is only in
+// what the queued mutation says.
+
+/**
+ * Remove an event for good.
+ *
+ * A hard delete locally, with everything hanging off it: answers, poll slots,
+ * votes, suggestions, and any invitations it was the subject of. The server
+ * keeps its own tombstones (§8.4); what the phone keeps is the mutation that
+ * asks it to.
+ */
+export function deleteEvent(eventId: string): void {
+  const db = getDb();
+  const event = getEvent(eventId);
+  if (!event) return;
+  const now = new Date().toISOString();
+
+  db.withTransactionSync(() => {
+    for (const table of ["rsvps", "slot_votes", "event_slots", "suggestions", "event_invites"]) {
+      db.runSync(`DELETE FROM ${table} WHERE event_id = ?`, [eventId]);
+    }
+    db.runSync("DELETE FROM events WHERE event_id = ?", [eventId]);
+    db.runSync(
+      `INSERT OR REPLACE INTO mutation_queue (mutation_id, calendar_id, method, path, body, queued_at)
+       VALUES (?,?, 'DELETE', ?, '{}', ?)`,
+      [
+        `event:${eventId}:delete`,
+        event.calendar_id,
+        `/v1/calendars/${event.calendar_id}/events/${eventId}`,
+        now,
+      ],
+    );
+  });
+  notifyChanged();
+}
+
+/** How many active owners, for the last-owner rule. */
+export function ownerCount(calendarId: string): number {
+  return (
+    getDb().getFirstSync<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM members
+        WHERE calendar_id = ? AND role = 'owner' AND status = 'active'`,
+      [calendarId],
+    )?.n ?? 0
+  );
+}
+
+/**
+ * Delete a calendar, for everyone in it.
+ *
+ * A status change rather than a row deletion: every list already filters on
+ * status = 'active', and keeping the row means a departed calendar's events can
+ * still be reasoned about until the server confirms the tombstone. Its
+ * invitations and links are withdrawn at the same time, because a link into a
+ * deleted calendar is a door painted on a wall.
+ */
+export function deleteCalendar(calendarId: string): void {
+  const db = getDb();
+  const now = new Date().toISOString();
+  db.withTransactionSync(() => {
+    db.runSync("UPDATE calendars SET status = 'deleted' WHERE calendar_id = ?", [calendarId]);
+    db.runSync("DELETE FROM sent_invites WHERE calendar_id = ?", [calendarId]);
+    db.runSync("DELETE FROM invite_links WHERE calendar_id = ?", [calendarId]);
+    db.runSync("DELETE FROM join_requests WHERE calendar_id = ?", [calendarId]);
+    db.runSync(
+      `INSERT OR REPLACE INTO mutation_queue (mutation_id, calendar_id, method, path, body, queued_at)
+       VALUES (?,?, 'DELETE', ?, '{}', ?)`,
+      [`calendar:${calendarId}:delete`, calendarId, `/v1/calendars/${calendarId}`, now],
+    );
+  });
+  notifyChanged();
+}
+
+// --- who am I (alpha, local-only) -------------------------------------------
+//
+// There is no sign-in yet, so the first open asks for a name and a handle and
+// keeps them on the phone. Without this every tester is the same person with
+// the same handle, and nothing social can be tested at all.
+
+export function identityComplete(): boolean {
+  return (
+    getDb().getFirstSync<{ value: string }>(
+      "SELECT value FROM meta WHERE key = 'identity_set'",
+    )?.value === "1"
+  );
+}
+
+/**
+ * Name and handle, chosen once. Also stamps the name onto every membership
+ * row this person already has (their own plans was created before they were
+ * asked), so nothing anywhere still says "You".
+ */
+export function setIdentity(displayName: string, handle: string): void {
+  const db = getDb();
+  const name = displayName.trim();
+  const tag = normaliseHandle(handle);
+  db.withTransactionSync(() => {
+    updateProfile({ displayName: name, handle: tag });
+    db.runSync("UPDATE members SET display_name = ? WHERE user_id = ?", [name, CURRENT_USER_ID]);
+    db.runSync("INSERT OR REPLACE INTO meta (key, value) VALUES ('identity_set', '1')");
+  });
+  notifyChanged();
+}
+
+/** Lower case, letters, digits, dots and underscores, no leading sigil. */
+export function normaliseHandle(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^[&@]+/, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9._]/g, "")
+    .slice(0, 24);
+}
+
+/** A first guess at a handle from a name: "Maya Okonkwo" -> "maya". */
+export function suggestHandle(displayName: string): string {
+  const first = displayName.trim().split(/\s+/)[0] ?? "";
+  return normaliseHandle(first);
+}
+
+// --- example data (alpha) ---------------------------------------------------
+
+export function examplesLoaded(): boolean {
+  return fixturesWanted(getDb());
+}
+
+/** Pull in every example calendar, person and event. */
+export function loadExampleData(): void {
+  loadFixtures(getDb());
+  notifyChanged();
+}
+
+/**
+ * Wipe every calendar, event, person and answer, keeping who you are and how
+ * the app looks. Your own plans is recreated empty, because it is the one
+ * calendar that must always exist.
+ */
+export function clearAllData(): void {
+  const db = getDb();
+  db.withTransactionSync(() => {
+    for (const table of [
+      "availability", "rsvps", "slot_votes", "event_slots", "suggestions",
+      "event_invites", "events", "members", "calendars", "notifications",
+      "pending_invites", "friends", "mutation_queue", "sent_invites",
+      "invite_links", "join_requests",
+    ]) {
+      db.runSync(`DELETE FROM ${table}`);
+    }
+    // Everyone but me: my own directory row is my identity, not example data.
+    db.runSync("DELETE FROM directory WHERE user_id != ?", [CURRENT_USER_ID]);
+    db.runSync("INSERT OR REPLACE INTO meta (key, value) VALUES ('fixtures', '0')");
+  });
+  ensureOwnPlans(db);
   notifyChanged();
 }

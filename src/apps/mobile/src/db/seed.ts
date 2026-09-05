@@ -34,6 +34,15 @@ const isoDate = (offset: number): string => day(offset, 12).slice(0, 10);
  */
 export function seedIfEmpty(db: SQLite.SQLiteDatabase): void {
   ensureOwnPlans(db);
+  // Example data is a choice, not a default (alpha). A tester who installs
+  // this should start with their own empty calendar and pull the examples in
+  // from Settings if they want to explore; otherwise every phone shows Lisbon
+  // and Priya and nobody can tell what is real.
+  if (fixturesWanted(db)) loadFixtures(db);
+}
+
+/** Every example calendar, person and event. Idempotent: each part guards itself. */
+export function loadFixtures(db: SQLite.SQLiteDatabase): void {
   seedCalendars(db);
   seedInbox(db);
   seedPeople(db);
@@ -44,6 +53,35 @@ export function seedIfEmpty(db: SQLite.SQLiteDatabase): void {
   seedCancelled(db);
   seedBusyDay(db);
   seedThisWeek(db);
+  db.runSync("INSERT OR REPLACE INTO meta (key, value) VALUES ('fixtures', '1')");
+}
+
+/**
+ * Whether this install asked for the examples.
+ *
+ * A database that already holds them counts as having asked: installs from
+ * before this was a choice keep what they had rather than waking up empty.
+ */
+export function fixturesWanted(db: SQLite.SQLiteDatabase): boolean {
+  const flag = db.getFirstSync<{ value: string }>(
+    "SELECT value FROM meta WHERE key = 'fixtures'",
+  )?.value;
+  if (flag === "1") return true;
+  if (flag === "0") return false;
+  const legacy = db.getFirstSync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM calendars WHERE calendar_id = '01JC0CALLISBON0000000000'",
+  );
+  return (legacy?.n ?? 0) > 0;
+}
+
+/** The name the current user chose, or a placeholder until they have. */
+export function myDisplayName(db: SQLite.SQLiteDatabase): string {
+  return (
+    db.getFirstSync<{ display_name: string }>(
+      "SELECT display_name FROM directory WHERE user_id = ?",
+      [CURRENT_USER_ID],
+    )?.display_name ?? "You"
+  );
 }
 
 
@@ -59,12 +97,16 @@ export const OWN_PLANS_ID = "01JC0CALSOLO000000000000";
  * on its own existence, so it survives a fixture reset and a user who deletes
  * every other calendar.
  */
-function ensureOwnPlans(db: SQLite.SQLiteDatabase): void {
+export function ensureOwnPlans(db: SQLite.SQLiteDatabase): void {
   const exists = db.getFirstSync<{ n: number }>(
     "SELECT COUNT(*) AS n FROM calendars WHERE calendar_id = ?",
     [OWN_PLANS_ID],
   );
   if ((exists?.n ?? 0) > 0) return;
+
+  // The phone's own zone, not London's: a personal calendar in the wrong zone
+  // puts every plan an hour out for anyone who is not in the UK.
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/London";
 
   db.withTransactionSync(() => {
     db.runSync(
@@ -72,13 +114,13 @@ function ensureOwnPlans(db: SQLite.SQLiteDatabase): void {
          collect_availability, travel_mode, require_approval, allow_member_invites,
          allow_member_events, is_private, status, created_by, created_at, last_seq)
        VALUES (?, 'My own plans', 'Things only I would say yes to.', 'continuous',
-               'Europe/London', 0, 'walk', 1, 0, 1, 1, 'active', ?, ?, 0)`,
-      [OWN_PLANS_ID, CURRENT_USER_ID, new Date().toISOString()],
+               ?, 0, 'walk', 1, 0, 1, 1, 'active', ?, ?, 0)`,
+      [OWN_PLANS_ID, tz, CURRENT_USER_ID, new Date().toISOString()],
     );
     db.runSync(
       `INSERT INTO members (calendar_id, user_id, role, status, display_name, joined_at)
-       VALUES (?,?, 'owner', 'active', 'James', ?)`,
-      [OWN_PLANS_ID, CURRENT_USER_ID, new Date().toISOString()],
+       VALUES (?,?, 'owner', 'active', ?, ?)`,
+      [OWN_PLANS_ID, CURRENT_USER_ID, myDisplayName(db), new Date().toISOString()],
     );
   });
 }
@@ -167,10 +209,10 @@ function seedThisWeek(db: SQLite.SQLiteDatabase): void {
       `INSERT INTO event_invites
          (invite_id, event_id, from_user, from_name, to_user, title, start_utc, end_utc,
           tz, local_wall, precision, location_name, status, sent_at, answered_at)
-       VALUES ('01JC0INVRUN0000000000000', '01JC0EVTWEEK000000000007', ?, 'James',
+       VALUES ('01JC0INVRUN0000000000000', '01JC0EVTWEEK000000000007', ?, ?,
                '01JC0USERPRIYA0000000000', 'Long run', ?, ?, 'Europe/London', ?,
                'datetime', 'Victoria Park', 'accepted', ?, ?)`,
-      [CURRENT_USER_ID, day(3, 10, 0), day(3, 12, 0), day(3, 10, 0).slice(0, 19), day(-2, 18), day(-2, 19)],
+      [CURRENT_USER_ID, myDisplayName(db), day(3, 10, 0), day(3, 12, 0), day(3, 10, 0).slice(0, 19), day(-2, 18), day(-2, 19)],
     );
     db.runSync(
       `INSERT INTO event_invites
@@ -366,8 +408,8 @@ function seedPrivate(db: SQLite.SQLiteDatabase): void {
       );
       db.runSync(
         `INSERT INTO members (calendar_id, user_id, role, status, display_name, joined_at)
-         VALUES (?,?, 'owner', 'active', 'James', ?)`,
-        [cid, CURRENT_USER_ID, day(-60, 9)],
+         VALUES (?,?, 'owner', 'active', ?, ?)`,
+        [cid, CURRENT_USER_ID, myDisplayName(db), day(-60, 9)],
       );
       if (other) {
         db.runSync(
@@ -460,7 +502,13 @@ function seedJoinable(db: SQLite.SQLiteDatabase): void {
 }
 
 function seedPeople(db: SQLite.SQLiteDatabase): void {
-  if (count(db, "directory") > 0) return;
+  // Guard on somebody OTHER than the current user: their own row exists as
+  // soon as they have named themselves, and must not count as "people seeded".
+  const others = db.getFirstSync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM directory WHERE user_id != ?",
+    [CURRENT_USER_ID],
+  );
+  if ((others?.n ?? 0) > 0) return;
 
   // Some of these share calendars with the current user and some do not — the
   // point of search is finding the ones who do not.
@@ -477,8 +525,10 @@ function seedPeople(db: SQLite.SQLiteDatabase): void {
 
   db.withTransactionSync(() => {
     for (const [id, handle, name, email] of people) {
+      // OR IGNORE: the current user's row, if they have already named
+      // themselves, wins over the example one.
       db.runSync(
-        "INSERT INTO directory (user_id, handle, display_name, email) VALUES (?,?,?,?)",
+        "INSERT OR IGNORE INTO directory (user_id, handle, display_name, email) VALUES (?,?,?,?)",
         [id, handle, name, email],
       );
     }
@@ -642,7 +692,7 @@ function seedCalendars(db: SQLite.SQLiteDatabase): void {
     );
 
     const members: [string, string, string, string][] = [
-      ["01JC0CALLISBON0000000000", CURRENT_USER_ID, "owner", "James"],
+      ["01JC0CALLISBON0000000000", CURRENT_USER_ID, "owner", myDisplayName(db)],
       ["01JC0CALLISBON0000000000", "01JC0USERPRIYA0000000000", "owner", "Priya"],
       ["01JC0CALLISBON0000000000", "01JC0USERLUKE00000000000", "member", "Luke"],
       ["01JC0CALLISBON0000000000", "01JC0USERGLENN0000000000", "member", "Glenn"],
@@ -650,7 +700,7 @@ function seedCalendars(db: SQLite.SQLiteDatabase): void {
       // it: a grouping where every group holds exactly one person proves
       // nothing about grouping.
       ["01JC0CALLISBON0000000000", "01JC0USERMAYA00000000000", "member", "Maya"],
-      ["01JC0CALLONDON0000000000", CURRENT_USER_ID, "member", "James"],
+      ["01JC0CALLONDON0000000000", CURRENT_USER_ID, "member", myDisplayName(db)],
       ["01JC0CALLONDON0000000000", "01JC0USERPRIYA0000000000", "owner", "Priya"],
       ["01JC0CALLONDON0000000000", "01JC0USERLUKE00000000000", "member", "Luke"],
     ];

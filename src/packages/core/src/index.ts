@@ -23,3 +23,4 @@ export * from "./sync.js";
 export * from "./gestures.js";
 export * from "./scheduling.js";
 export * from "./freebusy.js";
+export * from "./lifecycle.js";

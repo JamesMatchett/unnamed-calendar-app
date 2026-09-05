@@ -1,12 +1,23 @@
+import { Ionicons } from "@expo/vector-icons";
 import { Stack } from "expo-router";
-import { ScrollView, Text, View } from "react-native";
+import { Alert, ScrollView, Text, View } from "react-native";
 
-import { Segmented, ToggleRow } from "@/components/form";
-import { Muted } from "@/components/ui";
-import { getAppearance, getBoolPref, setAppearance, setBoolPref } from "@/db/repo";
+import { RowButton, Segmented, ToggleRow } from "@/components/form";
+import { Group, Muted } from "@/components/ui";
+import { LOCAL_ONLY } from "@/config";
+import {
+  clearAllData,
+  examplesLoaded,
+  getAppearance,
+  getBoolPref,
+  loadExampleData,
+  setAppearance,
+  setBoolPref,
+} from "@/db/repo";
+import { buildLabel, sendFeedback } from "@/lib/feedback";
 import { useQuery } from "@/lib/useQuery";
 import type { Appearance } from "@/theme";
-import { APPEARANCES, space, type, useTheme } from "@/theme";
+import { APPEARANCES, radius, space, type, useTheme } from "@/theme";
 
 /**
  * Display settings for this device.
@@ -24,11 +35,36 @@ export default function SettingsScreen() {
   // Null only until the first-run question is answered, and this screen cannot
   // be reached before that.
   const appearance = useQuery("pref:appearance", () => getAppearance());
+  const examples = useQuery("examples", () => examplesLoaded());
 
   return (
     <>
       <Stack.Screen options={{ title: "Settings", presentation: "modal" }} />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.xl }}>
+        {LOCAL_ONLY ? (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: space.md,
+              padding: space.lg,
+              borderRadius: radius.md,
+              backgroundColor: t.color.accentSoft,
+            }}
+          >
+            <Ionicons name="phone-portrait-outline" size={20} color={t.color.accent} />
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={{ ...type.label, color: t.color.text }}>
+                This alpha keeps everything on this phone
+              </Text>
+              <Text style={{ ...type.caption, color: t.color.textMuted }}>
+                Nothing syncs yet. Other people can't see what you add, and a
+                reinstall starts fresh.
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
         <View style={{ gap: space.sm }}>
           <Text style={{ ...type.label, color: t.color.textMuted }}>
             Appearance
@@ -58,6 +94,72 @@ export default function SettingsScreen() {
             value={countdown}
             onChange={(next) => setBoolPref("countdown", next)}
           />
+        </View>
+
+        {/* Example data is a choice (alpha). A tester starts with their own
+            empty calendar and can pull the examples in to see what a full
+            app looks like, then clear them again to test for real. */}
+        <View style={{ gap: space.sm }}>
+          <Text style={{ ...type.label, color: t.color.textMuted }}>
+            Example data
+          </Text>
+          <Group>
+            <RowButton
+              bare
+              label="Load example calendars"
+              value={examples ? "Loaded" : ""}
+              onPress={
+                examples
+                  ? () => {}
+                  : () =>
+                      Alert.alert(
+                        "Load the examples?",
+                        "Adds a trip to Lisbon, a London calendar, a few friends and a week of plans, so you can see the app full. Your own calendars are untouched.",
+                        [
+                          { text: "Cancel", style: "cancel" },
+                          { text: "Load", onPress: () => loadExampleData() },
+                        ],
+                      )
+              }
+            />
+            <RowButton
+              bare
+              label="Clear everything"
+              value=""
+              onPress={() =>
+                Alert.alert(
+                  "Clear everything?",
+                  "Every calendar, event, friend and answer on this phone goes, including your own. Your name and settings stay. This can't be undone.",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Clear",
+                      style: "destructive",
+                      onPress: () => clearAllData(),
+                    },
+                  ],
+                )
+              }
+            />
+          </Group>
+        </View>
+
+        <View style={{ gap: space.sm }}>
+          <Text style={{ ...type.label, color: t.color.textMuted }}>
+            About this build
+          </Text>
+          <Group>
+            <RowButton
+              bare
+              label="Send feedback"
+              value=""
+              onPress={() => void sendFeedback()}
+            />
+            <RowButton bare label="Version" value={buildLabel()} onPress={() => {}} />
+          </Group>
+          <Muted>
+            Something odd, something missing, something you liked: all useful.
+          </Muted>
         </View>
       </ScrollView>
     </>

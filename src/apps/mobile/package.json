@@ -13,15 +13,16 @@
     "build:core": "cd ../../packages/core && npm run build"
   },
   "dependencies": {
+    "@calder/core": "*",
     "@expo/vector-icons": "^15.0.2",
     "@react-native-community/datetimepicker": "9.1.0",
-    "@calder/core": "*",
     "expo": "~57.0.19",
     "expo-constants": "~57.0.17",
     "expo-image-picker": "~57.0.15",
     "expo-linking": "~57.0.9",
     "expo-router": "~57.0.18",
     "expo-screen-orientation": "~57.0.2",
+    "expo-splash-screen": "~31.0.0",
     "expo-sqlite": "~57.0.2",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",

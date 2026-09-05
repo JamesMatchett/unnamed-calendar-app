@@ -1,7 +1,7 @@
 import * as SQLite from "expo-sqlite";
 
 import { SCHEMA, SCHEMA_VERSION } from "./schema";
-import { FIXTURE_EPOCH, seedIfEmpty } from "./seed";
+import { CURRENT_USER_ID, FIXTURE_EPOCH, fixturesWanted, seedIfEmpty } from "./seed";
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -90,6 +90,12 @@ function resetIfFixturesStale(database: SQLite.SQLiteDatabase): void {
   )?.value;
 
   if (stored === undefined || stored === FIXTURE_EPOCH) return;
+  // Only installs that HAVE the examples get them refreshed. Deciding that
+  // before clearing matters: the check looks for the Lisbon calendar, which
+  // is about to be deleted, so it has to be recorded first or the reload
+  // never happens and a tester wakes up to an empty app.
+  if (!fixturesWanted(database)) return;
+  database.runSync("INSERT OR REPLACE INTO meta (key, value) VALUES ('fixtures', '1')");
   clearFixtures(database);
 }
 
@@ -106,7 +112,6 @@ function clearFixtures(database: SQLite.SQLiteDatabase): void {
     "notifications",
     "pending_invites",
     "friends",
-    "directory",
     "mutation_queue",
     "sent_invites",
     "invite_links",
@@ -115,6 +120,9 @@ function clearFixtures(database: SQLite.SQLiteDatabase): void {
   ]) {
     database.execSync(`DELETE FROM ${table};`);
   }
+  // Everyone except the person holding the phone: their directory row is who
+  // they are, not an example.
+  database.runSync("DELETE FROM directory WHERE user_id != ?", [CURRENT_USER_ID]);
 }
 
 // --- a very small reactive layer ------------------------------------------

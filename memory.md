@@ -101,14 +101,22 @@ this app in a browser.
 5. ~~The name.~~ **Settled: Cal&der.** The ampersand is the brand mark and matches
    `&handle`, but it is illegal in bundle ids, npm package names, URL schemes and domain
    names, and is the query separator in URLs. So the display name is the ONLY place it
-   appears: everything machine-readable is `calder` (`app.calder.mobile`, `@calder/core`,
-   `calder://`, `calder.app`). Never "fix" a machine-readable name to match the logo.
-6. **The app-invite link is a placeholder.** "Invite someone to the app" on the People screen
-   shares `https://calder.app/get`, which does not exist. It needs a real landing page that
-   detects the platform and sends people to the right store, and ideally carries the
-   inviter's id so the two are connected once the invited person signs up. Until then the
-   share works and the link does not, which is worse than no button on the day someone
-   actually uses it.
+   appears. **The domain is calandder.com** (cal-and-der; bought Sept 2026, Route 53 hosted
+   zone), and every machine-readable name derives from it: bundle id and Android package
+   `com.calandder.app`, URL scheme `calandder://`, links `https://calandder.com/join/<token>`
+   and `/get`. `@calder/core` keeps its short name. Never "fix" a machine-readable name to
+   match the logo.
+6. ~~The app-invite link is a placeholder.~~ Points at `https://calandder.com/get`, served
+   from `site/get/index.html` (detects the phone, sends to TestFlight now and the store
+   later; `?from=<handle>` carries the inviter). **Still to do: deploy `site/` to the domain
+   and fill in the TestFlight link**, plus the Apple Team ID in
+   `site/.well-known/apple-app-site-association` for universal links.
+7. **Alpha build readiness (Sept 2026).** The seven blockers are done: deletion and leaving,
+   local writes drawn as settled (`LOCAL_ONLY` in `src/config.ts`, flip when sync lands),
+   first-run identity, example data as a Settings choice, an error boundary plus
+   `reportError` seam for Sentry and a Send feedback row (mailto hello@calandder.com),
+   icon and splash (`tools/icon.py`), and the domain. Still open before TestFlight: an
+   Android emulator run, `expo-updates`, local reminders, a Sentry DSN.
 
 ## Conventions
 

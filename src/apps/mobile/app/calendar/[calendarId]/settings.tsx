@@ -23,6 +23,7 @@ import {
   getInviteLink,
   inviteUser,
   leavingWouldOrphanCalendar,
+  deleteCalendar,
   listMembers,
   answerJoinRequest,
   listJoinRequests,
@@ -36,7 +37,7 @@ import {
   setMyAvailability,
   updateCalendar,
 } from "@/db/repo";
-import { CURRENT_USER_ID } from "@/db/seed";
+import { CURRENT_USER_ID, OWN_PLANS_ID } from "@/db/seed";
 import { formatClock } from "@/lib/format";
 import { pickCoverImage } from "@/lib/pickImage";
 import { useQuery } from "@/lib/useQuery";
@@ -63,6 +64,28 @@ export default function CalendarSettingsScreen() {
   }
 
   const isOwner = me.role === "owner";
+  const ownPlans = calendarId === OWN_PLANS_ID;
+
+  const destroy = () => {
+    Alert.alert(
+      `Delete ${calendar.name}?`,
+      members.length > 1
+        ? `It disappears for everyone in it, with every event, answer and arrival time. ${members.length - 1} other ${members.length === 2 ? "person loses" : "people lose"} it too. This can't be undone.`
+        : "It goes for good, with every event in it. This can't be undone.",
+      [
+        { text: "Keep it", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            deleteCalendar(calendarId);
+            router.dismissAll();
+            router.replace("/calendars");
+          },
+        },
+      ],
+    );
+  };
 
   const leave = () => {
     if (leavingWouldOrphanCalendar(calendarId)) {
@@ -120,27 +143,63 @@ export default function CalendarSettingsScreen() {
           </Muted>
         )}
 
-        <View style={{ gap: space.sm }}>
-          <Text style={{ ...type.label, color: t.color.textMuted }}>Leaving</Text>
-          <Pressable
-            onPress={leave}
-            accessibilityRole="button"
-            style={{
-              alignItems: "center",
-              paddingVertical: space.lg - 2,
-              borderRadius: radius.pill,
-              borderWidth: 1,
-              borderColor: t.color.danger,
-            }}
-          >
-            <Text style={{ ...type.label, fontSize: 16, color: t.color.danger }}>
-              Leave this calendar
+        {/* The way out (§8.4). Leaving is for members of a shared calendar;
+            deleting is for its owners; your own plans offers neither, because
+            it is the one calendar that is not optional. */}
+        {ownPlans ? null : (
+          <View style={{ gap: space.sm }}>
+            <Text style={{ ...type.label, color: t.color.textMuted }}>
+              {isOwner ? "Leaving and deleting" : "Leaving"}
             </Text>
-          </Pressable>
-          <Muted>
-            Events you added stay for everyone else. Your replies go with you.
-          </Muted>
-        </View>
+
+            {members.length > 1 ? (
+              <>
+                <Pressable
+                  onPress={leave}
+                  accessibilityRole="button"
+                  style={{
+                    alignItems: "center",
+                    paddingVertical: space.lg - 2,
+                    borderRadius: radius.pill,
+                    borderWidth: 1,
+                    borderColor: t.color.danger,
+                  }}
+                >
+                  <Text style={{ ...type.label, fontSize: 16, color: t.color.danger }}>
+                    Leave this calendar
+                  </Text>
+                </Pressable>
+                <Muted>
+                  Events you added stay for everyone else. Your replies go with you.
+                </Muted>
+              </>
+            ) : null}
+
+            {isOwner ? (
+              <>
+                <Pressable
+                  onPress={destroy}
+                  accessibilityRole="button"
+                  style={{
+                    alignItems: "center",
+                    paddingVertical: space.lg - 2,
+                    borderRadius: radius.pill,
+                    backgroundColor: t.color.danger,
+                  }}
+                >
+                  <Text style={{ ...type.label, fontSize: 16, color: "#fff" }}>
+                    Delete this calendar
+                  </Text>
+                </Pressable>
+                <Muted>
+                  {members.length > 1
+                    ? `Removes it for all ${members.length} people, with every event in it. Invite links stop working.`
+                    : "Removes it and every event in it."}
+                </Muted>
+              </>
+            ) : null}
+          </View>
+        )}
       </ScrollView>
     </>
   );

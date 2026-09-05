@@ -5,8 +5,10 @@ import { useColorScheme } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AppearancePrompt } from "@/components/AppearancePrompt";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { IdentityPrompt } from "@/components/IdentityPrompt";
 import { getDb } from "@/db/client";
-import { getAppearance } from "@/db/repo";
+import { getAppearance, identityComplete } from "@/db/repo";
 import { useQuery } from "@/lib/useQuery";
 import type { Appearance } from "@/theme";
 import { ThemeProvider, themeFor } from "@/theme";
@@ -22,6 +24,10 @@ export default function RootLayout() {
    * already looks right rather than over a white flash.
    */
   const chosen = useQuery("pref:appearance", () => getAppearance());
+  // Who you are comes before how it looks: the name goes on everything, and
+  // asking it first means the appearance sheet appears over an app that is
+  // already yours.
+  const named = useQuery("identity", () => identityComplete());
   const systemDark = useColorScheme() === "dark";
   const [preview, setPreview] = useState<Appearance>("system");
   const t = themeFor(chosen ?? preview, systemDark);
@@ -40,10 +46,12 @@ export default function RootLayout() {
   }, []);
 
   return (
+    <ErrorBoundary>
     <ThemeProvider value={t}>
     <SafeAreaProvider>
       <StatusBar style={t.dark ? "light" : "dark"} />
-      {chosen === null ? (
+      {!named ? <IdentityPrompt onDone={() => {}} /> : null}
+      {named && chosen === null ? (
         <AppearancePrompt
           value={preview}
           onPreview={setPreview}
@@ -88,10 +96,11 @@ export default function RootLayout() {
           name="calendar/[calendarId]/settings"
           options={{ title: "Calendar settings" }}
         />
-        {/* Where universal links land: calder.app/join/<token> (§7.1). */}
+        {/* Where universal links land: calandder.com/join/<token> (§7.1). */}
         <Stack.Screen name="join/[token]" options={{ presentation: "modal" }} />
       </Stack>
     </SafeAreaProvider>
     </ThemeProvider>
+    </ErrorBoundary>
   );
 }

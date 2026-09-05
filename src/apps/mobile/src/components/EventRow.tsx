@@ -18,6 +18,7 @@ import {
   tallyForEvent,
 } from "@/db/repo";
 import { useQuery } from "@/lib/useQuery";
+import { LOCAL_ONLY } from "@/config";
 import { CURRENT_USER_ID } from "@/db/seed";
 import { formatEventTime } from "@/lib/format";
 import { useSyncing } from "@/lib/useSyncing";
@@ -80,7 +81,9 @@ export function EventRow({
 
   const cancelled = event.status === "cancelled";
   const mineToEdit = event.created_by === CURRENT_USER_ID;
-  const pending = event.sync_state === "pending";
+  // In a local-only build nothing is ever going to be sent, and "waiting to
+  // send" would be a permanent state on everything a person creates.
+  const pending = !LOCAL_ONLY && event.sync_state === "pending";
   // A calendar of one. Not "is it private": a two-person private calendar still
   // has somebody to answer to.
   const solo = members.length <= 1;
