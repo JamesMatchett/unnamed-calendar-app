@@ -89,6 +89,44 @@ Waiting on http://localhost:8081
 
 Logs for your project will appear below.
 
+## Updating Expo packages
+
+`npx expo install --check` picks versions compatible with the SDK, which is
+right, and then updates the lockfile **in place**, which in a workspaces
+monorepo can quietly break the build. Always follow it with a full regeneration:
+
+```sh
+rm -rf node_modules src/*/*/node_modules package-lock.json
+npm install
+npm run verify
+npm exec --workspace @calder/mobile -- expo export --platform ios
+```
+
+What goes wrong without it. npm updating a lockfile in place will sometimes
+place a transitive dependency **nested** under its parent rather than hoisted —
+`node_modules/expo/node_modules/expo-modules-core` instead of
+`node_modules/expo-modules-core`. Node's own resolution walks up from the
+importing file and finds it either way. **Metro does not**: it searches only the
+roots it is configured with, so a nested package is invisible and the bundle
+fails with "Unable to resolve module", naming a package that is sitting right
+there on disk.
+
+Three things make this worse than it sounds:
+
+- `npm ci` does not fix it. It reproduces the lockfile exactly, including the
+  placement, so it looks like a clean install and changes nothing.
+- Deleting only the lockfile does not fix it either. npm reads the existing
+  `node_modules` and preserves placements rather than deciding fresh. The
+  directories have to go too, all four of them.
+- `npm run verify` passes throughout. TypeScript resolves declarations, not the
+  runtime module graph, so typecheck is green while the bundler cannot build.
+  **Only `expo export` catches this**, which is why it is a separate step here
+  rather than folded into `verify`.
+
+The regeneration is also worth doing for its own sake: it collapsed duplicate
+copies of `react` and `react-dom`, which is the usual cause of "invalid hook
+call" and of context that mysteriously does not cross a boundary.
+
 ## Which environment a build talks to
 
 `app.json` holds everything static. `app.config.ts` adds the one thing that
