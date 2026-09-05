@@ -218,6 +218,31 @@ function asIso(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
+/**
+ * "2026-09-12T09:00:00", in the event's OWN zone rather than this phone's.
+ *
+ * A meeting created in New York keeps saying 9am when the person carrying the
+ * phone lands in London, which is the whole reason the app stores a wall time
+ * beside the instant.
+ */
+export function wallTimeIn(instant: string, tz: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(instant));
+
+  const at = (name: string) => parts.find((p) => p.type === name)?.value ?? "00";
+  // Some engines render midnight as hour 24 rather than 00.
+  const hour = at("hour") === "24" ? "00" : at("hour");
+  return `${at("year")}-${at("month")}-${at("day")}T${hour}:${at("minute")}:${at("second")}`;
+}
+
 // --- writing to the phone ----------------------------------------------------
 
 export interface WriteResult {

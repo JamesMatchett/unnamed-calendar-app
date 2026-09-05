@@ -103,7 +103,7 @@ export default function SyncScreen() {
           <Group>
             <RowButton
               bare
-              label="Automatic"
+              label="Send automatically"
               value={prefs.auto ? "On" : "Off"}
               onPress={() => router.push("/sync/preferences")}
             />
@@ -117,6 +117,20 @@ export default function SyncScreen() {
               bare
               label="Copies go to"
               value={pending ? "..." : target}
+              onPress={() => router.push("/sync/preferences")}
+            />
+            <RowButton
+              bare
+              label="Bring in automatically"
+              // "On" with nothing to read from would be a lie: the switch is on
+              // and nothing is happening, which is the state worth naming.
+              value={
+                !prefs.autoImport
+                  ? "Off"
+                  : prefs.importFrom.length === 0
+                    ? "Nothing chosen"
+                    : "On"
+              }
               onPress={() => router.push("/sync/preferences")}
             />
           </Group>

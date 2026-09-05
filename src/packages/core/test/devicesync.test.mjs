@@ -3,7 +3,9 @@ import { test } from "node:test";
 
 import {
   DEFAULT_SYNC_PREFS,
+  autoImportReady,
   autoSelection,
+  importsFrom,
   planExport,
   planImport,
   syncHash,
@@ -345,6 +347,48 @@ test("choosing some calendars excludes the rest", () => {
 test("the default target is the phone's own default calendar", () => {
   assert.equal(DEFAULT_SYNC_PREFS.targetCalendarId, null);
   assert.equal(DEFAULT_SYNC_PREFS.auto, false);
+});
+
+// --- the two directions default in opposite ways, on purpose ----------------
+
+test("nothing is imported automatically until it has been chosen", () => {
+  // The asymmetry that matters: empty means ALL for export and NONE for
+  // import. Getting this backwards publishes somebody's work diary the first
+  // time they touch the switch.
+  assert.equal(DEFAULT_SYNC_PREFS.autoImport, false);
+  assert.deepEqual(DEFAULT_SYNC_PREFS.importFrom, []);
+  assert.equal(importsFrom(DEFAULT_SYNC_PREFS, "anything"), false);
+  assert.equal(syncsCalendar(DEFAULT_SYNC_PREFS, "anything"), true);
+});
+
+test("importing reads only the phone calendars actually chosen", () => {
+  const prefs = { ...DEFAULT_SYNC_PREFS, importFrom: ["work"] };
+  assert.equal(importsFrom(prefs, "work"), true);
+  assert.equal(importsFrom(prefs, "holidays"), false);
+});
+
+test("automatic import stays idle until it has somewhere to read from", () => {
+  assert.equal(autoImportReady(DEFAULT_SYNC_PREFS), false);
+  // Switched on but with nothing chosen is a no-op, not "read everything".
+  assert.equal(
+    autoImportReady({ ...DEFAULT_SYNC_PREFS, autoImport: true }),
+    false,
+  );
+  assert.equal(
+    autoImportReady({ ...DEFAULT_SYNC_PREFS, autoImport: true, importFrom: ["w"] }),
+    true,
+  );
+  // And chosen calendars do nothing while the switch is off.
+  assert.equal(
+    autoImportReady({ ...DEFAULT_SYNC_PREFS, importFrom: ["w"] }),
+    false,
+  );
+});
+
+test("the default destination for imports is the person's own plans", () => {
+  // Null rather than a calendar id, because their own plans is the one
+  // calendar nobody else can read, and the one that always exists.
+  assert.equal(DEFAULT_SYNC_PREFS.importInto, null);
 });
 
 test("an automatic run picks up only the calendars taking part", () => {

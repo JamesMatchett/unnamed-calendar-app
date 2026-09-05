@@ -250,6 +250,27 @@ export interface SyncPrefs {
   readonly targetCalendarId: string | null;
   /** Which account that calendar belongs to, for the label on the screen. */
   readonly targetAccount: string | null;
+
+  /** Bring new events in from the phone without being asked. */
+  readonly autoImport: boolean;
+  /**
+   * Which Cal&der calendar they land in. Null means the person's own plans,
+   * which is theirs alone, and is the only safe default: everything else can
+   * be read by other people.
+   */
+  readonly importInto: string | null;
+  /**
+   * Which of the phone's calendars are read.
+   *
+   * Empty means NOTHING, the opposite of `calendarIds` above, and the
+   * asymmetry is the point rather than an oversight. Exporting sends events
+   * somebody already owns to a phone only they hold, so "all of them" is a
+   * generous default. Importing takes other people's meetings off that phone
+   * and puts them somewhere other people may read, so the same default would
+   * quietly publish a work diary the first time the switch was touched. One
+   * direction defaults to everything, the other to nothing chosen yet.
+   */
+  readonly importFrom: readonly string[];
 }
 
 export const DEFAULT_SYNC_PREFS: SyncPrefs = {
@@ -257,11 +278,28 @@ export const DEFAULT_SYNC_PREFS: SyncPrefs = {
   calendarIds: [],
   targetCalendarId: null,
   targetAccount: null,
+  autoImport: false,
+  importInto: null,
+  importFrom: [],
 };
 
 /** Whether a calendar takes part, honouring "empty means all". */
 export const syncsCalendar = (prefs: SyncPrefs, calendarId: string): boolean =>
   prefs.calendarIds.length === 0 || prefs.calendarIds.includes(calendarId);
+
+/**
+ * Whether one of the phone's calendars is read automatically.
+ *
+ * Empty means none. See `importFrom` for why this is the reverse of
+ * syncsCalendar, and resist making them consistent: consistency here would be
+ * bought by publishing somebody's private appointments.
+ */
+export const importsFrom = (prefs: SyncPrefs, deviceCalendarId: string): boolean =>
+  prefs.importFrom.includes(deviceCalendarId);
+
+/** Whether an automatic import would do anything at all. */
+export const autoImportReady = (prefs: SyncPrefs): boolean =>
+  prefs.autoImport && prefs.importFrom.length > 0;
 
 /** The events an automatic run would write, given the preferences. */
 export function autoSelection(

@@ -13,7 +13,7 @@ import {
   memberCounts,
 } from "@/db/repo";
 import { OWN_PLANS_ID } from "@/db/seed";
-import { readDeviceEvents } from "@/lib/deviceCalendar";
+import { readDeviceEvents, wallTimeIn } from "@/lib/deviceCalendar";
 import { useDeviceCalendars } from "@/lib/useDeviceCalendar";
 import { useQuery } from "@/lib/useQuery";
 import { space, type, useTheme } from "@/theme";
@@ -124,7 +124,7 @@ export default function ImportScreen() {
           // The wall time is derived from the event's own zone, not this
           // phone's: a meeting created in New York keeps saying 9am when the
           // person carrying the phone lands in London.
-          localWall: wallTime(c.startUtc, c.timeZone),
+          localWall: wallTimeIn(c.startUtc, c.timeZone),
           tz: c.timeZone,
           allDay: c.allDay,
         })),
@@ -335,24 +335,6 @@ function nothingLeft(plan: ImportPlan): string {
  */
 function peopleIn(count: number): string | undefined {
   return count > 1 ? `Shared with ${count - 1} other${count > 2 ? "s" : ""}` : undefined;
-}
-
-/** "2026-09-12T09:00:00", in the event's own zone. */
-function wallTime(instant: string, tz: string): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).formatToParts(new Date(instant));
-  const at = (name: string) => parts.find((p) => p.type === name)?.value ?? "00";
-  // en-CA gives midnight as "24" rather than "00" in some engines.
-  const hour = at("hour") === "24" ? "00" : at("hour");
-  return `${at("year")}-${at("month")}-${at("day")}T${hour}:${at("minute")}:${at("second")}`;
 }
 
 function whenIs(startUtc: string, allDay: boolean): string {
