@@ -2,7 +2,15 @@ import { HANDLE_MAX } from "@calder/core";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
 import { useState } from "react";
-import { Alert, Image, Pressable, ScrollView, Text, View } from "react-native";
+import {
+  Alert,
+  Image,
+  InteractionManager,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 
 import { Field, PrimaryButton, RowButton, TextField, ToggleRow } from "@/components/form";
 import { Card, Muted } from "@/components/ui";
@@ -341,20 +349,33 @@ export default function ProfileScreen() {
               await signOut();
               // The only route back in: signing in lives in the first-run flow,
               // so ending a session means starting that again.
-              replayOnboarding();
-              // And then get out of the way. Onboarding is rendered by
-              // _layout as a SIBLING of the Stack, and this screen is a
-              // modal presented over that stack — so replaying it without
-              // dismissing puts the first run underneath the sheet you are
-              // looking at, and the button appears to do nothing at all.
-              // Same two lines as confirmDelete below, for the same reason.
-              router.dismissAll();
-              router.replace("/");
+              leaveThenReplay();
             })();
           },
         },
       ],
     );
+  }
+
+  /**
+   * Leave the sheet, THEN put the first run back.
+   *
+   * Onboarding is a native <Modal>, and this screen is presented as one too.
+   * iOS silently drops a presentation requested while another controller is
+   * mid-dismiss, so clearing the flag first mounts Onboarding into a window
+   * that is on its way out and the first run never appears — you land on the
+   * agenda instead, looking signed in.
+   *
+   * runAfterInteractions waits for the dismissal animation to finish rather
+   * than guessing at a delay.
+   */
+  function leaveThenReplay(also?: () => void) {
+    router.dismissAll();
+    router.replace("/");
+    InteractionManager.runAfterInteractions(() => {
+      also?.();
+      replayOnboarding();
+    });
   }
 
   function cycleGrants(current: FriendGrants) {
@@ -387,9 +408,9 @@ export default function ProfileScreen() {
         text: "Delete",
         style: "destructive",
         onPress: () => {
-          deleteMyProfile();
-          router.dismissAll();
-          router.replace("/");
+          // Wiping `meta` clears the first-run flag too, so this hits the
+          // same presentation race as signing out.
+          leaveThenReplay(deleteMyProfile);
         },
       },
     ]);

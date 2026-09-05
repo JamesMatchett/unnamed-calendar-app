@@ -13,6 +13,8 @@ import {
   View,
 } from "react-native";
 
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
 import { PrimaryButton, TextField } from "@/components/form";
 import { Muted } from "@/components/ui";
 import { handleHint } from "@/lib/handles";
@@ -120,6 +122,7 @@ export function Onboarding({
 
 function Welcome({ onNext }: { onNext: () => void }) {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const [page, setPage] = useState(0);
   // The slide is sized from the window rather than fixed, so it is not a
@@ -210,7 +213,17 @@ function Welcome({ onNext }: { onNext: () => void }) {
         ))}
       </View>
 
-      <View style={{ marginTop: "auto", padding: space.lg, gap: space.sm }}>
+      {/* space.lg below the button plus whatever the phone reserves for the
+          home indicator. Without the inset the button sits in the gesture area:
+          it looks clipped, and a tap near its lower edge is taken by the OS. */}
+      <View
+        style={{
+          marginTop: "auto",
+          padding: space.lg,
+          paddingBottom: space.lg + insets.bottom,
+          gap: space.sm,
+        }}
+      >
         <PrimaryButton label="Get started" onPress={onNext} />
       </View>
     </View>
@@ -504,6 +517,7 @@ function AppearanceStep({
   onPreview: (next: Appearance) => void;
 }) {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
 
   return (
     <View style={{ flex: 1, backgroundColor: t.color.bg, padding: space.lg }}>
@@ -563,7 +577,9 @@ function AppearanceStep({
         })}
       </View>
 
-      <View style={{ marginTop: "auto", gap: space.sm }}>
+      {/* As in the tour step: clear of the home indicator, not just of the
+          screen edge. */}
+      <View style={{ marginTop: "auto", gap: space.sm, paddingBottom: insets.bottom }}>
         <PrimaryButton
           // Whatever is being previewed is the answer, including the default
           // nobody touched: there is no way out of here without having decided.
