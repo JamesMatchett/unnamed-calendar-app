@@ -342,6 +342,14 @@ export default function ProfileScreen() {
               // The only route back in: signing in lives in the first-run flow,
               // so ending a session means starting that again.
               replayOnboarding();
+              // And then get out of the way. Onboarding is rendered by
+              // _layout as a SIBLING of the Stack, and this screen is a
+              // modal presented over that stack — so replaying it without
+              // dismissing puts the first run underneath the sheet you are
+              // looking at, and the button appears to do nothing at all.
+              // Same two lines as confirmDelete below, for the same reason.
+              router.dismissAll();
+              router.replace("/");
             })();
           },
         },

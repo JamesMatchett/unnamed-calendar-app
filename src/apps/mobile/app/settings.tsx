@@ -206,7 +206,16 @@ export default function SettingsScreen() {
                   "Replays the first run: the tour, how you sign in, your name and the light or dark choice. Your calendars are untouched.",
                   [
                     { text: "Cancel", style: "cancel" },
-                    { text: "Show it", onPress: () => replayOnboarding() },
+                    {
+                      text: "Show it",
+                      // Dismiss, or the first run replays underneath this
+                      // sheet and nothing appears to happen. See profile.tsx.
+                      onPress: () => {
+                        replayOnboarding();
+                        router.dismissAll();
+                        router.replace("/");
+                      },
+                    },
                   ],
                 )
               }
