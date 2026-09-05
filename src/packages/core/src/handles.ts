@@ -48,23 +48,49 @@ export function handleFault(raw: string, taken: boolean): HandleFault | null {
 }
 
 /**
- * Lower case, letters, digits, dots and underscores, no leading sigil.
+ * Lower case ASCII letters and digits, with dots, underscores and hyphens
+ * between them. Nothing else survives, and nothing else needs to: a handle goes
+ * into a URL path, onto a QR code, and back out of somebody else's camera.
  *
- * Both "&" and "@" are stripped from the front. "&" is ours; "@" is what
- * fingers do out of habit, and refusing it would be a rejection nobody can see
- * the reason for.
+ * Folded before it is filtered, which is the part that is easy to leave out.
+ * "café" arrives as one character or as two depending on the keyboard that
+ * typed it, and a filter alone answers "caf" to one and "cafe" to the other —
+ * the same handle, visibly identical, resolving to two different people.
+ * NFKD splits the accent off so both become "cafe", and folds the compatibility
+ * forms while it is there, so full-width "ｊａｍｅｓ" is james rather than
+ * nothing at all.
+ *
+ * What it will NOT do is transliterate. Cyrillic, Greek and Han have no ASCII
+ * decomposition and are dropped, so "јаmes" written with Cyrillic ј and а
+ * becomes "mes". That is deliberate: guessing at a Latin spelling for another
+ * script is how a handle silently becomes somebody else's, and the field shows
+ * what will be stored, so it is visible rather than surprising.
+ *
+ * Runs of punctuation collapse and the edges are trimmed. Without that, "..."
+ * and "___" were handles, and "sam.99" and "sam..99" were two different people
+ * distinguishable only by counting dots.
  *
  * Idempotent, which matters more than it looks: this runs on input, again when
  * a link is built, and again when one is opened, so normalising a normalised
- * handle has to be the same handle or a round trip changes who you are.
+ * handle has to be the same handle or a round trip changes who you are. The
+ * trailing trim is repeated after the cap for that reason — the cap can land
+ * mid-punctuation.
  */
 export function normaliseHandle(raw: string): string {
-  return raw
-    .trim()
-    .replace(/^[&@]+/, "")
+  const cleaned = raw
+    // Decompose accents and fold the compatibility forms. Before the filter,
+    // never after: afterwards there is nothing left to fold.
+    .normalize("NFKD")
+    // The marks NFKD just separated out, plus any that arrived on their own.
+    .replace(/\p{M}/gu, "")
     .toLowerCase()
-    .replace(/[^a-z0-9._]/g, "")
-    .slice(0, HANDLE_MAX);
+    // Everything else goes, which covers the sigils people type out of habit,
+    // zero-width characters, direction overrides, emoji and every other script.
+    .replace(/[^a-z0-9._-]/g, "")
+    .replace(/[._-]{2,}/g, (run) => run[0] ?? "")
+    .replace(/^[._-]+|[._-]+$/g, "");
+
+  return cleaned.slice(0, HANDLE_MAX).replace(/[._-]+$/, "");
 }
 
 /** A first guess at a handle from a name: "Maya Okonkwo" -> "maya". */

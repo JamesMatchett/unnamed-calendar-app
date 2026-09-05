@@ -79,7 +79,11 @@ test("too short is its own fault, not silence", () => {
   // hint underneath, so the button was dead with nothing saying why.
   assert.equal(handleFault("jo", false), "too_short");
   assert.equal(handleFault("a", false), "too_short");
-  assert.equal(handleFault("a-b", false), "too_short", "normalises to two");
+  assert.equal(handleFault("a b", false), "too_short", "the space goes, two remain");
+  assert.equal(handleFault("a/b", false), "too_short", "so does the slash");
+  // A hyphen is kept, so this one is three characters and fine. It was two
+  // before hyphens were allowed, which is exactly why the case is still here.
+  assert.equal(handleFault("a-b", false), null);
 });
 
 test("empty is distinguished from too short", () => {
@@ -92,7 +96,7 @@ test("empty is distinguished from too short", () => {
 
 test("length is judged after normalising, never before", () => {
   // "a-b-c" looks like five characters and is three.
-  assert.equal(handleFault("a-b-c", false), null);
+  assert.equal(handleFault("a b c", false), null, "spaces go, abc remains");
   assert.equal(handleFault("&&&jo", false), "too_short");
 });
 
@@ -139,6 +143,17 @@ test("the invite page's parser agrees with this one", () => {
     "a.b_c",
     "!!!",
     "sam99",
+    // Every character the two copies could disagree about, and the shapes that
+    // only one of them might normalise. Without a hyphen in here the pair
+    // agreed by luck: the app had started allowing one and the page had not.
+    "sam-99",
+    "a-b.c_d",
+    "cafe\u0301",
+    "caf\u00e9",
+    "\uff4a\uff41\uff4d\uff45\uff53",
+    "sam..99",
+    ".sam.",
+    "---",
   ];
 
   for (const raw of cases) {

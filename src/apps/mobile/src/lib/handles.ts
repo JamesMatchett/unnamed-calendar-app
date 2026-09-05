@@ -62,7 +62,7 @@ export function handleHint(
       changed,
       fault,
       tone: "bad",
-      message: "Pick a handle: letters, numbers, dots and underscores.",
+      message: "Pick a handle: letters, numbers, and . _ - between them.",
     };
   }
 
@@ -73,6 +73,6 @@ export function handleHint(
         changed,
         fault: null,
         tone: "muted",
-        message: "How friends find you. Letters, numbers, dots and underscores.",
+        message: "How friends find you. Letters, numbers, and . _ - between them.",
       };
 }

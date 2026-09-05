@@ -77,10 +77,19 @@
     const segments = location.pathname.split("/").filter(Boolean);
     const after = segments[segments.indexOf("add") + 1] || "";
     const handle = decodeURIComponent(after)
-      .replace(/^[&@]+/, "")
+      // Kept in step with normaliseHandle in @calder/core, character for
+      // character. A test parses this very expression back out of the page and
+      // runs both over the same inputs, because a scan that resolves to one
+      // handle in the app and another in a browser is the one failure nothing
+      // else here would catch.
+      .normalize("NFKD")
+      .replace(/\p{M}/gu, "")
       .toLowerCase()
-      .replace(/[^a-z0-9._]/g, "")
-      .slice(0, 24);
+      .replace(/[^a-z0-9._-]/g, "")
+      .replace(/[._-]{2,}/g, (run) => run[0])
+      .replace(/^[._-]+|[._-]+$/g, "")
+      .slice(0, 24)
+      .replace(/[._-]+$/, "");
     const params = new URLSearchParams(location.search);
     // Trimmed and capped, and inserted as TEXT rather than markup: this value
     // comes off a QR code a stranger made, so it is never trusted as HTML.
