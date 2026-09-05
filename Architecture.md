@@ -152,7 +152,7 @@ One Cognito **user pool** and **no identity pool** — identity pools exist to v
 credentials to clients, and nothing here needs them: clients talk to API Gateway with a JWT,
 and S3 uploads use presigned URLs minted by Lambda. No hosted-UI sign-up screens either,
 though federation still needs a user pool **domain** for the OAuth redirect, so configure a
-custom one (`auth.calder.app`) — users see that hostname in the browser sheet, and the default
+custom one (`auth.dev.calandder.com`, `auth.calandder.com`) — users see that hostname in the browser sheet, and the default
 `*.amazoncognito.com` visibly costs conversion. **Apple and Google only for v1** — no email/password (§8.6), which means no
 reset flow and no password support burden. Email/password and Microsoft are v2 candidates.
 The trade being accepted: losing access to your Google account means losing your calendars,
@@ -167,8 +167,16 @@ Two things to get right at the very start, both effectively unfixable later:
 - **Apple's Hide My Email** issues a per-app relay address, which is why email-addressed
   invites cannot reliably match Apple users and why §7.2 exists.
 
-- API Gateway HTTP API validates the Cognito access token **natively** — no Lambda
-  authoriser, so no cold start and no extra invocation on every request.
+- API Gateway HTTP API validates the Cognito **ID** token **natively** — no Lambda
+  authoriser, so no cold start and no extra invocation on every request. **Amended
+  5 September 2026 (decision 40): the ID token, not the access token.** Custom claims in an
+  access token need Pre Token Generation version 2, which needs the Essentials feature plan;
+  version 1 runs on Lite and can only write to the ID token. That is roughly $850/month at
+  100k MAU for one claim, and it answers §13's first open question in the cheap direction.
+  The objection to authorising with an ID token is that it describes a user rather than
+  granting a permission, which matters when handing one to a third party; the pool and the
+  API are the same trust domain and there is no third party. Revisit if Essentials becomes
+  necessary for something else.
 - Authorisation (is this user a member of this calendar?) happens **inside** each handler
   as a single `GetItem` on `PK=CAL#{id}, SK=MEMBER#{uid}` — ~0.5 RRU, sub-millisecond,
   about £0.10 per million checks. Do **not** try to encode memberships in the token;
@@ -194,9 +202,15 @@ Two things to get right at the very start, both effectively unfixable later:
   "where did my calendars go?". Link in a **Pre Sign-Up** trigger via
   `AdminLinkProviderForUser`, on **verified** emails only. It cannot help when Apple issues a
   relay address — nothing can — but it covers the common case.
-- **Three Lambda triggers, no more**: Pre Sign-Up (linking); Post Confirmation (mint the
-  ULID, write the `USER#` profile, capture the Apple display name — idempotent); Pre Token
-  Generation (inject the ULID claim, and nothing else — memberships never go in the token).
+- **Three Lambda triggers, no more**: Pre Sign-Up (linking); Post Confirmation (capture the
+  Apple display name — idempotent); Pre Token Generation (resolve the `sub` to a ULID,
+  minting it on first sight, and inject it as the `uid` claim — memberships never go in the
+  token). **Amended 5 September 2026 (decision 41): the ULID is minted in Pre Token
+  Generation, not Post Confirmation.** Post Confirmation does not fire for an
+  administratively created user, which is the only kind that exists before federation, so a
+  mint-on-confirmation design could not be exercised at all until then and would ship
+  unexercised. Minting where the claim is issued also survives a user arriving by a route
+  nobody anticipated, which over a pool's lifetime is most of them.
 - **Token lifetimes**: access and ID tokens at the default hour. The 30-day refresh token
   default is too short for an offline-first app — someone on a long trip should not routinely
   fall back to §5.6's read-only mode — so extend it substantially and **test refresh-token
@@ -1622,6 +1636,8 @@ assumption, and an amendment from a mistake.
 | 37 | Terraform owns the Lambda bundle until deploys outpace infrastructure changes; amends 28 | §3.6 |
 | 38 | A delegated DNS zone per environment in its own account; the apex stays with the site | §3.6 |
 | 39 | A dev-only admin-password Cognito client, so the JWT authoriser can be proved to accept as well as reject | §3.2 |
+| 40 | The API validates the ID token, not the access token, so the ULID claim works on the Lite plan; amends §3.2 | §3.2, §13 |
+| 41 | The ULID is minted lazily in Pre Token Generation, not in Post Confirmation | §3.2 |
 
 ---
 

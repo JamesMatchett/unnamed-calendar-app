@@ -33,6 +33,13 @@ import * as W from "./world.mjs";
  * Every query below is a Query or a GetItem. There is no Scan in this file and
  * there should never be one: a Scan reads the whole table and bills for it, and
  * the single-table design exists precisely so that no access pattern needs one.
+ *
+ * ONE GAP, stated rather than hidden. Patterns 8 and 12 are specified as
+ * TransactWriteItems, and dynalite does not implement that operation at all.
+ * What is checked here is that the items those transactions touch share a
+ * partition; the atomicity itself is not. Anything that genuinely depends on a
+ * transaction has to be proved against real DynamoDB, or designed not to need
+ * one — which is what the identity trigger did.
  */
 
 const TF = new URL("../../../terraform/modules/data/main.tf", import.meta.url);
@@ -47,7 +54,12 @@ before(async () => {
   await W.seed(db);
 });
 
-after(() => close?.());
+after(() => {
+  // destroy() as well as close(): the SDK holds keep-alive sockets open, and
+  // without this the tests pass and the process never exits.
+  db?.destroy?.();
+  close?.();
+});
 
 const query = (params) => db.send(new QueryCommand({ TableName: TABLE, ...params }));
 const keys = (result) => result.Items.map((i) => i.SK ?? i.GSI1SK);

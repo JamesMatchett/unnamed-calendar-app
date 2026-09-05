@@ -49,6 +49,14 @@ module "auth" {
   environment         = var.environment
   deletion_protection = var.deletion_protection
   test_client_enabled = var.test_client_enabled
+
+  # The same bundle modules/api ships. The Pre Token Generation trigger is one
+  # more handler in it, not a second artifact.
+  bundle_dir = "${path.module}/../../../packages/api/dist"
+
+  table_name        = module.data.table_name
+  table_arn         = module.data.table_arn
+  table_kms_key_arn = module.data.kms_key_arn
 }
 
 module "dns" {

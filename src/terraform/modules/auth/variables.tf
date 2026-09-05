@@ -52,3 +52,33 @@ variable "test_client_enabled" {
   type        = bool
   default     = false
 }
+
+variable "bundle_dir" {
+  description = <<-EOT
+    The built Lambda bundle, the same artifact modules/api ships. One zip, two
+    functions, different handlers: there is one build, one version, and no way
+    for the routes and the pool trigger to drift apart.
+  EOT
+  type        = string
+}
+
+variable "table_name" {
+  description = "The table holding the IDENTITY#{sub} mapping the trigger reads and writes."
+  type        = string
+}
+
+variable "table_arn" {
+  description = "The table, for the trigger role's grants."
+  type        = string
+}
+
+variable "table_kms_key_arn" {
+  description = "The table's CMK. Without kms permissions every read fails naming KMS, not DynamoDB."
+  type        = string
+}
+
+variable "log_retention_days" {
+  description = "CloudWatch log retention for the trigger."
+  type        = number
+  default     = 14
+}

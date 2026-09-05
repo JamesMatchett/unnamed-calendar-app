@@ -5,17 +5,17 @@
   "description": "Cal&der HTTP handlers. Bundled by esbuild into a single ESM file that Terraform zips and ships as the Lambda artifact.",
   "type": "module",
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/index.mjs",
+    "build": "node build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "clean": "rm -rf dist",
     "test": "npm run build && node --test \"test/*.test.mjs\""
   },
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.900.0",
+    "@aws-sdk/lib-dynamodb": "^3.900.0",
     "@calder/core": "*"
   },
   "devDependencies": {
-    "@aws-sdk/client-dynamodb": "^3.900.0",
-    "@aws-sdk/lib-dynamodb": "^3.900.0",
     "@types/node": "^22.0.0",
     "dynalite": "^4.0.0",
     "esbuild": "^0.25.0",
