@@ -128,6 +128,17 @@ export interface CalendarItem extends BaseItem {
   readonly deletedAt?: Instant;
   readonly createdBy: UserId;
   readonly createdAt: Instant;
+  /**
+   * Bumped on every direct write, and asserted in a ConditionExpression by the
+   * writer (§5.4). Calendar settings are edited by owners, ownership is flat,
+   * and any owner may edit — so two of them changing the mode at once is a real
+   * path rather than a theoretical one. A stale writer gets a 409 and re-syncs
+   * instead of quietly winning.
+   */
+  readonly version: number;
+  readonly updatedAt: Instant;
+  /** Whose edit the current state reflects, so attribution survives a conflict. */
+  readonly lastUpdatedBy: UserId;
 }
 
 export type MemberRole = "owner" | "member";

@@ -31,12 +31,13 @@
 
 import type { CognitoSub } from "@calder/core";
 import { asCognitoSub, newUserId, identityPk, userPk, SK } from "@calder/core";
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
   DynamoDBDocumentClient,
   GetCommand,
   PutCommand,
 } from "@aws-sdk/lib-dynamodb";
+
+import { client, useClient } from "./db.js";
 
 /** The claim the ULID travels in. Not `custom:`, which would imply a pool attribute (§3.2 keeps the pool thin). */
 export const UID_CLAIM = "uid";
@@ -51,20 +52,10 @@ export interface PreTokenGenerationEvent {
   response?: unknown;
 }
 
-let cached: DynamoDBDocumentClient | undefined;
-
-function client(): DynamoDBDocumentClient {
-  // One client per container, created on first use rather than at module load,
-  // so that a cold start does no work a warm invocation would repeat and tests
-  // can point it somewhere else first.
-  cached ??= DynamoDBDocumentClient.from(new DynamoDBClient({}));
-  return cached;
-}
-
-/** Tests inject their own engine; nothing else should call this. */
-export function useClient(db: DynamoDBDocumentClient | undefined): void {
-  cached = db;
-}
+// Re-exported so that `import { useClient } from "./identity.js"` keeps working
+// for the tests that already do it. The cache itself lives in db.ts, shared
+// with every other handler.
+export { useClient };
 
 /**
  * The ULID for this sub, minting it if this is the first time we have seen them.
