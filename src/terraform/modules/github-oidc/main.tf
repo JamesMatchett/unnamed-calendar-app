@@ -16,7 +16,7 @@ data "aws_caller_identity" "current" {}
 
 locals {
   oidc_host = "token.actions.githubusercontent.com"
-  oidc_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/${local.oidc_host}"
+  oidc_arn  = var.create_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/${local.oidc_host}"
 }
 
 resource "aws_iam_openid_connect_provider" "github" {

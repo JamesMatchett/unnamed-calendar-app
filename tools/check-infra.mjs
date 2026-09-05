@@ -17,6 +17,7 @@
  * copies in step instead.
  */
 
+import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 
 const TF = "src/terraform";
@@ -28,6 +29,21 @@ if (!existsSync(TF) || !existsSync(WORKFLOWS)) {
 }
 
 const read = (p) => readFileSync(p, "utf8");
+
+/**
+ * A file that should be there and is not.
+ *
+ * Every read below names a file this layout requires, so a missing one is a
+ * finding rather than a crash: an environment directory added without all of
+ * its files is exactly the mistake worth reporting by name.
+ */
+const readOrNull = (p) => {
+  try {
+    return readFileSync(p, "utf8");
+  } catch {
+    return null;
+  }
+};
 const problems = [];
 const fail = (where, message) => problems.push(`${where}: ${message}`);
 
@@ -134,8 +150,13 @@ if (pinned) {
 // --- each environment is internally consistent -----------------------------
 
 for (const env of envs) {
-  const tfvars = read(`${TF}/envs/${env}/terraform.tfvars`);
-  const backendFile = read(`${TF}/envs/${env}/backend.tf`);
+  const tfvars = readOrNull(`${TF}/envs/${env}/terraform.tfvars`);
+  const backendFile = readOrNull(`${TF}/envs/${env}/backend.tf`);
+
+  if (tfvars === null || backendFile === null) {
+    fail(`${TF}/envs/${env}`, `missing ${tfvars === null ? "terraform.tfvars" : "backend.tf"}`);
+    continue;
+  }
 
   // A tfvars that names a different environment than its own directory would
   // create dev-named resources in the staging account, and the run would look
@@ -179,6 +200,36 @@ for (const env of envs) {
   }
 }
 
+// --- formatting, if there is anything here that can judge it ---------------
+//
+// CI runs `terraform fmt -check -recursive`, so unformatted HCL fails the first
+// pull request rather than the person who wrote it. Checking here as well moves
+// that to before the push. `fmt` also parses, so it catches malformed HCL, which
+// is as far as anything can get without reaching a provider registry.
+
+function formatter() {
+  for (const bin of ["terraform", "tofu"]) {
+    try {
+      execFileSync(bin, ["version"], { stdio: "ignore" });
+      return bin;
+    } catch {
+      /* not installed */
+    }
+  }
+  return null;
+}
+
+const fmt = formatter();
+if (fmt) {
+  try {
+    execFileSync(fmt, ["fmt", "-check", "-recursive", TF], { stdio: "pipe" });
+  } catch (err) {
+    const listed = String(err.stdout ?? "").trim().split("\n").filter(Boolean);
+    for (const file of listed) fail(file, `not \`${fmt} fmt\` clean`);
+    if (listed.length === 0) fail(TF, `\`${fmt} fmt -check\` failed: ${err.message}`);
+  }
+}
+
 if (problems.length > 0) {
   for (const p of problems) console.error(p);
   console.error(`\n${problems.length} infrastructure naming problem${problems.length === 1 ? "" : "s"}.`);
@@ -186,9 +237,12 @@ if (problems.length > 0) {
 }
 
 const ready = envs.filter(
-  (e) => !PLACEHOLDER.test(read(`${TF}/envs/${e}/terraform.tfvars`)),
+  (e) => !PLACEHOLDER.test(readOrNull(`${TF}/envs/${e}/terraform.tfvars`) ?? "REPLACE_WITH"),
 );
 console.log(
   `ok: infrastructure names agree (${project}, ${region}); ` +
-    `${ready.length ? ready.join(", ") + " configured" : "no environment configured yet"}`,
+    `${ready.length ? ready.join(", ") + " configured" : "no environment configured yet"}` +
+    // Said out loud rather than passing quietly: a check that silently skipped
+    // half its job reads exactly like one that ran.
+    `${fmt ? `; ${fmt} fmt clean` : "; FORMATTING NOT CHECKED, no terraform or tofu on PATH"}`,
 );
