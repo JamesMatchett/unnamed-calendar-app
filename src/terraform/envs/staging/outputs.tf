@@ -72,3 +72,18 @@ output "dns_name_servers" {
   EOT
   value       = module.dns.name_servers
 }
+
+output "auth_hosted_domain" {
+  description = "The sign-in host, needed by Apple's and Google's consoles."
+  value       = module.auth.hosted_domain
+}
+
+output "auth_redirect_uri" {
+  description = "The exact return URL to register with Apple and with Google."
+  value       = module.auth.redirect_uri
+}
+
+output "identity_providers" {
+  description = "Which providers are configured. Empty until credentials are supplied."
+  value       = module.auth.identity_providers
+}

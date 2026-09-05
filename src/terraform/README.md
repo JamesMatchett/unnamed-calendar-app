@@ -258,6 +258,71 @@ authoriser has come off the route. That body exists to say so: API Gateway answe
 while the authoriser is attached, so the handler can only see an unauthenticated request when
 the route has been left open.
 
+## Sign in with Apple and Google
+
+Two applies, because each console needs a value the other side has to exist to
+produce.
+
+**First**, apply with no credentials. Federation is off by default and every
+variable is empty, so this creates only the hosted domain:
+
+```sh
+terraform -chdir=envs/dev apply
+terraform -chdir=envs/dev output auth_redirect_uri
+```
+
+That URL is what both consoles need, character for character. Neither will tell
+you when it does not match; the sign-in fails at the provider with a generic
+message and no hint.
+
+**Then, in Apple's developer portal** — Identifiers:
+
+1. On the `com.calandder.app` App ID, enable **Sign in with Apple**.
+2. Create a **Services ID**, e.g. `com.calandder.signin`. This is a separate
+   identifier from the bundle id, and it is the one Cognito calls `client_id`.
+   Native sign-in issues tokens whose audience is the *bundle id*, which is why
+   the redirect flow and the Services ID are the pair that works.
+3. Configure it: primary App ID `com.calandder.app`, the domain from
+   `auth_hosted_domain` without a scheme, and the return URL from
+   `auth_redirect_uri`. **You do not need to verify the domain** — Apple's own
+   console implies otherwise and AWS's guide is explicit that you skip it.
+4. Keys: create a key with Sign in with Apple enabled. Note the **Key ID**, and
+   keep the `.p8` — **it downloads exactly once**.
+5. Membership details: the **Team ID**.
+
+**And in the Google Cloud console** — APIs and Services, Credentials, an OAuth
+client ID of type Web application:
+
+- Authorized JavaScript origins: `https://<auth_hosted_domain>`
+- Authorized redirect URIs: the `auth_redirect_uri` value
+- Keep the client id and client secret.
+
+**Second apply**, with the values in the environment rather than in a file:
+
+```sh
+export TF_VAR_apple_services_id=com.calandder.signin
+export TF_VAR_apple_team_id=XXXXXXXXXX
+export TF_VAR_apple_key_id=XXXXXXXXXX
+export TF_VAR_apple_private_key="$(cat ~/Downloads/AuthKey_XXXXXXXXXX.p8)"
+export TF_VAR_google_client_id=....apps.googleusercontent.com
+export TF_VAR_google_client_secret=...
+
+terraform -chdir=envs/dev apply
+terraform -chdir=envs/dev output identity_providers
+```
+
+Nothing secret goes in `terraform.tfvars`, which is committed. The key IS in
+Terraform state, which is a decision rather than an oversight (§3.2): state is
+in a private, versioned, TLS-only bucket, and the plan role can read it because
+planning requires it. That means anyone who can open a pull request here can
+read the key that mints Apple client secrets for this service. Acceptable in dev
+with no users; not something to carry into prod without splitting auth into a
+state CI cannot read.
+
+Both providers are optional. Supply neither and the pool has no way in and the
+apply still succeeds; supply one and only that one appears. `identity_providers`
+says which are live.
+
 ## DNS
 
 Each environment holds its own zone, in its own account, delegated from the root account

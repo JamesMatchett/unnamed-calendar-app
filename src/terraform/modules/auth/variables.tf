@@ -82,3 +82,88 @@ variable "log_retention_days" {
   type        = number
   default     = 14
 }
+
+variable "domain_prefix" {
+  description = <<-EOT
+    The Cognito-hosted domain, giving <prefix>.auth.<region>.amazoncognito.com.
+    Must be unique across the region, so a taken prefix fails the apply with a
+    name it will happily tell you about.
+
+    Not a custom domain, deliberately. A custom Cognito domain needs its ACM
+    certificate in us-east-1 whatever region the pool is in, because it is
+    fronted by CloudFront, AND an A record on the PARENT domain — Cognito
+    resolves dev.calandder.com to check the domain is not being hijacked, and an
+    SOA is not enough. None of that buys anything in dev. §3.2's argument that
+    *.amazoncognito.com costs conversion is about people signing up, so it
+    applies to prod, where a custom domain is worth the work.
+  EOT
+  type        = string
+}
+
+variable "callback_urls" {
+  description = <<-EOT
+    Exactly where Cognito will return to after a sign-in. No wildcards: Cognito
+    matches these strings exactly, which is why dev carries more than one.
+
+    `calandder://auth` is what a real build uses, standalone or a dev client,
+    because that is when the app's URL scheme is registered with the OS.
+    Expo Go does not register it and mints an exp:// URL from the machine's
+    address instead, so the simulator's loopback form is here too. It is stable
+    for the simulator and useless for a phone, which is the honest state of
+    testing OAuth in Expo Go.
+  EOT
+  type        = list(string)
+}
+
+# --- federation, which stays off until there are credentials -----------------
+#
+# Every one of these defaults to empty and each provider is created only when
+# its values are present. That means this module applies cleanly today, before
+# Apple and Google are configured, and lights up when they are — rather than
+# being a half-built thing that fails until somebody finishes it.
+#
+# NONE of these belong in a committed tfvars. Pass them at apply time:
+#
+#   export TF_VAR_apple_private_key="$(cat ~/Downloads/AuthKey_XXXXXXXXXX.p8)"
+#
+# The key is in Terraform state either way (decision recorded in §3.2): the
+# point of keeping it out of the repository is that a file in git is forever and
+# readable by anyone who ever clones it.
+
+variable "apple_services_id" {
+  description = "Apple Services ID, e.g. com.calandder.signin. NOT the bundle id."
+  type        = string
+  default     = ""
+}
+
+variable "apple_team_id" {
+  description = "Apple Team ID, ten characters, from Membership details."
+  type        = string
+  default     = ""
+}
+
+variable "apple_key_id" {
+  description = "Key ID of the Sign in with Apple key."
+  type        = string
+  default     = ""
+}
+
+variable "apple_private_key" {
+  description = "Contents of the .p8. Pass via TF_VAR_apple_private_key; never commit it."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "google_client_id" {
+  description = "OAuth 2.0 web client id from the Google Cloud console."
+  type        = string
+  default     = ""
+}
+
+variable "google_client_secret" {
+  description = "Its secret. Pass via TF_VAR_google_client_secret; never commit it."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
