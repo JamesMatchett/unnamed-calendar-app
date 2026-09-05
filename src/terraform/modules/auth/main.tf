@@ -327,8 +327,18 @@ locals {
   # before the providers rather than beside them.
   redirect_uri = "https://${aws_cognito_user_pool_domain.main.domain}.auth.${data.aws_region.current.region}.amazoncognito.com/oauth2/idpresponse"
 
-  apple_ready  = var.apple_services_id != "" && var.apple_team_id != "" && var.apple_key_id != "" && var.apple_private_key != ""
-  google_ready = var.google_client_id != "" && var.google_client_secret != ""
+  # nonsensitive() around the secret comparisons only.
+  #
+  # Terraform propagates sensitivity through every expression that touches a
+  # sensitive value, so without this the derived list of PROVIDER NAMES is
+  # treated as secret and the root output is refused. That is the right default
+  # and the wrong answer here: marking the output sensitive would hide
+  # ["Google", "SignInWithApple"], which is not a secret and is the one thing
+  # somebody wants to read after configuring them.
+  #
+  # What is asserted is narrow and true: whether a key is empty is not the key.
+  apple_ready  = var.apple_services_id != "" && var.apple_team_id != "" && var.apple_key_id != "" && nonsensitive(var.apple_private_key != "")
+  google_ready = var.google_client_id != "" && nonsensitive(var.google_client_secret != "")
 
   providers_configured = compact([
     local.apple_ready ? "SignInWithApple" : "",
