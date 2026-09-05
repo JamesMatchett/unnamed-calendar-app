@@ -62,6 +62,13 @@
         }
       ],
       [
+        "expo-calendar",
+        {
+          "calendarPermission": "Cal&der uses your calendar so you can copy plans onto your phone, and bring events you already have into a shared calendar.",
+          "remindersPermission": false
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/splash-icon.png",
@@ -78,6 +85,7 @@
       "typedRoutes": true
     },
     "//plugins.expo-image-picker": "Without this the Info.plist has no NSPhotoLibraryUsageDescription, so iOS shows no Photos row for the app in Settings and a real build crashes on the first request.",
+    "//plugins.expo-calendar": "Same reason: NSCalendarsFullAccessUsageDescription must exist before iOS will show the permission sheet at all. Reminders are switched off deliberately; the app reads and writes events and asking for reminders too would be requesting access it never uses. The code imports expo-calendar/legacy, not the package default, because the newer API in SDK 57 throws in Expo Go.",
     "//name": "Display name only. The ampersand is illegal in bundle ids, npm package names, URL schemes and domains. The domain is calandder.com (cal-and-der), so every machine-readable form derives from that: com.calandder.app, the calandder scheme. @calder/core keeps its short name.",
     "//orientation": "Portrait by default; screens that want landscape call unlockAsync themselves. Locking from the root layout instead raced the screens' own effects.",
     "icon": "./assets/icon.png",

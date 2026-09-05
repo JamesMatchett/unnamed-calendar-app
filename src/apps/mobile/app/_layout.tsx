@@ -8,6 +8,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Onboarding } from "@/components/Onboarding";
 import { getDb } from "@/db/client";
 import { getAppearance, identityComplete } from "@/db/repo";
+import { useAutoSync } from "@/lib/useAutoSync";
 import { useQuery } from "@/lib/useQuery";
 import type { Appearance } from "@/theme";
 import { ThemeProvider, themeFor } from "@/theme";
@@ -30,6 +31,12 @@ export default function RootLayout() {
   const systemDark = useColorScheme() === "dark";
   const [preview, setPreview] = useState<Appearance>("system");
   const t = themeFor(chosen ?? preview, systemDark);
+
+  // Automatic sync lives at the root rather than on the sync screen, because
+  // the moment worth syncing is just after an event is added, and nobody adds
+  // an event from the sync screen. It does nothing at all unless the preference
+  // is on and calendar access has already been granted.
+  useAutoSync();
 
   // Opening the database also creates the schema and seeds fixtures. It is
   // synchronous and fast, and doing it here means no screen ever has to consider
@@ -74,6 +81,12 @@ export default function RootLayout() {
         <Stack.Screen name="settings" options={{ presentation: "modal" }} />
         <Stack.Screen name="suggestion" options={{ presentation: "modal" }} />
         <Stack.Screen name="activity" options={{ presentation: "modal" }} />
+        {/* Only the entry screen is modal. Choosing a direction pushes an
+            ordinary screen over it, which keeps a back button rather than a
+            second dismiss gesture: the list of what is about to be copied is
+            somewhere you go INTO, and swiping it away by accident on the way to
+            reading it would lose the selection. */}
+        <Stack.Screen name="sync/index" options={{ presentation: "modal" }} />
         <Stack.Screen name="calendar/new" options={{ presentation: "modal" }} />
         <Stack.Screen
           name="calendar/[calendarId]/event/new"

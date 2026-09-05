@@ -242,6 +242,90 @@ export function ToggleRow({
   );
 }
 
+/**
+ * A row you tick, for picking several things out of a list.
+ *
+ * Not a ToggleRow: a switch means "this setting is on", and twenty switches in
+ * a list read as twenty settings rather than one selection. A tick is the
+ * platform's own vocabulary for choosing items, and it also gives us a third
+ * state that a switch cannot show — a row that is ticked but greyed, which is
+ * how "already on your phone" and "you cannot write to this one" appear.
+ */
+export function CheckRow({
+  label,
+  hint,
+  checked,
+  onChange,
+  disabled,
+  note,
+  tint,
+}: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  disabled?: boolean;
+  /** A short status on the right: "already here", "read only". */
+  note?: string;
+  /** The calendar's own colour, as a dot. */
+  tint?: string;
+}) {
+  const t = useTheme();
+  return (
+    <Pressable
+      onPress={() => !disabled && onChange(!checked)}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked, disabled: !!disabled }}
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: space.md,
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <View
+        style={{
+          width: 21,
+          height: 21,
+          borderRadius: radius.sm,
+          borderWidth: checked ? 0 : 1.5,
+          borderColor: t.color.border,
+          backgroundColor: checked ? t.color.accentFill : "transparent",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        {checked ? (
+          <Text style={{ fontSize: 13, fontWeight: "900", color: t.color.onAccent }}>
+            ✓
+          </Text>
+        ) : null}
+      </View>
+
+      {tint ? (
+        <View
+          style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: tint }}
+        />
+      ) : null}
+
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={{ ...type.body, color: t.color.text }} numberOfLines={1}>
+          {label}
+        </Text>
+        {hint ? (
+          <Text style={{ ...type.caption, color: t.color.textMuted }} numberOfLines={1}>
+            {hint}
+          </Text>
+        ) : null}
+      </View>
+
+      {note ? (
+        <Text style={{ ...type.caption, color: t.color.textMuted }}>{note}</Text>
+      ) : null}
+    </Pressable>
+  );
+}
+
 export function RowButton({
   label,
   value,

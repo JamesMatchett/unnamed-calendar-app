@@ -48,6 +48,7 @@ function addMissingColumns(database: SQLite.SQLiteDatabase): void {
     ["events", "updated_by", "TEXT"],
     ["events", "updated_at", "TEXT"],
     ["events", "scheduling_mode", "TEXT NOT NULL DEFAULT 'fixed'"],
+    ["device_links", "hash", "TEXT"],
   ];
 
   for (const [table, column, decl] of added) {
@@ -123,6 +124,13 @@ function clearFixtures(database: SQLite.SQLiteDatabase): void {
   // Everyone except the person holding the phone: their directory row is who
   // they are, not an example.
   database.runSync("DELETE FROM directory WHERE user_id != ?", [CURRENT_USER_ID]);
+  // Links to the phone's own calendar, but only the ones pointing INWARDS. An
+  // 'in' link says "this device event is already in the app", which stops being
+  // true the moment the events are dropped, and leaving it would hide a real
+  // meeting from the import list forever. An 'out' link is kept on purpose: the
+  // copy is still sitting on the phone, it is still ours, and the next export
+  // run is the thing that tidies it up.
+  database.runSync("DELETE FROM device_links WHERE direction = 'in'");
 }
 
 // --- a very small reactive layer ------------------------------------------

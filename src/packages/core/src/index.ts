@@ -25,3 +25,4 @@ export * from "./scheduling.js";
 export * from "./freebusy.js";
 export * from "./lifecycle.js";
 export * from "./monthgrid.js";
+export * from "./devicesync.js";

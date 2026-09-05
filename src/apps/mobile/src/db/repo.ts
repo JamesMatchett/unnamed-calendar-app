@@ -6,15 +6,20 @@
 
 import type {
   DayPresence,
+  ExportableEvent,
   NotificationKind,
   NotificationSurface,
   RsvpAnswer,
   RsvpStatus,
+  SyncDirection,
+  SyncLink,
+  SyncPrefs,
   TicketStatus,
   TravelMode,
 } from "@calder/core";
 import type { SchedulingMode, SlotResponse } from "@calder/core";
 import {
+  DEFAULT_SYNC_PREFS,
   SERIES_DEFAULT,
   classifyPresence,
   isActionable,
@@ -22,6 +27,7 @@ import {
   newEventId,
   resolveRsvp,
   surfaceFor,
+  syncHash,
   tallyRsvps,
   ulid,
 } from "@calder/core";
@@ -2598,8 +2604,261 @@ export function clearAllData(): void {
     }
     // Everyone but me: my own directory row is my identity, not example data.
     db.runSync("DELETE FROM directory WHERE user_id != ?", [CURRENT_USER_ID]);
+    // See clearFixtures in client.ts for why only the inward links go.
+    db.runSync("DELETE FROM device_links WHERE direction = 'in'");
     db.runSync("INSERT OR REPLACE INTO meta (key, value) VALUES ('fixtures', '0')");
   });
   ensureOwnPlans(db);
   notifyChanged();
+}
+
+// --- the phone's own calendar (§5.7) -------------------------------------------
+//
+// Everything here is bookkeeping around a copy that lives somewhere this app
+// does not control. The actual talking to iOS and Android is in
+// src/lib/deviceCalendar.ts; what follows is only what has to survive a
+// restart, plus the query that decides what is eligible to go out at all.
+
+/** Every copy made in one direction, in the shape @calder/core plans against. */
+export function listDeviceLinks(direction: SyncDirection): SyncLink[] {
+  return getDb()
+    .getAllSync<{
+      event_id: string;
+      device_event_id: string;
+      device_calendar_id: string;
+      hash: string | null;
+    }>(
+      `SELECT event_id, device_event_id, device_calendar_id, hash
+         FROM device_links WHERE direction = ?`,
+      [direction],
+    )
+    .map((r) => ({
+      eventId: r.event_id,
+      deviceEventId: r.device_event_id,
+      deviceCalendarId: r.device_calendar_id,
+      hash: r.hash,
+    }));
+}
+
+/**
+ * Write down what an export actually did.
+ *
+ * One transaction for the whole result, because these rows only have value as
+ * a set: a half-written batch would leave copies on the phone with no link to
+ * them, and the next run would make a second copy of every one. The write
+ * happens AFTER the phone has been touched rather than before, so a link never
+ * claims a copy exists that does not.
+ *
+ * Removals and vanishings are treated identically here even though they mean
+ * different things above: one is a copy we deleted, the other a copy somebody
+ * else deleted first. Either way it is gone, and remembering it is the only
+ * mistake available.
+ */
+export function commitExport(
+  result: {
+    created: readonly { eventId: string; deviceEventId: string }[];
+    updated: readonly { eventId: string; deviceEventId: string }[];
+    removed: readonly string[];
+    vanished: readonly string[];
+  },
+  deviceCalendarId: string,
+  events: readonly ExportableEvent[],
+): void {
+  const db = getDb();
+  const now = new Date().toISOString();
+  const hashes = new Map(events.map((e) => [e.eventId, syncHash(e)]));
+
+  db.withTransactionSync(() => {
+    for (const made of [...result.created, ...result.updated]) {
+      db.runSync(
+        `INSERT OR REPLACE INTO device_links
+           (event_id, device_event_id, device_calendar_id, direction, hash, linked_at)
+         VALUES (?,?,?,'out',?,?)`,
+        [
+          made.eventId,
+          made.deviceEventId,
+          deviceCalendarId,
+          hashes.get(made.eventId) ?? null,
+          now,
+        ],
+      );
+    }
+    for (const gone of [...result.removed, ...result.vanished]) {
+      db.runSync(
+        "DELETE FROM device_links WHERE direction = 'out' AND device_event_id = ?",
+        [gone],
+      );
+    }
+    db.runSync("INSERT OR REPLACE INTO meta (key, value) VALUES ('sync:last', ?)", [now]);
+  });
+
+  notifyChanged();
+}
+
+/** Forget a copy, once it is gone from the phone (or was never really there). */
+export function forgetDeviceLink(direction: SyncDirection, deviceEventId: string): void {
+  getDb().runSync(
+    "DELETE FROM device_links WHERE direction = ? AND device_event_id = ?",
+    [direction, deviceEventId],
+  );
+  notifyChanged();
+}
+
+/**
+ * What could be copied out to the phone.
+ *
+ * Cancelled events are included rather than filtered here, because a cancelled
+ * event with an existing copy has to produce a removal: dropping it from this
+ * query would leave a dinner nobody is going to sitting on somebody's work
+ * calendar with no way to reach it. planExport decides; this only supplies.
+ */
+export function exportableEvents(): ExportableEvent[] {
+  return getDb()
+    .getAllSync<{
+      event_id: string;
+      calendar_id: string;
+      title: string;
+      start_utc: string;
+      end_utc: string | null;
+      status: "active" | "cancelled";
+      precision: "datetime" | "date" | "tbc";
+      updated_at: string | null;
+    }>(
+      `SELECT e.event_id, e.calendar_id, e.title, e.start_utc, e.end_utc,
+              e.status, e.precision, e.updated_at
+         FROM events e
+         JOIN members m ON m.calendar_id = e.calendar_id
+        WHERE m.user_id = ? AND m.status = 'active'
+        ORDER BY e.start_utc`,
+      [CURRENT_USER_ID],
+    )
+    .map((r) => ({
+      eventId: r.event_id,
+      calendarId: r.calendar_id,
+      title: r.title,
+      startUtc: r.start_utc,
+      endUtc: r.end_utc,
+      status: r.status,
+      precision: r.precision,
+      updatedAt: r.updated_at,
+    }));
+}
+
+/** The name of the calendar each exportable event belongs to, for grouping. */
+export function calendarNames(): Record<string, string> {
+  const rows = getDb().getAllSync<{ calendar_id: string; name: string }>(
+    "SELECT calendar_id, name FROM calendars",
+  );
+  const out: Record<string, string> = {};
+  for (const r of rows) out[r.calendar_id] = r.name;
+  return out;
+}
+
+export function getSyncPrefs(): SyncPrefs {
+  const row = getDb().getFirstSync<{ value: string }>(
+    "SELECT value FROM meta WHERE key = 'sync:prefs'",
+  );
+  if (!row) return DEFAULT_SYNC_PREFS;
+  try {
+    // Spread over the defaults rather than trusting the stored object whole: a
+    // preference added in a later version must not come back undefined on a
+    // phone that saved this row before it existed.
+    return { ...DEFAULT_SYNC_PREFS, ...(JSON.parse(row.value) as Partial<SyncPrefs>) };
+  } catch {
+    return DEFAULT_SYNC_PREFS;
+  }
+}
+
+export function setSyncPrefs(prefs: SyncPrefs): void {
+  getDb().runSync(
+    "INSERT OR REPLACE INTO meta (key, value) VALUES ('sync:prefs', ?)",
+    [JSON.stringify(prefs)],
+  );
+  notifyChanged();
+}
+
+/** When a sync last actually ran, for the line under the button. */
+export function lastSyncAt(): string | null {
+  return (
+    getDb().getFirstSync<{ value: string }>(
+      "SELECT value FROM meta WHERE key = 'sync:last'",
+    )?.value ?? null
+  );
+}
+
+export function markSyncRun(): void {
+  getDb().runSync(
+    "INSERT OR REPLACE INTO meta (key, value) VALUES ('sync:last', ?)",
+    [new Date().toISOString()],
+  );
+}
+
+export interface ImportedEvent {
+  readonly deviceEventId: string;
+  readonly deviceCalendarId: string;
+  readonly title: string;
+  readonly startUtc: string;
+  readonly endUtc: string | null;
+  readonly localWall: string;
+  readonly tz: string;
+  readonly allDay: boolean;
+}
+
+/**
+ * Bring events in from the phone, as one transaction.
+ *
+ * One transaction for the whole batch, not one per event, and the links are
+ * written beside the events they describe: a crash halfway through a hundred
+ * imports must not leave events with no link, because the next run would then
+ * import every one of them again.
+ *
+ * Imported events are marked 'synced' rather than 'pending'. They did not
+ * originate here and there is nothing to push: queueing them would send
+ * somebody's private work meetings to the server the day sync is switched on,
+ * which is the opposite of what importing them was for.
+ */
+export function importDeviceEvents(
+  calendarId: string,
+  events: readonly ImportedEvent[],
+): number {
+  if (events.length === 0) return 0;
+  const db = getDb();
+  const now = new Date().toISOString();
+  let written = 0;
+
+  db.withTransactionSync(() => {
+    for (const e of events) {
+      const eventId = newEventId();
+      db.runSync(
+        `INSERT INTO events (event_id, calendar_id, title, description, start_utc, end_utc,
+           tz, local_wall, precision, location_name, location_address, tickets_required,
+           ticket_url, allow_suggestions, status, created_by, created_at, version, rrule,
+           image_key, sync_state)
+         VALUES (?,?,?,NULL,?,?,?,?,?,NULL,NULL,0,NULL,1,'active',?,?,1,NULL,NULL,'synced')`,
+        [
+          eventId,
+          calendarId,
+          e.title.trim() || "Busy",
+          e.startUtc,
+          e.endUtc,
+          e.tz,
+          e.localWall,
+          e.allDay ? "date" : "datetime",
+          CURRENT_USER_ID,
+          now,
+        ],
+      );
+      db.runSync(
+        `INSERT OR REPLACE INTO device_links
+           (event_id, device_event_id, device_calendar_id, direction, linked_at)
+         VALUES (?,?,?,'in',?)`,
+        [eventId, e.deviceEventId, e.deviceCalendarId, now],
+      );
+      written += 1;
+    }
+    db.runSync("INSERT OR REPLACE INTO meta (key, value) VALUES ('sync:last', ?)", [now]);
+  });
+
+  notifyChanged();
+  return written;
 }

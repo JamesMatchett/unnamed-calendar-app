@@ -5,6 +5,7 @@ import {
   ActivityButton,
   PeopleButton,
   ProfileButton,
+  SyncButton,
 } from "@/components/HeaderButtons";
 import { useTheme } from "@/theme";
 
@@ -38,7 +39,12 @@ export default function TabsLayout() {
             <PeopleButton />
           </View>
         ),
-        headerRight: () => <ActivityButton />,
+        headerRight: () => (
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <SyncButton />
+            <ActivityButton />
+          </View>
+        ),
       }}
     >
       <Tabs.Screen

@@ -340,6 +340,35 @@ CREATE TABLE IF NOT EXISTS slot_votes (
 
 CREATE INDEX IF NOT EXISTS idx_slot_votes_event ON slot_votes (event_id);
 
+-- What this app has already copied to or from the phone's own calendar (§5.7).
+--
+-- The whole point of storing this is that a sync run twice must not write
+-- everything twice. Without a link, the second run has no way to tell "this
+-- dinner is already over there" from "this dinner is new", and the honest
+-- answer to that ambiguity is forty duplicates.
+--
+-- Direction is part of the key rather than a column beside it because the two
+-- directions mean opposite things: an 'out' row says WE made the copy on the
+-- phone and are responsible for deleting it, an 'in' row says the phone's event
+-- is the original and ours is the copy. Confusing the two deletes somebody's
+-- real meeting.
+CREATE TABLE IF NOT EXISTS device_links (
+  event_id           TEXT NOT NULL,
+  device_event_id    TEXT NOT NULL,
+  device_calendar_id TEXT NOT NULL,
+  direction          TEXT NOT NULL CHECK (direction IN ('out','in')),
+  -- What the event looked like when the copy was written (§5.7's
+  -- lastSyncedHash). Its absence is what makes a second run rewrite everything
+  -- it wrote the first time, which on iOS is visible as the whole week
+  -- flickering in the calendar app. NULL means unknown, not unchanged.
+  hash               TEXT,
+  linked_at          TEXT NOT NULL,
+  PRIMARY KEY (event_id, direction)
+);
+
+CREATE INDEX IF NOT EXISTS idx_device_links_device
+  ON device_links (direction, device_event_id);
+
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY NOT NULL,
   value TEXT NOT NULL

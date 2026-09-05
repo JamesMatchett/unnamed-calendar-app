@@ -125,6 +125,56 @@ export function ProfileButton() {
   );
 }
 
+/**
+ * The phone's own calendar, in and out (§5.7).
+ *
+ * Next to Activity rather than buried in Settings, because it is a thing you
+ * DO, repeatedly, and often right after adding something: the moment you want
+ * a trip to turn up beside your work meetings is the moment you have just
+ * finished entering the trip. Settings is where you would put it if syncing
+ * were configuration; it is closer to sending.
+ *
+ * No badge. Nothing is waiting here, and a number on this icon would compete
+ * with the one next to it, which does mean somebody is waiting for you.
+ */
+export function SyncButton() {
+  const t = useTheme();
+  const router = useRouter();
+
+  return (
+    <Pressable
+      onPress={() => router.push("/sync")}
+      hitSlop={10}
+      accessibilityRole="button"
+      accessibilityLabel="Calendar sync"
+      style={{ paddingLeft: space.lg }}
+    >
+      {/* A calendar with sync arrows on it, built from two glyphs because
+          Ionicons has no single one. The arrows sit on a disc filled with the
+          header's own background so they read as a badge ON the calendar
+          rather than as strokes tangled up in its border. */}
+      <View>
+        <Ionicons name="calendar-outline" size={23} color={t.color.text} />
+        <View
+          style={{
+            position: "absolute",
+            right: -5,
+            bottom: -4,
+            width: 15,
+            height: 15,
+            borderRadius: 8,
+            backgroundColor: t.color.bg,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ionicons name="sync" size={13} color={t.color.text} />
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
 export function ActivityButton() {
   const t = useTheme();
   const router = useRouter();
