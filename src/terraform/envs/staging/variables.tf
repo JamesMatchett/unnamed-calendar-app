@@ -43,3 +43,25 @@ variable "deletion_protection" {
   type        = bool
   default     = true
 }
+
+variable "zone_name" {
+  description = "This environment's delegated DNS zone. See modules/dns."
+  type        = string
+  default     = "staging.calandder.com"
+}
+
+variable "test_client_enabled" {
+  description = "Admin-password app client, for minting a token before federation exists. See modules/auth."
+  type        = bool
+  default     = false
+}
+
+variable "commit" {
+  description = <<-EOT
+    The commit the Lambda bundle was built from, reported by /v1/health. Set by CI
+    as TF_VAR_commit; left unknown when Terraform runs from a laptop, which is
+    itself a useful thing to be able to see in a response.
+  EOT
+  type        = string
+  default     = "unknown"
+}

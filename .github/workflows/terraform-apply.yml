@@ -11,6 +11,17 @@ on:
     paths:
       - "src/terraform/**"
       - ".github/workflows/terraform-apply.yml"
+      # The Lambda bundle is part of the infrastructure now that Terraform owns
+      # the artifact, so a handler change IS an infrastructure change and has to
+      # be planned and applied like one. core is here because it is bundled into
+      # the same file, which does mean a change made for the mobile app can
+      # trigger a deploy. That noise is the cost of the decision recorded in
+      # modules/api/main.tf, and the first thing that will argue for reversing
+      # it.
+      - "src/packages/api/**"
+      - "src/packages/core/**"
+      - "package.json"
+      - "package-lock.json"
   workflow_dispatch:
 
 permissions:
@@ -47,6 +58,17 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      # The bundle has to exist before Terraform reads it: the archive_file data
+      # source zips a directory at plan time, and a missing directory is a plan
+      # error rather than an empty zip.
+      - run: npm ci
+      - run: npm run build:api
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
@@ -54,6 +76,8 @@ jobs:
           role-session-name: gha-apply-dev-${{ github.run_id }}
       - run: terraform -chdir=src/terraform/envs/dev init
       - run: terraform -chdir=src/terraform/envs/dev apply -auto-approve -lock-timeout=5m
+        env:
+          TF_VAR_commit: ${{ github.sha }}
 
   staging:
     name: apply (staging)
@@ -71,6 +95,17 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      # The bundle has to exist before Terraform reads it: the archive_file data
+      # source zips a directory at plan time, and a missing directory is a plan
+      # error rather than an empty zip.
+      - run: npm ci
+      - run: npm run build:api
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
@@ -78,6 +113,8 @@ jobs:
           role-session-name: gha-apply-staging-${{ github.run_id }}
       - run: terraform -chdir=src/terraform/envs/staging init
       - run: terraform -chdir=src/terraform/envs/staging apply -auto-approve -lock-timeout=5m
+        env:
+          TF_VAR_commit: ${{ github.sha }}
 
   prod:
     name: apply (prod)
@@ -95,6 +132,17 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      # The bundle has to exist before Terraform reads it: the archive_file data
+      # source zips a directory at plan time, and a missing directory is a plan
+      # error rather than an empty zip.
+      - run: npm ci
+      - run: npm run build:api
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
@@ -105,4 +153,6 @@ jobs:
       # Plan and apply as separate steps so the approval reviewer sees the plan
       # in the log immediately above the change it authorised.
       - run: terraform -chdir=src/terraform/envs/prod plan -lock-timeout=5m -out=tfplan
+        env:
+          TF_VAR_commit: ${{ github.sha }}
       - run: terraform -chdir=src/terraform/envs/prod apply -lock-timeout=5m tfplan
