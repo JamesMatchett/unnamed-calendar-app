@@ -326,6 +326,63 @@ export function CheckRow({
   );
 }
 
+/**
+ * One of several, picked.
+ *
+ * Not RowButton, which dims its label on purpose: there the label names a
+ * setting and the VALUE is the content, so "Appearance / Dark" reads correctly
+ * with the weight on the right. In a list you choose from, the name IS the
+ * content, and borrowing the settings row for it left every option looking
+ * disabled.
+ *
+ * The tick sits on the right rather than a radio dot on the left, so an
+ * unchosen row costs no ink at all and the eye finds the chosen one by the only
+ * mark on the screen.
+ */
+export function ChoiceRow({
+  label,
+  note,
+  chosen,
+  onPress,
+}: {
+  label: string;
+  /** Something true about this option: how many people are in it. */
+  note?: string;
+  chosen: boolean;
+  onPress: () => void;
+}) {
+  const t = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="radio"
+      accessibilityState={{ selected: chosen }}
+      style={{ flexDirection: "row", alignItems: "center", gap: space.md }}
+    >
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text
+          style={{
+            ...type.body,
+            color: t.color.text,
+            fontWeight: chosen ? "600" : "400",
+          }}
+          numberOfLines={1}
+        >
+          {label}
+        </Text>
+        {note ? (
+          <Text style={{ ...type.caption, color: t.color.textMuted }}>{note}</Text>
+        ) : null}
+      </View>
+      {chosen ? (
+        <Text style={{ ...type.body, fontWeight: "700", color: t.color.accent }}>
+          ✓
+        </Text>
+      ) : null}
+    </Pressable>
+  );
+}
+
 export function RowButton({
   label,
   value,

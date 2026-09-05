@@ -2,7 +2,7 @@ import { syncsCalendar } from "@calder/core";
 import { Stack } from "expo-router";
 import { ActivityIndicator, Linking, Pressable, ScrollView, Text, View } from "react-native";
 
-import { CheckRow, RowButton, ToggleRow } from "@/components/form";
+import { CheckRow, ChoiceRow, RowButton, ToggleRow } from "@/components/form";
 import { Card, Group, Muted } from "@/components/ui";
 import { getSyncPrefs, listCalendars, setSyncPrefs } from "@/db/repo";
 import { accountsFrom } from "@/lib/deviceCalendar";
@@ -125,22 +125,20 @@ export default function SyncPreferencesScreen() {
             <ActivityIndicator color={t.color.accent} />
           ) : (
             <Group>
-              <RowButton
-                bare
+              <ChoiceRow
                 label="Your default calendar"
-                value={prefs.targetCalendarId === null ? "✓" : ""}
-                active={prefs.targetCalendarId === null}
+                note="Whatever your phone adds new events to"
+                chosen={prefs.targetCalendarId === null}
                 onPress={() =>
                   setSyncPrefs({ ...prefs, targetCalendarId: null, targetAccount: null })
                 }
               />
               {writable.map((c) => (
-                <RowButton
-                  bare
+                <ChoiceRow
                   key={c.id}
-                  label={`${c.title}  ·  ${c.account}`}
-                  value={prefs.targetCalendarId === c.id ? "✓" : ""}
-                  active={prefs.targetCalendarId === c.id}
+                  label={c.title}
+                  note={c.account}
+                  chosen={prefs.targetCalendarId === c.id}
                   onPress={() =>
                     setSyncPrefs({
                       ...prefs,

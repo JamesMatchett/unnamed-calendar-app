@@ -4,12 +4,13 @@ import { Stack, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, Text, View } from "react-native";
 
-import { CheckRow, PrimaryButton, RowButton } from "@/components/form";
+import { CheckRow, ChoiceRow, PrimaryButton } from "@/components/form";
 import { Card, Group, Muted } from "@/components/ui";
 import {
   importDeviceEvents,
   listCalendarsICanPostTo,
   listDeviceLinks,
+  memberCounts,
 } from "@/db/repo";
 import { OWN_PLANS_ID } from "@/db/seed";
 import { readDeviceEvents } from "@/lib/deviceCalendar";
@@ -39,6 +40,7 @@ export default function ImportScreen() {
   const { permission, calendars, pending } = useDeviceCalendars();
   const links = useQuery("links:in", () => listDeviceLinks("in"));
   const targets = useQuery("calendars:postable", () => listCalendarsICanPostTo());
+  const counts = useQuery("calendars:members", () => memberCounts());
 
   const [sources, setSources] = useState<ReadonlySet<string> | null>(null);
   const [into, setInto] = useState<string>(OWN_PLANS_ID);
@@ -197,12 +199,16 @@ export default function ImportScreen() {
           <Text style={{ ...type.label, color: t.color.textMuted }}>They go into</Text>
           <Group>
             {targets.map((c) => (
-              <RowButton
-                bare
+              <ChoiceRow
                 key={c.calendar_id}
                 label={c.name}
-                value={c.calendar_id === into ? "✓" : ""}
-                active={c.calendar_id === into}
+                // Who else is in it, on the row where the choice is made. This
+                // screen copies what is on somebody's phone into a calendar
+                // other people read, so the number of them is the single most
+                // relevant fact about each option, and putting it in the
+                // footnote underneath would be telling them after the fact.
+                note={peopleIn(counts[c.calendar_id] ?? 1)}
+                chosen={c.calendar_id === into}
                 onPress={() => setInto(c.calendar_id)}
               />
             ))}
@@ -273,14 +279,30 @@ export default function ImportScreen() {
               />
             )}
             <Muted>
-              These become ordinary events in {targetName}, so anyone in that
-              calendar can see them. Your phone's copy is left exactly as it is.
+              {(counts[into] ?? 1) > 1
+                ? // Naming the number, and the calendar, at the moment of
+                  // pressing: "anyone in that calendar" is a phrase people read
+                  // past, and this is somebody's work diary going somewhere
+                  // other people read.
+                  `These become ordinary events in ${targetName}, where ${counts[into] === 2 ? "1 other person" : `${(counts[into] ?? 1) - 1} other people`} can see them. Your phone's copy is left exactly as it is.`
+                : `These become ordinary events in ${targetName}, which is yours alone. Your phone's copy is left exactly as it is.`}
             </Muted>
           </View>
         ) : null}
       </ScrollView>
     </>
   );
+}
+
+/**
+ * Who a calendar is shared with, or nothing at all.
+ *
+ * A calendar with only you in it says nothing rather than "1 person": the
+ * absence is the message, and a count beside every row would make the shared
+ * ones stop standing out, which is the only reason the count is here.
+ */
+function peopleIn(count: number): string | undefined {
+  return count > 1 ? `Shared with ${count - 1} other${count > 2 ? "s" : ""}` : undefined;
 }
 
 /** "2026-09-12T09:00:00", in the event's own zone. */

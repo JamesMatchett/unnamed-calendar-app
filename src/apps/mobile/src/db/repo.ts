@@ -2744,6 +2744,23 @@ export function exportableEvents(): ExportableEvent[] {
     }));
 }
 
+/**
+ * How many people are in each calendar, counting yourself.
+ *
+ * A plain object rather than a Map: useQuery compares snapshots with
+ * JSON.stringify, and a Map serialises to `{}`, so every result would look
+ * identical to the last one and the screen would never update.
+ */
+export function memberCounts(): Record<string, number> {
+  const rows = getDb().getAllSync<{ calendar_id: string; n: number }>(
+    `SELECT calendar_id, COUNT(*) AS n FROM members
+      WHERE status = 'active' GROUP BY calendar_id`,
+  );
+  const out: Record<string, number> = {};
+  for (const r of rows) out[r.calendar_id] = r.n;
+  return out;
+}
+
 /** The name of the calendar each exportable event belongs to, for grouping. */
 export function calendarNames(): Record<string, string> {
   const rows = getDb().getAllSync<{ calendar_id: string; name: string }>(
