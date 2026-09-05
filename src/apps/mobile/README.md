@@ -88,3 +88,36 @@ warning: Bundler cache is empty, rebuilding (this may take a minute)
 Waiting on http://localhost:8081
 
 Logs for your project will appear below.
+
+## Which environment a build talks to
+
+`app.json` holds everything static. `app.config.ts` adds the one thing that
+cannot be static: the environment, read from `CALDER_ENV` and turned into an
+API base URL that ships inside the bundle. `eas.json` sets that variable per
+build profile.
+
+| Profile | `CALDER_ENV` | Talks to |
+|---|---|---|
+| `development` | dev | `api.dev.calandder.com` |
+| `preview` | dev | `api.dev.calandder.com` |
+| `production` | prod | `api.calandder.com` |
+
+Unset defaults to dev, so `npx expo start` needs nothing. An unrecognised value
+throws while the config is read, rather than producing a build quietly pointed
+somewhere it should not be. Check what a build would carry:
+
+```sh
+npx expo config --type public --json | jq .extra
+CALDER_ENV=prod npx expo config --type public --json | jq .extra
+```
+
+The hostnames live in `app.config.ts` in source, because a compiled bundle
+cannot look one up. That makes them a copy of a name Terraform owns, so
+`check:infra` holds the two in step — the symptom otherwise appears on somebody
+else's phone, and a build already in TestFlight cannot be fixed by an apply.
+
+**`LOCAL_ONLY` is a different question** and stays `true`. It says whether there
+is anywhere for a write to go, and there is not: sign-in needs Apple and Google
+credentials that do not exist yet. Knowing which environment this build belongs
+to, and being able to prove the phone can reach it, is useful before that and is
+what Settings > Server does.

@@ -68,3 +68,21 @@ variable "log_retention_days" {
   type        = number
   default     = 14
 }
+
+variable "domain_name" {
+  description = <<-EOT
+    The hostname this API answers on, e.g. api.dev.calandder.com. It must sit
+    inside the zone given by zone_id, because the certificate is validated by a
+    record written there.
+
+    A stable name matters more than it looks for a mobile app: the execute-api
+    hostname contains a generated API id, so recreating the API strands every
+    build that carries it, and a build in TestFlight is slow to replace.
+  EOT
+  type        = string
+}
+
+variable "zone_id" {
+  description = "The Route 53 zone holding this environment's records, from modules/dns."
+  type        = string
+}

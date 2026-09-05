@@ -1,0 +1,34 @@
+{
+  "//": "Build profiles. Each one decides which environment the build belongs to by setting CALDER_ENV, which app.config.ts turns into the API base URL that ships in the bundle.",
+  "cli": {
+    "//appVersionSource": "Expo tracks the build number rather than the repository, so two builds from one commit do not collide and nobody has to remember to bump app.json.",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "//": "A dev client on a device or simulator, talking to dev.",
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "CALDER_ENV": "dev"
+      }
+    },
+    "preview": {
+      "//": "A release build without the dev client, still pointed at dev. This is the alpha shape: what a tester installs, before there is a prod environment to point anything at.",
+      "distribution": "internal",
+      "env": {
+        "CALDER_ENV": "dev"
+      }
+    },
+    "production": {
+      "//": "Store and TestFlight builds. Pointed at prod, which does not exist yet, and cannot be built at all until there is an Apple Developer account behind it.",
+      "autoIncrement": true,
+      "env": {
+        "CALDER_ENV": "prod"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

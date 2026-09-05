@@ -2,11 +2,12 @@ import type { NotifyPrefs } from "@calder/core";
 import { NOTIFY_GROUPS } from "@calder/core";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
+import { useState } from "react";
 import { Alert, ScrollView, Text, View } from "react-native";
 
 import { RowButton, Segmented, ToggleRow } from "@/components/form";
 import { Group, Muted } from "@/components/ui";
-import { LOCAL_ONLY } from "@/config";
+import { API_BASE, ENVIRONMENT, LOCAL_ONLY } from "@/config";
 import {
   clearAllData,
   examplesLoaded,
@@ -19,6 +20,7 @@ import {
   setAppearance,
   setBoolPref,
 } from "@/db/repo";
+import { health } from "@/lib/api";
 import { buildLabel, sendFeedback } from "@/lib/feedback";
 import { useQuery } from "@/lib/useQuery";
 import type { Appearance } from "@/theme";
@@ -44,6 +46,7 @@ export default function SettingsScreen() {
   const examples = useQuery("examples", () => examplesLoaded());
   const provider = useQuery("auth:provider", () => getAuthProvider());
   const notify = useQuery("notify:prefs", () => getNotifyPrefs());
+  const [server, setServer] = useState<string>(ENVIRONMENT);
 
   return (
     <>
@@ -180,6 +183,12 @@ export default function SettingsScreen() {
             <RowButton bare label="Version" value={buildLabel()} onPress={() => {}} />
             <RowButton
               bare
+              label="Server"
+              value={server}
+              onPress={() => void checkServer(setServer)}
+            />
+            <RowButton
+              bare
               label="Show the welcome again"
               value={provider ? `Signed in with ${provider}` : ""}
               onPress={() =>
@@ -196,10 +205,50 @@ export default function SettingsScreen() {
           </Group>
           <Muted>
             Something odd, something missing, something you liked: all useful.
+            Tap Server to check this phone can reach {API_BASE.replace("https://", "")}.
           </Muted>
         </View>
       </ScrollView>
     </>
+  );
+}
+
+/**
+ * Ask the API what it is, and put the answer in the row.
+ *
+ * The interesting result is not "reachable". It is WHICH environment answered:
+ * a build pointed at the wrong one gets a perfectly healthy 200 from somewhere
+ * it has no business talking to, and nothing else in the app would ever say so.
+ * So the row disagrees loudly when the environment that answered is not the one
+ * this build thinks it belongs to.
+ *
+ * Failures are named rather than collapsed into "unavailable", because a tester
+ * reporting "no signal" and a tester reporting "timed out" are telling us about
+ * two different problems, and only one of them is ours.
+ */
+async function checkServer(set: (value: string) => void): Promise<void> {
+  set("checking...");
+  const result = await health();
+
+  if (!result.ok) {
+    const { error } = result;
+    set(
+      error.kind === "offline"
+        ? "no connection"
+        : error.kind === "timeout"
+          ? "no answer"
+          : error.kind === "status"
+            ? `error ${error.status}`
+            : "bad response",
+    );
+    return;
+  }
+
+  const answered = result.value.environment;
+  set(
+    answered === ENVIRONMENT
+      ? `${answered}, ${result.value.commit.slice(0, 7)}`
+      : `WRONG: ${answered}`,
   );
 }
 

@@ -75,5 +75,8 @@ module "api" {
   table_arn         = module.data.table_arn
   table_kms_key_arn = module.data.kms_key_arn
 
+  domain_name = var.api_domain
+  zone_id     = module.dns.zone_id
+
   commit = var.commit
 }
