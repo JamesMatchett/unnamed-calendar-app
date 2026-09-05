@@ -57,7 +57,11 @@ export function PeopleButton() {
   return (
     <Pressable
       onPress={() => router.push("/people")}
-      hitSlop={10}
+      // Nothing on the left, where the profile avatar is. Same trap as the pair
+      // on the right: two neighbours each claiming ten pixels outward means
+      // twenty pixels claimed twice, and the one drawn later silently takes
+      // them.
+      hitSlop={{ top: 10, bottom: 10, left: 0, right: 10 }}
       accessibilityRole="button"
       accessibilityLabel={
         counts.people > 0
@@ -89,7 +93,7 @@ export function ProfileButton() {
   return (
     <Pressable
       onPress={() => router.push("/profile")}
-      hitSlop={10}
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 0 }}
       accessibilityRole="button"
       accessibilityLabel="Your profile"
       style={{ paddingLeft: space.lg, paddingRight: space.md }}
@@ -144,7 +148,13 @@ export function SyncButton() {
   return (
     <Pressable
       onPress={() => router.push("/sync")}
-      hitSlop={10}
+      // Slop upwards and to the LEFT only. A plain hitSlop of 10 grew this
+      // button 10px to the right and Activity 10px to the left, which put a
+      // 20px strip where both wanted the touch; Activity is drawn after this
+      // one, so Activity won it. The strip covered the sync arrows, the part of
+      // the icon anybody would actually aim at, so tapping sync opened
+      // notifications until you happened to hit the calendar body instead.
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 0 }}
       accessibilityRole="button"
       accessibilityLabel="Calendar sync"
       style={{ paddingLeft: space.lg }}
@@ -152,14 +162,19 @@ export function SyncButton() {
       {/* A calendar with sync arrows on it, built from two glyphs because
           Ionicons has no single one. The arrows sit on a disc filled with the
           header's own background so they read as a badge ON the calendar
-          rather than as strokes tangled up in its border. */}
-      <View>
+          rather than as strokes tangled up in its border.
+
+          The box is sized to hold both. The arrows used to be pinned at
+          right:-5, bottom:-4, which drew them outside this view and therefore
+          outside the button's own touch target: a quarter of what you could see
+          was not part of what you could press. Same pixels, now inside. */}
+      <View style={{ width: 28, height: 27 }}>
         <Ionicons name="calendar-outline" size={23} color={t.color.text} />
         <View
           style={{
             position: "absolute",
-            right: -5,
-            bottom: -4,
+            right: 0,
+            bottom: 0,
             width: 15,
             height: 15,
             borderRadius: 8,
@@ -183,7 +198,10 @@ export function ActivityButton() {
   return (
     <Pressable
       onPress={() => router.push("/activity")}
-      hitSlop={10}
+      // The other half of the pair: no slop on the left, where Sync is. Its own
+      // 16px of padding on that side is already a generous target, and taking
+      // ten more was only ever taking them from its neighbour.
+      hitSlop={{ top: 10, bottom: 10, left: 0, right: 10 }}
       accessibilityRole="button"
       accessibilityLabel={
         counts.activity > 0
