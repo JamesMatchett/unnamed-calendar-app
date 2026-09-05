@@ -36,6 +36,9 @@ import { radius, space, type, useTheme } from "@/theme";
 
 type Precision = "datetime" | "date" | "tbc";
 
+/** The parts of the form the sentence can fill in, and a person can overrule. */
+type Field = "title" | "date" | "time" | "location" | "precision";
+
 /** What the When control offers. "ask" stores as tbc plus a running poll. */
 type When = "datetime" | "date" | "ask";
 
@@ -187,22 +190,41 @@ export default function NewEventScreen() {
     const picked = await pickCoverImage();
     if (picked) setImageKey(picked);
   };
-  const [touched, setTouched] = useState(Boolean(on || at));
+  /**
+   * The fields somebody has set by hand, which the parser then leaves alone.
+   *
+   * A time arriving from the catch-up finder counts as set by hand: it was
+   * chosen on the previous screen, and a stray word in the title must not move
+   * it.
+   */
+  const [edited, setEdited] = useState<Partial<Record<Field, boolean>>>(
+    on || at ? { date: true, time: true } : {},
+  );
+  const setTouched = (field: Field) =>
+    setEdited((current) => ({ ...current, [field]: true }));
 
   /**
-   * The parse runs on every keystroke and only fills fields the person has not
-   * touched, so correcting one thing never has it overwritten by the next
+   * The parse runs on every keystroke and fills only the fields nobody has set
+   * by hand, so correcting one thing never has it overwritten by the next
    * character typed.
+   *
+   * Which fields those are is tracked one at a time. A single flag for the
+   * whole form looked equivalent and was not: touching ANY control, the When
+   * buttons included, stopped the parse dead, so the name never came out of the
+   * sentence again. Since the sentence is the only place a name is typed and an
+   * empty name is what greys out the button, picking Poll first and then typing
+   * left a filled-in form that refused to save and would not say why.
    */
   const onRawChange = (next: string) => {
     setRaw(next);
-    if (touched) return;
 
     const parsed = parseEventText(next, tz);
-    setTitle(parsed.title);
-    if (parsed.date) setDate(parsed.date);
-    if (parsed.time) setTime(parsed.time);
-    if (parsed.location) setLocation(parsed.location);
+    // The name always follows the sentence unless it has been edited on its
+    // own: there is nowhere else to type one.
+    if (!edited.title) setTitle(parsed.title);
+    if (parsed.date && !edited.date) setDate(parsed.date);
+    if (parsed.time && !edited.time) setTime(parsed.time);
+    if (parsed.location && !edited.location) setLocation(parsed.location);
 
     // Only when the text SAYS something about timing. "all day" and "TBC" are
     // how people write it, and both are states the control already has, so
@@ -213,7 +235,7 @@ export default function NewEventScreen() {
     // "TBC" lands on Ask, which is the same state with something to do about
     // it: writing that the time is to be confirmed and then confirming it with
     // nobody is how an event stays undated for a fortnight.
-    if (parsed.precision) setPrecision(parsed.precision);
+    if (parsed.precision && !edited.precision) setPrecision(parsed.precision);
   };
 
   const startUtc = useMemo(
@@ -385,7 +407,7 @@ export default function NewEventScreen() {
               bare
               value={title}
               onChange={(v) => {
-                setTouched(true);
+                setTouched("title");
                 setTitle(v);
               }}
               onBlur={() => setEditingName(false)}
@@ -423,7 +445,7 @@ export default function NewEventScreen() {
               bare
               value={precision === "tbc" ? "ask" : precision}
               onChange={(next) => {
-                setTouched(true);
+                setTouched("precision");
                 setPrecision(next === "ask" ? "tbc" : next);
               }}
               options={WHEN_OPTIONS}
@@ -493,6 +515,8 @@ export default function NewEventScreen() {
                 visible={dialogOpen || editing !== null}
                 initial={editing}
                 tz={tz}
+                rangeStart={calendar?.start_date ?? null}
+                rangeEnd={calendar?.end_date ?? null}
                 onSave={(draft) => saveSlot(draft, editing)}
                 onRemove={editing ? () => removeSlot(editing) : undefined}
                 onClose={() => {
@@ -543,6 +567,8 @@ export default function NewEventScreen() {
           visible={pickingWhen}
           initial={{ date, time: time ?? "19:00", endTime }}
           tz={tz}
+          rangeStart={calendar?.start_date ?? null}
+          rangeEnd={calendar?.end_date ?? null}
           title="When is it?"
           saveLabel="Set time"
           dateLabel="On"
@@ -550,7 +576,7 @@ export default function NewEventScreen() {
           withTime={precision === "datetime"}
           withEnd={precision === "datetime"}
           onSave={(draft) => {
-            setTouched(true);
+            setTouched("date");
             setDate(draft.date);
             if (precision === "datetime") {
               setTime(draft.time);
@@ -576,7 +602,7 @@ export default function NewEventScreen() {
                   bare
                   value={location}
                   onChange={(v) => {
-                    setTouched(true);
+                    setTouched("location");
                     setLocation(v);
                   }}
                   placeholder="Somewhere, or leave it blank"
@@ -599,7 +625,7 @@ export default function NewEventScreen() {
           visible={pickingPlace}
           value={location}
           onSelect={(place) => {
-            setTouched(true);
+            setTouched("location");
             setLocation(place);
           }}
           onClose={() => setPickingPlace(false)}
@@ -666,6 +692,21 @@ export default function NewEventScreen() {
           </Group>
         </View>
 
+        {/* A greyed-out button that will not say what it is waiting for is a
+            dead end, and this one waits on a field that is easy to miss:
+            the name comes out of the sentence at the top, so an empty name
+            looks like a form with nothing wrong with it. */}
+        {valid ? null : (
+          <Text
+            style={{
+              ...type.caption,
+              color: t.color.textMuted,
+              textAlign: "center",
+            }}
+          >
+            Give it a name first, in the box at the top.
+          </Text>
+        )}
         <PrimaryButton
           label={invite ? `Send to ${withName ?? "them"}` : "Add to calendar"}
           onPress={submit}

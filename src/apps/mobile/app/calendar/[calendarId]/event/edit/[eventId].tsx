@@ -306,6 +306,8 @@ export default function EditEventScreen() {
           visible={pickingWhen}
           initial={{ date, time, endTime }}
           tz={tz}
+          rangeStart={calendar?.start_date ?? null}
+          rangeEnd={calendar?.end_date ?? null}
           title="When is it?"
           saveLabel="Set time"
           dateLabel="On"

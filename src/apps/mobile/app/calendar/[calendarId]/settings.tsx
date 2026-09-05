@@ -280,7 +280,14 @@ function YourTrip({
             }}
           />
 
+          {/* The native picker follows the SYSTEM appearance, not ours, so an
+              app set to dark on a light phone drew dark text on a dark ground
+              and was unreadable. Naming the variant ties it to the app's own
+              theme, and the accent stops it being iOS blue in the middle of
+              our own colour. */}
           <DateTimePicker
+            themeVariant={t.dark ? "dark" : "light"}
+            accentColor={t.color.accentFill}
             value={new Date((picking === "arrive" ? arrives : departs) ?? Date.now())}
             mode="time"
             display={Platform.OS === "ios" ? "compact" : "default"}
@@ -578,7 +585,7 @@ function OwnerControls({
         />
 
         {calendar.collect_availability === 1 ? (
-          <Field label="How are people mostly getting there?">
+          <Field label="How are people getting there?">
             <TravelModePicker
               value={calendar.travel_mode}
               onChange={(v) => updateCalendar(calendarId, { travelMode: v })}

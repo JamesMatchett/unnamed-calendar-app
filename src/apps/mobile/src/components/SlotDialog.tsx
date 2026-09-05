@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 
 import { PrimaryButton, RowButton } from "@/components/form";
+import { TripDatePicker } from "@/components/TripDatePicker";
 import { Group, Muted } from "@/components/ui";
 import { radius, space, type, useTheme } from "@/theme";
 
@@ -42,6 +43,8 @@ export function SlotDialog({
   removeLabel = "Remove this option",
   withTime = true,
   withEnd = false,
+  rangeStart,
+  rangeEnd,
   onSave,
   onRemove,
   onClose,
@@ -61,6 +64,14 @@ export function SlotDialog({
   withTime?: boolean;
   /** Poll options are a start only; the event's own time can also finish. */
   withEnd?: boolean;
+  /**
+   * The calendar's own dates, shaded on the grid. A trip's days are the ones
+   * an event almost always falls on, so they are worth pointing at, but they
+   * are guidance and not a rule: people fly in early and stay on, and refusing
+   * those dates would make the calendar lie about when its people are around.
+   */
+  rangeStart?: string | null;
+  rangeEnd?: string | null;
   onSave: (draft: SlotDraft) => void;
   /** Absent when adding: there is nothing yet to remove. */
   onRemove?: () => void;
@@ -192,33 +203,44 @@ export function SlotDialog({
             ) : null}
           </Group>
 
-          {/* A wheel for a time, a grid for a date. iOS's "inline" display is a
-              month calendar: asked for a time it still draws the calendar, so
-              tapping Ends looked like it had done nothing at all. */}
-          <DateTimePicker
-            value={pickerValue}
-            mode={pickingTime ? "time" : "date"}
-            display={
-              Platform.OS !== "ios" ? "default" : pickingTime ? "spinner" : "inline"
-            }
-            // The spinner sizes itself to its columns and then sits wherever
-            // the row leaves it, which reads as off-centre under rows that are
-            // full width. Letting it shrink to its content and centring that
-            // puts the wheel under the middle of the sheet.
-            style={pickingTime ? { alignSelf: "center" } : undefined}
-            onChange={(_, selected) => {
-              if (!selected) return;
-              if (picking === "date") {
-                setDate(selected.toISOString().slice(0, 10));
-                return;
-              }
-              const hhmm = `${String(selected.getHours()).padStart(2, "0")}:${String(
-                selected.getMinutes(),
-              ).padStart(2, "0")}`;
-              if (picking === "end") setEndTime(hhmm);
-              else setTime(hhmm);
-            }}
-          />
+          {/* Our own grid for the date, the system's wheel for the time.
+              The inline system calendar was three problems at once: it follows
+              the SYSTEM appearance rather than the app's, so a dark app on a
+              light phone drew dark text on a dark ground; its content sits
+              about fifteen points left of centre inside a full-width row; and
+              it has no way to mark which days belong to the calendar, which is
+              the one piece of guidance this picker most needs. Ours is themed,
+              symmetric by construction, and shades the trip. */}
+          {pickingTime ? (
+            <DateTimePicker
+              themeVariant={t.dark ? "dark" : "light"}
+              accentColor={t.color.accentFill}
+              value={pickerValue}
+              mode="time"
+              display={Platform.OS === "ios" ? "spinner" : "default"}
+              // The spinner sizes itself to its columns and then sits wherever
+              // the row leaves it, which reads as off-centre under rows that
+              // are full width. Letting it shrink to its content and centring
+              // that puts the wheel under the middle of the sheet.
+              style={{ alignSelf: "center" }}
+              onChange={(_, selected) => {
+                if (!selected) return;
+                const hhmm = `${String(selected.getHours()).padStart(2, "0")}:${String(
+                  selected.getMinutes(),
+                ).padStart(2, "0")}`;
+                if (picking === "end") setEndTime(hhmm);
+                else setTime(hhmm);
+              }}
+            />
+          ) : (
+            <TripDatePicker
+              value={date}
+              rangeStart={rangeStart ?? null}
+              rangeEnd={rangeEnd ?? null}
+              tz={tz}
+              onSelect={setDate}
+            />
+          )}
 
           <Muted>
             {overnight

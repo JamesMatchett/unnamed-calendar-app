@@ -9,7 +9,7 @@ import { Muted } from "@/components/ui";
 import { getCalendar, getEvent, proposeSlot } from "@/db/repo";
 import { formatDayShort } from "@/lib/format";
 import { useQuery } from "@/lib/useQuery";
-import { space } from "@/theme";
+import { space, useTheme } from "@/theme";
 
 /**
  * Put a time forward for a poll.
@@ -19,6 +19,7 @@ import { space } from "@/theme";
  * unfolding inside a list of slots pushes everything else off the screen.
  */
 export default function ProposeSlotScreen() {
+  const t = useTheme();
   const router = useRouter();
   const { calendarId, eventId } = useLocalSearchParams<{
     calendarId: string;
@@ -77,8 +78,15 @@ export default function ProposeSlotScreen() {
             />
           ) : null}
 
+          {/* The native picker follows the SYSTEM appearance, not ours, so an
+              app set to dark on a light phone drew dark text on a dark ground
+              and was unreadable. Naming the variant ties it to the app's own
+              theme, and the accent stops it being iOS blue in the middle of
+              our own colour. */}
           {picking ? (
             <DateTimePicker
+              themeVariant={t.dark ? "dark" : "light"}
+              accentColor={t.color.accentFill}
               value={new Date(`${date}T${time}:00`)}
               mode={picking}
               display={Platform.OS === "ios" ? "spinner" : "default"}
