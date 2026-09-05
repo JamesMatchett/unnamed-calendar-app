@@ -2470,6 +2470,46 @@ export function deleteCalendar(calendarId: string): void {
 // keeps them on the phone. Without this every tester is the same person with
 // the same handle, and nothing social can be tested at all.
 
+/**
+ * Which way in this person chose, for the day accounts are real and for the
+ * Profile screen to say. Recorded even in the alpha, where it selects nothing:
+ * a tester who picked Apple and later finds the app asking for a password has
+ * been told something that was not true.
+ */
+export function setAuthProvider(provider: string): void {
+  getDb().runSync(
+    "INSERT OR REPLACE INTO meta (key, value) VALUES ('auth:provider', ?)",
+    [provider],
+  );
+  notifyChanged();
+}
+
+export function getAuthProvider(): string | null {
+  return (
+    getDb().getFirstSync<{ value: string }>(
+      "SELECT value FROM meta WHERE key = 'auth:provider'",
+    )?.value ?? null
+  );
+}
+
+/**
+ * Put the first run back, without touching a single calendar.
+ *
+ * Alpha only, and the reason it exists is that the first run is the thing most
+ * worth testing and the hardest to get back to: without this, seeing it again
+ * means deleting the app, which also deletes everything a tester has been
+ * asked to try.
+ */
+export function replayOnboarding(): void {
+  const db = getDb();
+  db.withTransactionSync(() => {
+    for (const key of ["identity_set", "pref:appearance", "auth:provider"]) {
+      db.runSync("DELETE FROM meta WHERE key = ?", [key]);
+    }
+  });
+  notifyChanged();
+}
+
 export function identityComplete(): boolean {
   return (
     getDb().getFirstSync<{ value: string }>(

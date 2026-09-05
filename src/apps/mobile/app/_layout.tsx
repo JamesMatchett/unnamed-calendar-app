@@ -4,9 +4,8 @@ import { useEffect, useState } from "react";
 import { useColorScheme } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
-import { AppearancePrompt } from "@/components/AppearancePrompt";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { IdentityPrompt } from "@/components/IdentityPrompt";
+import { Onboarding } from "@/components/Onboarding";
 import { getDb } from "@/db/client";
 import { getAppearance, identityComplete } from "@/db/repo";
 import { useQuery } from "@/lib/useQuery";
@@ -25,8 +24,8 @@ export default function RootLayout() {
    */
   const chosen = useQuery("pref:appearance", () => getAppearance());
   // Who you are comes before how it looks: the name goes on everything, and
-  // asking it first means the appearance sheet appears over an app that is
-  // already yours.
+  // asking it first means the appearance step is chosen against an app that is
+  // already theirs. Either being unset means the first run has not finished.
   const named = useQuery("identity", () => identityComplete());
   const systemDark = useColorScheme() === "dark";
   const [preview, setPreview] = useState<Appearance>("system");
@@ -50,15 +49,10 @@ export default function RootLayout() {
     <ThemeProvider value={t}>
     <SafeAreaProvider>
       <StatusBar style={t.dark ? "light" : "dark"} />
-      {!named ? <IdentityPrompt onDone={() => {}} /> : null}
-      {named && chosen === null ? (
-        <AppearancePrompt
-          value={preview}
-          onPreview={setPreview}
-          // Answering writes the choice, which makes `chosen` non-null and
-          // takes the sheet away; nothing else to do here.
-          onDone={() => {}}
-        />
+      {/* The first run, as one flow. It ends by writing the appearance, which
+          makes `chosen` non-null and takes it away; nothing else to do here. */}
+      {!named || chosen === null ? (
+        <Onboarding appearance={preview} onPreviewAppearance={setPreview} />
       ) : null}
       <Stack
         screenOptions={{

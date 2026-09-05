@@ -9,8 +9,10 @@ import {
   clearAllData,
   examplesLoaded,
   getAppearance,
+  getAuthProvider,
   getBoolPref,
   loadExampleData,
+  replayOnboarding,
   setAppearance,
   setBoolPref,
 } from "@/db/repo";
@@ -36,6 +38,7 @@ export default function SettingsScreen() {
   // be reached before that.
   const appearance = useQuery("pref:appearance", () => getAppearance());
   const examples = useQuery("examples", () => examplesLoaded());
+  const provider = useQuery("auth:provider", () => getAuthProvider());
 
   return (
     <>
@@ -156,6 +159,21 @@ export default function SettingsScreen() {
               onPress={() => void sendFeedback()}
             />
             <RowButton bare label="Version" value={buildLabel()} onPress={() => {}} />
+            <RowButton
+              bare
+              label="Show the welcome again"
+              value={provider ? `Signed in with ${provider}` : ""}
+              onPress={() =>
+                Alert.alert(
+                  "Show the welcome again?",
+                  "Replays the first run: the tour, how you sign in, your name and the light or dark choice. Your calendars are untouched.",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Show it", onPress: () => replayOnboarding() },
+                  ],
+                )
+              }
+            />
           </Group>
           <Muted>
             Something odd, something missing, something you liked: all useful.
