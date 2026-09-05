@@ -44,6 +44,17 @@ variable "table_arn" {
   type        = string
 }
 
+variable "table_stream_arn" {
+  description = <<-EOT
+    The table's stream, consumed by the change-log function (§5.1).
+
+    Passed in rather than derived, because a stream ARN carries a timestamp and
+    changes whenever the stream is disabled and re-enabled — so the one thing
+    that must never be guessed here is this string.
+  EOT
+  type        = string
+}
+
 variable "table_kms_key_arn" {
   description = <<-EOT
     The table's CMK. A customer-managed key means DynamoDB permission alone is not

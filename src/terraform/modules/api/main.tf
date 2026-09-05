@@ -223,6 +223,34 @@ resource "aws_apigatewayv2_route" "me" {
   authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
 }
 
+# Every calendar route, behind the pool's JWT authoriser.
+#
+# for_each rather than a block each, because the list only grows: members,
+# events, RSVPs and suggestions are all coming, and eighteen near-identical
+# resources is eighteen chances to paste the wrong authorizer_id into one of
+# them. The three routes above stay written out because each is an exception
+# that deserves its sentence.
+#
+# The route keys are the API Gateway spelling of the paths the mobile app has
+# been queueing mutations against since before this API existed. They are a
+# contract with callers already in the field, not a fresh choice.
+resource "aws_apigatewayv2_route" "authenticated" {
+  for_each = toset([
+    "GET /v1/calendars",
+    "PUT /v1/calendars/{calendarId}",
+    "GET /v1/calendars/{calendarId}",
+    "PATCH /v1/calendars/{calendarId}",
+    "GET /v1/calendars/{calendarId}/changes",
+  ])
+
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = each.value
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
+}
+
 resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.main.id
   name        = "$default"
@@ -349,5 +377,167 @@ resource "aws_route53_record" "api" {
     name                   = aws_apigatewayv2_domain_name.api.domain_name_configuration[0].target_domain_name
     zone_id                = aws_apigatewayv2_domain_name.api.domain_name_configuration[0].hosted_zone_id
     evaluate_target_health = false
+  }
+}
+
+# --- the change-log consumer (§5.1) -----------------------------------------
+#
+# The same bundle as the API, a different handler. One artifact means the
+# consumer cannot drift from the handlers whose writes it is logging: they are
+# built together, versioned together and deployed in the same apply.
+#
+# Its OWN role, though. The API queries GSI1 and reads items; this reads a
+# stream and writes change items, and neither needs what the other has. Sharing
+# a role would give the API the stream and the consumer the index for no reason
+# beyond saving a resource.
+
+data "aws_iam_policy_document" "changelog_access" {
+  statement {
+    effect = "Allow"
+    actions = [
+      # The counter, and the change items themselves. No Query and no index:
+      # this function reads nothing back.
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+    ]
+    resources = [var.table_arn]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "dynamodb:DescribeStream",
+      "dynamodb:GetRecords",
+      "dynamodb:GetShardIterator",
+      "dynamodb:ListStreams",
+    ]
+    resources = [var.table_stream_arn]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "kms:Decrypt",
+      "kms:GenerateDataKey",
+    ]
+    resources = [var.table_kms_key_arn]
+  }
+
+  statement {
+    effect    = "Allow"
+    actions   = ["sqs:SendMessage"]
+    resources = [aws_sqs_queue.changelog_failures.arn]
+  }
+}
+
+resource "aws_iam_role" "changelog" {
+  name               = "${local.name}-changelog"
+  description        = "Execution role for the ${local.name} change-log consumer"
+  assume_role_policy = data.aws_iam_policy_document.assume.json
+}
+
+resource "aws_iam_role_policy_attachment" "changelog_basic" {
+  role       = aws_iam_role.changelog.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy" "changelog_access" {
+  name   = "changelog-access"
+  role   = aws_iam_role.changelog.id
+  policy = data.aws_iam_policy_document.changelog_access.json
+}
+
+resource "aws_cloudwatch_log_group" "changelog" {
+  name              = "/aws/lambda/${local.name}-changelog"
+  retention_in_days = var.log_retention_days
+}
+
+resource "aws_lambda_function" "changelog" {
+  function_name = "${local.name}-changelog"
+  role          = aws_iam_role.changelog.arn
+
+  filename         = data.archive_file.bundle.output_path
+  source_code_hash = data.archive_file.bundle.output_base64sha256
+
+  handler       = "index.changeLog"
+  runtime       = "nodejs22.x"
+  architectures = ["arm64"]
+
+  # Smaller than the API's, and longer. A batch is a loop of small writes rather
+  # than one request somebody is waiting on, so throughput matters and latency
+  # does not — but a full batch of a hundred records is a hundred sequential
+  # round trips, which needs room.
+  memory_size = 256
+  timeout     = 60
+
+  environment {
+    variables = {
+      CALDER_ENVIRONMENT                  = var.environment
+      CALDER_COMMIT                       = var.commit
+      CALDER_TABLE                        = var.table_name
+      AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.changelog,
+    aws_iam_role_policy_attachment.changelog_basic,
+  ]
+}
+
+# Where a batch goes when it will not go anywhere else.
+#
+# Not optional. Without a failure destination the choice is between retrying a
+# poison record until the shard's data expires — which stops the change log for
+# that calendar and every other one on the shard — and dropping it silently,
+# which corrupts sync in a way nobody notices until a client is missing an
+# event it never knew about. This makes the failure loud and keeps the pointer
+# to it.
+resource "aws_sqs_queue" "changelog_failures" {
+  name = "${local.name}-changelog-failures"
+  # Fourteen days, the maximum, because the thing this holds is a signal that
+  # something is wrong and a weekend should not be enough to lose it.
+  message_retention_seconds = 1209600
+  sqs_managed_sse_enabled   = true
+}
+
+resource "aws_lambda_event_source_mapping" "changelog" {
+  event_source_arn  = var.table_stream_arn
+  function_name     = aws_lambda_function.changelog.arn
+  starting_position = "LATEST"
+
+  # LATEST, not TRIM_HORIZON. TRIM_HORIZON would replay every write already in
+  # the stream on first deploy and assign sequence numbers to history, which is
+  # not what the log is for: the change log starts when it starts, and items
+  # that pre-date it are picked up by a client's first full read rather than as
+  # a flood of retrospective changes.
+
+  batch_size = 100
+  # One second, so a change is visible to a syncing client about a second after
+  # it is written rather than whenever a batch of a hundred happens to fill.
+  maximum_batching_window_in_seconds = 1
+
+  # One at a time per shard. The whole ordering guarantee rests on records for a
+  # partition key arriving in order, and parallelising the shard throws it away.
+  parallelization_factor = 1
+
+  # Partial batch failure: a retry resumes at the first record that failed
+  # rather than replaying the ones already logged. The handler returns the
+  # identifiers; this is what makes API Gateway act on them.
+  function_response_types = ["ReportBatchItemFailures"]
+
+  # A batch that fails for one bad record is split rather than retried whole,
+  # so one poison record cannot hold ninety-nine good ones hostage.
+  bisect_batch_on_function_error = true
+
+  # Finite, with somewhere for the remains to go. The default is -1, which means
+  # retry until the record ages out of the stream — twenty-four hours during
+  # which that shard's change log does not advance at all.
+  maximum_retry_attempts = 10
+
+  destination_config {
+    on_failure {
+      destination_arn = aws_sqs_queue.changelog_failures.arn
+    }
   }
 }

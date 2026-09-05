@@ -99,6 +99,7 @@ module "api" {
 
   table_name        = module.data.table_name
   table_arn         = module.data.table_arn
+  table_stream_arn  = module.data.table_stream_arn
   table_kms_key_arn = module.data.kms_key_arn
 
   domain_name = var.api_domain

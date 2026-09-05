@@ -33,3 +33,17 @@ output "api_url" {
   EOT
   value       = "https://${aws_apigatewayv2_api_mapping.api.domain_name}"
 }
+
+output "changelog_function_name" {
+  description = "The change-log consumer, for `aws logs tail` when sync misbehaves."
+  value       = aws_lambda_function.changelog.function_name
+}
+
+output "changelog_failures_queue_url" {
+  description = <<-EOT
+    Where batches go when the consumer cannot log them. Anything in here means
+    the change log has a hole and some client will not converge; it should be
+    empty, and an alarm on it is worth having before there are users.
+  EOT
+  value       = aws_sqs_queue.changelog_failures.url
+}

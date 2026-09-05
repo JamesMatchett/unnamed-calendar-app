@@ -278,6 +278,54 @@ if (fmt) {
   }
 }
 
+// --- routes reach handlers, and handlers are reachable ----------------------
+//
+// Two failures, both silent, both shipped this week.
+//
+// A route declared in Terraform with no matching `case` falls through to the
+// router's default arm and answers 404 — a deployed, authorised, billed route
+// that says the path does not exist. A handler with no route is worse, because
+// it looks finished: five of them sat in the bundle unreachable for an hour,
+// with passing tests, because nothing had been added to the API Gateway.
+//
+// Neither shows up in a typecheck, a plan, or a unit test. Both are two lists
+// that have to match, which is a thing a machine should be comparing.
+{
+  const ROUTER = "src/packages/api/src/index.ts";
+  const API_TF = `${TF}/modules/api/main.tf`;
+  const router = readOrNull(ROUTER);
+  const infra = readOrNull(API_TF);
+
+  if (router === null || infra === null) {
+    fail(ROUTER, "cannot compare routes to handlers: one of the two files is missing");
+  } else {
+    // `case "GET /v1/health":` — the router's own spelling of a route key.
+    const handled = new Set(
+      [...router.matchAll(/case\s+"((?:GET|PUT|POST|PATCH|DELETE) \/[^"]*)":/g)].map((m) => m[1]),
+    );
+
+    // Both spellings in the Terraform: a route_key argument, and the entries of
+    // the for_each list that generates the rest.
+    const declared = new Set([
+      ...[...infra.matchAll(/route_key\s*=\s*"([^"]+)"/g)].map((m) => m[1]),
+      ...[...infra.matchAll(/^\s*"((?:GET|PUT|POST|PATCH|DELETE) \/[^"]*)",\s*$/gm)].map((m) => m[1]),
+    ]);
+    // `route_key = each.value` is the for_each itself, not a route.
+    declared.delete("each.value");
+
+    for (const key of declared) {
+      if (!handled.has(key)) {
+        fail(API_TF, `declares the route "${key}", which ${ROUTER} does not handle: it would answer 404`);
+      }
+    }
+    for (const key of handled) {
+      if (!declared.has(key)) {
+        fail(ROUTER, `handles "${key}", which ${API_TF} does not declare: nothing can reach it`);
+      }
+    }
+  }
+}
+
 if (problems.length > 0) {
   for (const p of problems) console.error(p);
   console.error(`\n${problems.length} infrastructure naming problem${problems.length === 1 ? "" : "s"}.`);
@@ -288,7 +336,7 @@ const ready = envs.filter(
   (e) => !PLACEHOLDER.test(readOrNull(`${TF}/envs/${e}/terraform.tfvars`) ?? "REPLACE_WITH"),
 );
 console.log(
-  `ok: infrastructure names agree (${project}, ${region}); ` +
+  `ok: infrastructure names agree (${project}, ${region}), routes match handlers; ` +
     `${ready.length ? ready.join(", ") + " configured" : "no environment configured yet"}` +
     // Said out loud rather than passing quietly: a check that silently skipped
     // half its job reads exactly like one that ran.

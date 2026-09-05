@@ -87,3 +87,13 @@ output "identity_providers" {
   description = "Which providers are configured. Empty until credentials are supplied."
   value       = module.auth.identity_providers
 }
+
+output "changelog_function_name" {
+  description = "The change-log consumer (§5.1)."
+  value       = module.api.changelog_function_name
+}
+
+output "changelog_failures_queue_url" {
+  description = "Should be empty. Anything in it means the change log has a hole."
+  value       = module.api.changelog_failures_queue_url
+}
