@@ -18,7 +18,12 @@ permissions:
   id-token: write
 
 env:
-  TF_VERSION: "1.13.0"
+  # Must be >= the newest Terraform that has applied any environment. State
+  # records the version that wrote it and an older binary refuses to read it, so
+  # a laptop on a newer release silently locks CI out of the state it just
+  # wrote. Bumping a local install means bumping this in the same commit.
+  # tools/check-infra.mjs holds the two workflows and required_version together.
+  TF_VERSION: "1.16.0"
   AWS_REGION: eu-west-2
   # Must match `project` in src/terraform/*/variables.tf: the role ARNs below
   # are built by convention, so a prefix that disagrees fails at the point of

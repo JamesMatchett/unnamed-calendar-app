@@ -84,6 +84,53 @@ for (const wf of readdirSync(WORKFLOWS).filter((f) => f.startsWith("terraform-")
   if (got !== region) fail(`${WORKFLOWS}/${wf}`, `AWS_REGION "${got}" != "${region}"`);
 }
 
+// --- one Terraform version -------------------------------------------------
+//
+// State records the version that wrote it, and an older binary refuses to read
+// a newer state. So a laptop one release ahead of CI applies successfully and
+// locks CI out of the state it just wrote, with an error about a version rather
+// than about the upgrade that caused it. Everything that applies has to agree.
+
+const versions = new Map();
+for (const wf of readdirSync(WORKFLOWS).filter((f) => f.startsWith("terraform-"))) {
+  const got = read(`${WORKFLOWS}/${wf}`).match(/TF_VERSION:\s*"([^"]+)"/)?.[1];
+  if (got) versions.set(`${WORKFLOWS}/${wf}`, got);
+  else fail(`${WORKFLOWS}/${wf}`, "no TF_VERSION pinned");
+}
+
+const distinct = new Set(versions.values());
+if (distinct.size > 1) {
+  fail(
+    WORKFLOWS,
+    `workflows pin different Terraform versions: ${[...versions]
+      .map(([f, v]) => `${f.split("/").pop()} ${v}`)
+      .join(", ")}`,
+  );
+}
+
+// Every required_version floor must be satisfied by what CI actually installs,
+// or CI fails on a constraint the repository set for itself.
+const pinned = [...distinct][0];
+const asNumbers = (v) => v.split(".").map(Number);
+const atLeast = (a, b) => {
+  const [x, y] = [asNumbers(a), asNumbers(b)];
+  for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0);
+  return true;
+};
+
+if (pinned) {
+  const walk = (dir) =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory() ? walk(`${dir}/${e.name}`) : e.name.endsWith(".tf") ? [`${dir}/${e.name}`] : [],
+    );
+  for (const file of walk(TF)) {
+    const floor = read(file).match(/required_version\s*=\s*">=\s*([0-9.]+)"/)?.[1];
+    if (floor && !atLeast(pinned, floor)) {
+      fail(file, `required_version >= ${floor}, but CI installs ${pinned}`);
+    }
+  }
+}
+
 // --- each environment is internally consistent -----------------------------
 
 for (const env of envs) {
