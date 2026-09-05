@@ -173,10 +173,15 @@ they could not do their job rather than passing quietly:
 - **`check:workflows`** — [actionlint](https://github.com/rhysd/actionlint), if installed
   (`brew install actionlint`).
 
-The second matters more than it looks. An invalid workflow is the one mistake CI
-cannot catch: GitHub rejects the file rather than running it, so there is no job and
-no log, only an annotation with a line number. Everything else fails somewhere you
-can read; this fails before there is anywhere to read.
+The second matters more than it looks, and is deliberately *not* run in CI. An
+invalid workflow is the one mistake CI cannot catch: GitHub rejects the file rather
+than running it, so there is no job and no log, only an annotation with a line
+number. Everything else fails somewhere you can read; this fails before there is
+anywhere to read, which is why it has to run before the push.
+
+Everything else does run in CI, in `.github/workflows/verify.yml`, on every pull
+request. If `npm run verify` reports anything as NOT CHECKED locally, install what
+it names — a check that quietly does nothing is worse than no check.
 
 ## Conventions
 
