@@ -4,7 +4,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
-  Modal,
+  StyleSheet,
   Platform,
   Pressable,
   ScrollView,
@@ -12,6 +12,8 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { PrimaryButton, TextField } from "@/components/form";
 import { Muted } from "@/components/ui";
@@ -94,7 +96,23 @@ export function Onboarding({
   const [given, setGiven] = useState<string | null>(null);
 
   return (
-    <Modal visible animationType="fade" statusBarTranslucent>
+    // An overlay inside the root view, NOT a <Modal>.
+    //
+    // A Modal is a presented view controller, and iOS silently discards a
+    // presentation requested while another controller is mid-dismiss. Replaying
+    // the first run from a sheet — signing out, deleting a profile, "show the
+    // welcome again" — did exactly that: the gate opened, this component
+    // rendered, and nothing appeared. The screen behind it stayed put, which
+    // reads as a button that does nothing.
+    //
+    // As an overlay there is no presentation to lose. It mounts underneath the
+    // sheet and is revealed when the sheet goes, so the order of the two stops
+    // mattering and no waiting is needed. It has to be the LAST child of the
+    // root view to paint above the Stack.
+    //
+    // Android note: a Modal also swallows the hardware back button and this
+    // does not. Worth a BackHandler before Android is a target.
+    <View style={StyleSheet.absoluteFill}>
       {step === "welcome" ? <Welcome onNext={() => setStep("signin")} /> : null}
       {step === "signin" ? (
         <SignIn
@@ -112,7 +130,7 @@ export function Onboarding({
       {step === "appearance" ? (
         <AppearanceStep value={appearance} onPreview={onPreviewAppearance} />
       ) : null}
-    </Modal>
+    </View>
   );
 }
 
@@ -120,6 +138,7 @@ export function Onboarding({
 
 function Welcome({ onNext }: { onNext: () => void }) {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const [page, setPage] = useState(0);
   // The slide is sized from the window rather than fixed, so it is not a
@@ -210,7 +229,17 @@ function Welcome({ onNext }: { onNext: () => void }) {
         ))}
       </View>
 
-      <View style={{ marginTop: "auto", padding: space.lg, gap: space.sm }}>
+      {/* space.lg below the button plus whatever the phone reserves for the
+          home indicator. Without the inset the button sits in the gesture area:
+          it looks clipped, and a tap near its lower edge is taken by the OS. */}
+      <View
+        style={{
+          marginTop: "auto",
+          padding: space.lg,
+          paddingBottom: space.lg + insets.bottom,
+          gap: space.sm,
+        }}
+      >
         <PrimaryButton label="Get started" onPress={onNext} />
       </View>
     </View>
@@ -504,6 +533,7 @@ function AppearanceStep({
   onPreview: (next: Appearance) => void;
 }) {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
 
   return (
     <View style={{ flex: 1, backgroundColor: t.color.bg, padding: space.lg }}>
@@ -563,7 +593,9 @@ function AppearanceStep({
         })}
       </View>
 
-      <View style={{ marginTop: "auto", gap: space.sm }}>
+      {/* As in the tour step: clear of the home indicator, not just of the
+          screen edge. */}
+      <View style={{ marginTop: "auto", gap: space.sm, paddingBottom: insets.bottom }}>
         <PrimaryButton
           // Whatever is being previewed is the answer, including the default
           // nobody touched: there is no way out of here without having decided.

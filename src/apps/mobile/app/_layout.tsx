@@ -60,11 +60,6 @@ export default function RootLayout() {
     <ThemeProvider value={t}>
     <SafeAreaProvider>
       <StatusBar style={t.dark ? "light" : "dark"} />
-      {/* The first run, as one flow. It ends by writing the appearance, which
-          makes `chosen` non-null and takes it away; nothing else to do here. */}
-      {!named || chosen === null ? (
-        <Onboarding appearance={preview} onPreviewAppearance={setPreview} />
-      ) : null}
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: t.color.bg },
@@ -149,6 +144,15 @@ export default function RootLayout() {
         <Stack.Screen name="join/[token]" options={{ presentation: "modal" }} />
         <Stack.Screen name="add/[handle]" options={{ presentation: "modal" }} />
       </Stack>
+      {/* The first run, as one flow. It ends by writing the appearance, which
+          makes `chosen` non-null and takes it away; nothing else to do here.
+
+          AFTER the Stack, because it is an absolutely positioned overlay now
+          rather than a Modal, and paint order is what puts it on top. See the
+          comment in Onboarding for why it stopped being a Modal. */}
+      {!named || chosen === null ? (
+        <Onboarding appearance={preview} onPreviewAppearance={setPreview} />
+      ) : null}
     </SafeAreaProvider>
     </ThemeProvider>
     </ErrorBoundary>

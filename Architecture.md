@@ -223,6 +223,16 @@ Two things to get right at the very start, both effectively unfixable later:
   every membership row in DynamoDB is orphaned with no way to reconnect people to their
   calendars. One pool per environment, never shared between dev and prod.
 
+- **The authentication session is ephemeral**, so signing out means signing out. Cognito
+  sets a session cookie on its hosted domain and nothing the app runs can reach it: `fetch`
+  has its own cookie store, so revoking the refresh token and clearing the Keychain leaves
+  that cookie alive, and the next sign-in is waved through without the provider being asked.
+  A private session has no shared jar to leave it in. It also removes iOS's "wants to use
+  amazoncognito.com to sign in" prompt, which was asking permission for exactly that
+  sharing. The cost is single sign-on from Safari, which is near-zero while every provider
+  is federated — Sign in with Apple authenticates against the system account through the
+  native sheet — and would start to matter if an email-and-password provider were added.
+
 - **Whether a provider exists is declared, not inferred** (decision 43). Federation is
   gated on `apple_enabled` / `google_enabled` in each environment's committed tfvars. The
   Services ID, Team ID and Key ID are read from SSM under `/calder/<env>/public/auth/`,

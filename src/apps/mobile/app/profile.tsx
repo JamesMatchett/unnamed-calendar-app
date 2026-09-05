@@ -341,12 +341,29 @@ export default function ProfileScreen() {
               await signOut();
               // The only route back in: signing in lives in the first-run flow,
               // so ending a session means starting that again.
-              replayOnboarding();
+              leaveThenReplay();
             })();
           },
         },
       ],
     );
+  }
+
+  /**
+   * Put the first run back, then leave.
+   *
+   * Onboarding is an overlay in the root view rather than a presented Modal,
+   * so it mounts UNDERNEATH this sheet and is revealed as the sheet goes.
+   * That is the whole reason the order is safe: there is no presentation to
+   * lose and nothing to wait for. It was a Modal until this stopped working —
+   * iOS discards a presentation made while another controller is dismissing,
+   * so the first run rendered and was never shown.
+   */
+  function leaveThenReplay(also?: () => void) {
+    also?.();
+    replayOnboarding();
+    router.dismissAll();
+    router.replace("/");
   }
 
   function cycleGrants(current: FriendGrants) {
@@ -379,9 +396,9 @@ export default function ProfileScreen() {
         text: "Delete",
         style: "destructive",
         onPress: () => {
-          deleteMyProfile();
-          router.dismissAll();
-          router.replace("/");
+          // Wiping `meta` clears the first-run flag too, so this hits the
+          // same presentation race as signing out.
+          leaveThenReplay(deleteMyProfile);
         },
       },
     ]);

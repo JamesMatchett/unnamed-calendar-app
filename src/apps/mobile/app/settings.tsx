@@ -206,7 +206,18 @@ export default function SettingsScreen() {
                   "Replays the first run: the tour, how you sign in, your name and the light or dark choice. Your calendars are untouched.",
                   [
                     { text: "Cancel", style: "cancel" },
-                    { text: "Show it", onPress: () => replayOnboarding() },
+                    {
+                      text: "Show it",
+                      // Replay, then leave: the first run is an overlay in
+                      // the root view, so it mounts under this sheet and is
+                      // revealed as it goes. See profile.tsx for why it is not
+                      // a Modal any more.
+                      onPress: () => {
+                        replayOnboarding();
+                        router.dismissAll();
+                        router.replace("/");
+                      },
+                    },
                   ],
                 )
               }
