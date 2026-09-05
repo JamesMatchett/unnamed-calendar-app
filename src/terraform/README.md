@@ -222,7 +222,15 @@ it names — a check that quietly does nothing is worse than no check.
 - **Plan and apply roles are separate.** Plan is assumable from any pull request and carries
   `ReadOnlyAccess`; apply is assumable only from a protected Environment.
 - **The apply role cannot manage IAM** (`PowerUserAccess`). Role and policy changes stay a
-  deliberate, human act rather than something CI can do to itself.
+  deliberate, human act rather than something CI can do to itself. It *can* read IAM, via a
+  small inline policy, because the roles live in the same state as everything else and
+  `terraform apply` refreshes before it plans — without that, every apply fails reading
+  resources it was never going to change. The read grants nothing new: the plan role
+  carries `ReadOnlyAccess`, and both roles are assumable from this one repository.
+
+  The consequence to know about: **a change to `modules/github-oidc` cannot be applied by
+  CI.** It will plan clean and fail at apply. Apply it yourself first, then merge, and CI
+  finds nothing to do. That is the floor working, not a bug.
 - **Lock files are committed** (`.terraform.lock.hcl`); state and plans are not.
 - **`allowed_account_ids`** is set in every environment, so a wrong-credentials apply fails
   rather than succeeding somewhere unintended.

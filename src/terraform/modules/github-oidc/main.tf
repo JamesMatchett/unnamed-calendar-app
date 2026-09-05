@@ -163,6 +163,41 @@ resource "aws_iam_role_policy_attachment" "apply_power" {
   policy_arn = "arn:aws:iam::aws:policy/PowerUserAccess"
 }
 
+# Reading IAM, though, it must be able to do — and PowerUserAccess cannot.
+# Its first statement is NotAction on iam:*, and the second adds back only
+# CreateServiceLinkedRole, DeleteServiceLinkedRole and ListRoles. GetRole,
+# GetRolePolicy, ListAttachedRolePolicies and GetOpenIDConnectProvider are all
+# denied.
+#
+# That matters because the provider and both of these roles live in the same
+# state file as everything else in the environment, and `terraform apply`
+# refreshes state before it plans. Without this, every apply fails reading
+# resources it was never going to change: the floor above would have blocked CI
+# from running at all rather than from changing IAM.
+#
+# It grants nothing new. The plan role carries ReadOnlyAccess, which already
+# includes every IAM read there is, and both roles are assumable from this one
+# repository — so this is the same access through a second door, not a wider
+# door. Writes stay denied, which is the part that was meant to be a floor: a
+# change to this module plans clean and then fails at apply, deliberately, and
+# has to be applied by a human.
+data "aws_iam_policy_document" "apply_read_iam" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "iam:Get*",
+      "iam:List*",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "apply_read_iam" {
+  name   = "read-iam"
+  role   = aws_iam_role.apply.id
+  policy = data.aws_iam_policy_document.apply_read_iam.json
+}
+
 resource "aws_iam_role_policy" "apply_state" {
   name   = "terraform-state"
   role   = aws_iam_role.apply.id
