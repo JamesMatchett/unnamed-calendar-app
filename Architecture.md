@@ -223,6 +223,22 @@ Two things to get right at the very start, both effectively unfixable later:
   every membership row in DynamoDB is orphaned with no way to reconnect people to their
   calendars. One pool per environment, never shared between dev and prod.
 
+- **Whether a provider exists is declared, not inferred** (decision 43). Federation is
+  gated on `apple_enabled` / `google_enabled` in each environment's committed tfvars. The
+  Services ID, Team ID and Key ID are read from SSM under `/calder/<env>/public/auth/`,
+  which the CI plan role is allowed to read and which by that same fact may never hold a
+  secret. Only the `.p8` is passed in, and only on the apply that creates the provider;
+  `ignore_changes` on `provider_details["private_key"]` carries it afterwards, which is
+  what lets CI apply without ever holding it.
+
+  This replaced gating `count` on the credentials being present, which was quietly
+  destructive: the variables defaulted to `""` and `terraform-apply.yml` passes
+  `TF_VAR_commit` alone, so every merge to `main` deleted Sign in with Apple, dropped it
+  from the app client, emptied `CALDER_PROVIDERS`, and left the app rendering a sign-in
+  screen with no buttons. The general rule is worth stating on its own: **absence of a
+  secret must never mean "delete this"**, because the set of places that legitimately lack
+  a secret includes every automated one. `tools/check-terraform-vars.mjs` enforces it.
+
 **Cost warning:** at scale Cognito is likely to be your *largest single line item*, not
 compute. The Essentials tier is $0.015/MAU after 10,000 free; the Lite tier is
 $0.0055/MAU but drops passwordless/passkey features. At 100k MAU that is roughly
@@ -1666,6 +1682,7 @@ assumption, and an amendment from a mistake.
 | 40 | The API validates the ID token, not the access token, so the ULID claim works on the Lite plan; amends §3.2 | §3.2, §13 |
 | 41 | The ULID is minted lazily in Pre Token Generation, not in Post Confirmation | §3.2 |
 | 42 | Cognito on Lite; revisit against self-hosted auth at 50,000 MAU (~$220/month), or sooner if a feature plan forces an upgrade | §13 |
+| 43 | A resource's existence is gated on declared intent, never on whether a credential is present; identifiers come from SSM under a `public` prefix the CI plan role may read | §3.2, §3.6 |
 
 ---
 

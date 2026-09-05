@@ -168,17 +168,37 @@ data "aws_iam_policy_document" "plan_no_data" {
     actions = [
       "secretsmanager:GetSecretValue",
       "secretsmanager:BatchGetSecretValue",
-      "ssm:GetParameter",
-      "ssm:GetParameters",
-      "ssm:GetParameterHistory",
-      "ssm:GetParametersByPath",
       # Describing a key stays allowed; using one does not. The state bucket is
-      # SSE-S3, so nothing a plan does needs this.
+      # SSE-S3, so nothing a plan does needs this — and every parameter a plan
+      # IS allowed to read below is a plain String, needing no decrypt. That is
+      # the second lock on the first: a SecureString under the public prefix
+      # would still be unreadable here.
       "kms:Decrypt",
       "kms:GenerateDataKey",
       "kms:GenerateDataKeyWithoutPlaintext",
     ]
     resources = ["*"]
+  }
+
+  # SSM is denied everywhere EXCEPT one prefix, because a plan has to be able to
+  # read configuration in order to be a plan at all: modules/auth reads Apple's
+  # and Google's identifiers from Parameter Store, and a data source is
+  # evaluated at plan time.
+  #
+  # The prefix is named `public` because that is a promise, and this policy is
+  # what the promise costs. A plan runs on a pull request from anyone who can
+  # open one, so anything under this path is readable by anyone who can open
+  # one. Identifiers go here. Keys, secrets and tokens do not, ever.
+  statement {
+    sid    = "NoParameterValuesExceptPublic"
+    effect = "Deny"
+    actions = [
+      "ssm:GetParameter",
+      "ssm:GetParameters",
+      "ssm:GetParameterHistory",
+      "ssm:GetParametersByPath",
+    ]
+    not_resources = ["arn:aws:ssm:*:*:parameter/${var.project}/*/public/*"]
   }
 
   statement {

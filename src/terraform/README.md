@@ -307,31 +307,86 @@ client ID of type Web application:
 - Authorized redirect URIs: the `auth_redirect_uri` value
 - Keep the client id and client secret.
 
-**Second apply**, with the values in the environment rather than in a file:
+**Put the identifiers in Parameter Store.** These are not secrets — the Services
+ID is in every redirect the browser sees — but they are also not things a build
+should be told, so they live in one place both a laptop and CI can read:
 
 ```sh
-export TF_VAR_apple_services_id=com.calandder.signin
-export TF_VAR_apple_team_id=XXXXXXXXXX
-export TF_VAR_apple_key_id=XXXXXXXXXX
+aws ssm put-parameter --name /calder/dev/public/auth/apple/services_id \
+  --type String --value com.calandder.signin
+aws ssm put-parameter --name /calder/dev/public/auth/apple/team_id \
+  --type String --value XXXXXXXXXX
+aws ssm put-parameter --name /calder/dev/public/auth/apple/key_id \
+  --type String --value XXXXXXXXXX
+
+# Only if you are turning Google on as well.
+aws ssm put-parameter --name /calder/dev/public/auth/google/client_id \
+  --type String --value ....apps.googleusercontent.com
+```
+
+Terraform reads these; it does not create them. It would need the values in
+order to write them, which is the circle this breaks. Add `--overwrite` to
+change one later.
+
+**`public` in that path is a promise, and the promise has teeth.** The CI plan
+role is denied every SSM read except this prefix, because a plan has to resolve
+data sources and plans run on pull requests from anyone who can open one.
+Anything you put under `public` is readable by anyone who can open one.
+Identifiers go there. Keys, secrets and tokens never do.
+
+**Turn the provider on** in the environment's committed `terraform.tfvars`:
+
+```hcl
+apple_enabled  = true
+google_enabled = false
+```
+
+**Then apply, with the secret in the environment.** It is needed only on the
+apply that CREATES the provider:
+
+```sh
 export TF_VAR_apple_private_key="$(cat ~/Downloads/AuthKey_XXXXXXXXXX.p8)"
-export TF_VAR_google_client_id=....apps.googleusercontent.com
-export TF_VAR_google_client_secret=...
+export TF_VAR_google_client_secret=...   # only when enabling Google
 
 terraform -chdir=envs/dev apply
 terraform -chdir=envs/dev output identity_providers
 ```
 
-Nothing secret goes in `terraform.tfvars`, which is committed. The key IS in
-Terraform state, which is a decision rather than an oversight (§3.2): state is
-in a private, versioned, TLS-only bucket, and the plan role can read it because
-planning requires it. That means anyone who can open a pull request here can
-read the key that mints Apple client secrets for this service. Acceptable in dev
-with no users; not something to carry into prod without splitting auth into a
-state CI cannot read.
+Afterwards `ignore_changes` on `provider_details["private_key"]` holds it, so
+later applies leave the provider alone without ever holding the key. That is
+what lets CI apply at all. Check it once, in a shell with nothing exported:
 
-Both providers are optional. Supply neither and the pool has no way in and the
-apply still succeeds; supply one and only that one appears. `identity_providers`
-says which are live.
+```sh
+terraform -chdir=envs/dev plan   # must report no changes
+```
+
+If that plan proposes anything against
+`aws_cognito_identity_provider.apple[0]`, stop — `ignore_changes` is not
+covering the empty value and CI would write a blank key on the next merge.
+
+**Why existence is a bool and not "did you export the credentials".** It used to
+be the latter, and the failure was quiet and total: the four Apple variables all
+defaulted to `""`, `count` was gated on them being non-empty, and
+`terraform-apply.yml` passes `TF_VAR_commit` and nothing else. So every merge to
+`main` did not skip the provider, it **destroyed** it — removed Sign in with
+Apple from the pool, dropped it from the app client, emptied `CALDER_PROVIDERS`,
+and the app dutifully rendered a sign-in screen with no buttons on it. Absence
+of a secret must never mean "delete this". `tools/check-terraform-vars.mjs` now
+fails any `count` or `for_each` that depends on a sensitive variable, including
+through a local and including when wrapped in `nonsensitive()`, which is how the
+first version was written.
+
+The key IS in Terraform state, which is a decision rather than an oversight
+(§3.2): state is in a private, versioned, TLS-only bucket, and the plan role can
+read it because planning requires it. That means anyone who can open a pull
+request here can read the key that mints Apple client secrets for this service.
+Acceptable in dev with no users; not something to carry into prod without
+splitting auth into a state CI cannot read.
+
+Both providers are optional and independent. Enable neither and the pool has no
+way in and the apply still succeeds; enable one and only that one appears.
+`identity_providers` says which are live, and `/v1/config` serves the same list
+to the app so the sign-in screen offers exactly the buttons that work.
 
 ## DNS
 

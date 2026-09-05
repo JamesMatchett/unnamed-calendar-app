@@ -87,39 +87,32 @@ variable "callback_urls" {
   default     = ["calandder://auth"]
 }
 
-variable "apple_services_id" {
-  description = "Apple Services ID. Empty disables the provider. See modules/auth."
-  type        = string
-  default     = ""
+variable "apple_enabled" {
+  description = <<-EOT
+    Whether Sign in with Apple exists in this environment. Set in the committed
+    tfvars, because whether a provider should exist is not a secret and must not
+    be inferred from whether one is to hand. Its identifiers are read from SSM;
+    see modules/auth/variables.tf and src/terraform/README.md.
+  EOT
+  type        = bool
+  default     = false
 }
 
-variable "apple_team_id" {
-  description = "Apple Team ID. Empty disables the provider."
-  type        = string
-  default     = ""
-}
-
-variable "apple_key_id" {
-  description = "Apple key id. Empty disables the provider."
-  type        = string
-  default     = ""
+variable "google_enabled" {
+  description = "Whether Google exists in this environment. See apple_enabled."
+  type        = bool
+  default     = false
 }
 
 variable "apple_private_key" {
-  description = "The .p8 contents. Pass via TF_VAR_apple_private_key; never commit."
+  description = "The .p8 contents, needed only when the provider is created. Pass via TF_VAR_apple_private_key; never commit."
   type        = string
   default     = ""
   sensitive   = true
 }
 
-variable "google_client_id" {
-  description = "Google OAuth client id. Empty disables the provider."
-  type        = string
-  default     = ""
-}
-
 variable "google_client_secret" {
-  description = "Its secret. Pass via TF_VAR_google_client_secret; never commit."
+  description = "Its secret, needed only at creation. Pass via TF_VAR_google_client_secret; never commit."
   type        = string
   default     = ""
   sensitive   = true
