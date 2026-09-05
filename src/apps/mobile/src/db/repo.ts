@@ -2705,6 +2705,20 @@ export function forgetDeviceLink(direction: SyncDirection, deviceEventId: string
 }
 
 /**
+ * The events here that came FROM the phone.
+ *
+ * An array rather than a Set because useQuery compares snapshots with
+ * JSON.stringify and a Set serialises to `{}`; callers build the Set.
+ */
+export function importedEventIds(): string[] {
+  return getDb()
+    .getAllSync<{ event_id: string }>(
+      "SELECT event_id FROM device_links WHERE direction = 'in'",
+    )
+    .map((r) => r.event_id);
+}
+
+/**
  * What could be copied out to the phone.
  *
  * Cancelled events are included rather than filtered here, because a cancelled

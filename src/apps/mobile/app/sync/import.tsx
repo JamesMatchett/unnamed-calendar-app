@@ -1,4 +1,4 @@
-import type { ImportCandidate } from "@calder/core";
+import type { ImportCandidate, ImportPlan } from "@calder/core";
 import { planImport } from "@calder/core";
 import { Stack, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
@@ -39,12 +39,15 @@ export default function ImportScreen() {
 
   const { permission, calendars, pending } = useDeviceCalendars();
   const links = useQuery("links:in", () => listDeviceLinks("in"));
+  // The copies this app wrote to the phone. Reading them is the whole of the
+  // fix for a list that was offering somebody their own exported events back.
+  const ourCopies = useQuery("links:out", () => listDeviceLinks("out"));
   const targets = useQuery("calendars:postable", () => listCalendarsICanPostTo());
   const counts = useQuery("calendars:members", () => memberCounts());
 
   const [sources, setSources] = useState<ReadonlySet<string> | null>(null);
   const [into, setInto] = useState<string>(OWN_PLANS_ID);
-  const [found, setFound] = useState<Found[] | null>(null);
+  const [plan, setPlan] = useState<ImportPlan | null>(null);
   const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
   const [reading, setReading] = useState(false);
   const [running, setRunning] = useState(false);
@@ -66,7 +69,7 @@ export default function ImportScreen() {
   useEffect(() => {
     if (sources === null) return;
     if (sourceIds.length === 0) {
-      setFound([]);
+      setPlan({ candidates: [], alreadyHere: 0, ours: 0 });
       return;
     }
 
@@ -75,22 +78,23 @@ export default function ImportScreen() {
     void (async () => {
       const events = await readDeviceEvents(sourceIds);
       if (!live) return;
-      const candidates = planImport(events, links) as Found[];
-      setFound(candidates);
-      // Anything new is ticked. Somebody who opened this screen wants their
-      // calendar in; the ones they have to think about are the ones to untick.
-      setChosen(
-        new Set(candidates.filter((c) => !c.alreadyHere).map((c) => c.deviceEventId)),
-      );
+      const next = planImport(events, links, ourCopies) as ImportPlan & {
+        candidates: Found[];
+      };
+      setPlan(next);
+      // All of them ticked. Somebody who opened this screen wants their
+      // calendar in, and now that the list holds only things that are not here
+      // yet, the ones to think about are the ones to untick.
+      setChosen(new Set(next.candidates.map((c) => c.deviceEventId)));
       setReading(false);
     })();
 
     return () => {
       live = false;
     };
-  }, [sourceIds, sources, links]);
+  }, [sourceIds, sources, links, ourCopies]);
 
-  const newOnes = (found ?? []).filter((c) => !c.alreadyHere);
+  const newOnes = (plan?.candidates ?? []) as Found[];
   const selected = newOnes.filter((c) => chosen.has(c.deviceEventId));
   const allOn = newOnes.length > 0 && selected.length === newOnes.length;
   const targetName =
@@ -221,20 +225,25 @@ export default function ImportScreen() {
               What to bring in
             </Text>
 
-            {reading || found === null ? (
+            {reading || plan === null ? (
               <ActivityIndicator color={t.color.accent} />
-            ) : found.length === 0 ? (
+            ) : newOnes.length === 0 ? (
               <Card>
-                <Muted>
-                  Nothing in the next few months in the calendars you picked.
-                </Muted>
+                {/* An empty list has three quite different causes, and saying
+                    "nothing found" for all of them makes the app look broken
+                    in the two cases where it is working perfectly. */}
+                <Muted>{nothingLeft(plan)}</Muted>
               </Card>
             ) : (
               <>
                 <Group>
                   <CheckRow
                     label="Select all events"
-                    hint={`${newOnes.length} not here yet`}
+                    hint={
+                      newOnes.length === 1
+                        ? "1 not here yet"
+                        : `${newOnes.length} not here yet`
+                    }
                     checked={allOn}
                     onChange={(on) =>
                       toggleMany(
@@ -242,28 +251,32 @@ export default function ImportScreen() {
                         on,
                       )
                     }
-                    disabled={newOnes.length === 0}
                   />
                 </Group>
                 <Group>
-                  {found.map((c) => (
+                  {newOnes.map((c) => (
                     <CheckRow
                       key={c.deviceEventId}
                       label={c.title}
                       hint={whenIs(c.startUtc, c.allDay)}
-                      checked={c.alreadyHere || chosen.has(c.deviceEventId)}
-                      disabled={c.alreadyHere}
-                      note={c.alreadyHere ? "already here" : undefined}
+                      checked={chosen.has(c.deviceEventId)}
                       onChange={(on) => toggleMany([c.deviceEventId], on)}
                     />
                   ))}
                 </Group>
+                {plan.alreadyHere > 0 ? (
+                  <Muted>
+                    {plan.alreadyHere === 1
+                      ? "1 more is already here from a previous run."
+                      : `${plan.alreadyHere} more are already here from previous runs.`}
+                  </Muted>
+                ) : null}
               </>
             )}
           </View>
         ) : null}
 
-        {permission === "granted" && (found?.length ?? 0) > 0 ? (
+        {permission === "granted" && newOnes.length > 0 ? (
           <View style={{ gap: space.sm }}>
             {running ? (
               <ActivityIndicator color={t.color.accent} />
@@ -292,6 +305,25 @@ export default function ImportScreen() {
       </ScrollView>
     </>
   );
+}
+
+/**
+ * Why there is nothing to bring in.
+ *
+ * Three causes that look identical and are not: the calendars are empty, or
+ * everything in them has been brought in already, or everything in them is
+ * something this app put there. Reporting all three as "nothing found" makes a
+ * working sync look broken, and the last one in particular would have somebody
+ * hunting for a bug in the two minutes after they turned automatic sync on.
+ */
+function nothingLeft(plan: ImportPlan): string {
+  if (plan.alreadyHere > 0) {
+    return "Everything in the calendars you picked is already here.";
+  }
+  if (plan.ours > 0) {
+    return "Nothing new. What is in the calendars you picked was put there by Cal&der.";
+  }
+  return "Nothing in the next few months in the calendars you picked.";
 }
 
 /**

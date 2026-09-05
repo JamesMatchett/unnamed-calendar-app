@@ -5,6 +5,7 @@ import {
   commitExport,
   exportableEvents,
   getSyncPrefs,
+  importedEventIds,
   listDeviceLinks,
 } from "@/db/repo";
 import {
@@ -86,6 +87,10 @@ export function useAutoSync(): void {
             events,
             autoSelection(events, prefsRef.current),
             listDeviceLinks("out"),
+            // Without this, automatic sync is a duplicate machine: it writes a
+            // second copy of every event that was imported from the phone in
+            // the first place, beside the original.
+            new Set(importedEventIds()),
           );
           if (plan.length === 0) return;
 

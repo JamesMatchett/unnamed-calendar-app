@@ -10,6 +10,7 @@ import {
   commitExport,
   exportableEvents,
   getSyncPrefs,
+  importedEventIds,
   listDeviceLinks,
 } from "@/db/repo";
 import { applyExport, defaultCalendarId } from "@/lib/deviceCalendar";
@@ -37,8 +38,11 @@ export default function ExportScreen() {
   const events = useQuery("sync:exportable", () => exportableEvents());
   const names = useQuery("calendar:names", () => calendarNames());
   const links = useQuery("links:out", () => listDeviceLinks("out"));
+  const fromPhone = useQuery("links:in:ids", () => importedEventIds());
   const prefs = useQuery("sync:prefs", () => getSyncPrefs());
   const { calendars, pending } = useDeviceCalendars();
+
+  const cameFromPhone = useMemo(() => new Set(fromPhone), [fromPhone]);
 
   // Everything the preferences say takes part, ticked, as the opening position.
   // Starting from nothing selected would mean the common case is the most work.
@@ -50,9 +54,14 @@ export default function ExportScreen() {
   // Cancelled events are not offered: there is nothing to send, and their
   // existing copies are removed by planExport whether they appear here or not.
   const offered = useMemo(() => events.filter((e) => e.status === "active"), [events]);
+  // What could actually be written. An event that came from the phone is
+  // already on the phone, so it is shown and greyed rather than dropped: a
+  // meeting missing from this list with no explanation reads as a bug, and
+  // "already on your phone" is both the reason and the reassurance.
   const sendable = useMemo(
-    () => offered.filter((e) => e.precision !== "tbc"),
-    [offered],
+    () =>
+      offered.filter((e) => e.precision !== "tbc" && !cameFromPhone.has(e.eventId)),
+    [offered, cameFromPhone],
   );
 
   const byCalendar = useMemo(() => {
@@ -96,7 +105,7 @@ export default function ExportScreen() {
   // Planned against the FULL event list, not the filtered one: an event that
   // has been cancelled, or has lost its date, still has a copy on the phone
   // that this run is responsible for taking away.
-  const plan = planExport(events, chosen, links);
+  const plan = planExport(events, chosen, links, cameFromPhone);
   const creating = plan.filter((a) => a.kind === "create").length;
   const updating = plan.filter((a) => a.kind === "update").length;
   const removing = plan.filter((a) => a.kind === "remove").length;
@@ -177,7 +186,9 @@ export default function ExportScreen() {
             </Group>
 
             {byCalendar.map(([calendarId, list]) => {
-              const theirs = list.filter((e) => e.precision !== "tbc");
+              const theirs = list.filter(
+                (e) => e.precision !== "tbc" && !cameFromPhone.has(e.eventId),
+              );
               const on =
                 theirs.length > 0 &&
                 theirs.every((e) => chosen.has(e.eventId));
@@ -199,23 +210,29 @@ export default function ExportScreen() {
                       }
                       disabled={theirs.length === 0}
                     />
-                    {list.map((e) => (
-                      <CheckRow
-                        key={e.eventId}
-                        label={e.title}
-                        hint={whenIs(e.startUtc, e.precision)}
-                        checked={e.precision !== "tbc" && chosen.has(e.eventId)}
-                        onChange={(next) => toggle(e.eventId, next)}
-                        disabled={e.precision === "tbc"}
-                        note={
-                          e.precision === "tbc"
-                            ? "no date yet"
-                            : links.some((l) => l.eventId === e.eventId)
-                              ? "on your phone"
-                              : undefined
-                        }
-                      />
-                    ))}
+                    {list.map((e) => {
+                      const imported = cameFromPhone.has(e.eventId);
+                      const undated = e.precision === "tbc";
+                      return (
+                        <CheckRow
+                          key={e.eventId}
+                          label={e.title}
+                          hint={whenIs(e.startUtc, e.precision)}
+                          checked={!undated && !imported && chosen.has(e.eventId)}
+                          onChange={(next) => toggle(e.eventId, next)}
+                          disabled={undated || imported}
+                          note={
+                            undated
+                              ? "no date yet"
+                              : imported
+                                ? "came from your phone"
+                                : links.some((l) => l.eventId === e.eventId)
+                                  ? "on your phone"
+                                  : undefined
+                          }
+                        />
+                      );
+                    })}
                   </Group>
                 </View>
               );

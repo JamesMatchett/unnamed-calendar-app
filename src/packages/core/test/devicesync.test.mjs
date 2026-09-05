@@ -95,6 +95,35 @@ test("the hash covers every field a copy on the phone shows", () => {
   assert.equal(syncHash(event({ calendarId: "c9" })), same);
 });
 
+test("the hash survives being stored in a text column", () => {
+  // The bug this replaces: the separator was a NUL, SQLite treats that as the
+  // end of a string, and every stored hash was silently cut down to the title.
+  // Nothing ever matched, so every run rewrote every event.
+  const hash = syncHash(event({ title: "Dinner", endUtc: null }));
+  // Written as code points rather than literal characters on purpose: a test
+  // for invisible characters must not itself contain any.
+  const codes = [...hash].map((c) => c.codePointAt(0));
+  assert.ok(!codes.includes(0), "a NUL truncates the value in SQLite");
+  assert.ok(
+    codes.every((c) => c >= 0x20 || c === 0x09),
+    "no control characters",
+  );
+});
+
+test("fields cannot be shuffled between each other to fake a match", () => {
+  // With a plain separator, "Drinks 8pm" with no end time hashes the same as
+  // "Drinks" ending "8pm", and a real change never reaches the phone.
+  const joined = event({ title: "Drinks 2026-09-10T18:00:00Z", startUtc: "" });
+  const split = event({ title: "Drinks", startUtc: "2026-09-10T18:00:00Z" });
+  assert.notEqual(syncHash(joined), syncHash(split));
+});
+
+test("a title containing quotes or newlines still hashes stably", () => {
+  const awkward = event({ title: 'Sam\'s "big" night\nout' });
+  assert.equal(syncHash(awkward), syncHash({ ...awkward }));
+  assert.notEqual(syncHash(awkward), syncHash(event()));
+});
+
 test("deselecting an event removes the copy it left behind", () => {
   const links = [{ eventId: "e1", deviceEventId: "d1", deviceCalendarId: "dc" }];
   const plan = planExport([event()], chosen(), links);
@@ -175,29 +204,60 @@ const found = (over = {}) => ({
 });
 
 test("a declined invitation is not a reason to look busy", () => {
-  const out = planImport([found({ declined: true })], []);
-  assert.deepEqual(out, []);
+  const plan = planImport([found({ declined: true })], []);
+  assert.deepEqual(plan.candidates, []);
 });
 
-test("something brought in before is marked, not hidden", () => {
+test("something brought in before is counted, not offered again", () => {
   const links = [{ eventId: "e1", deviceEventId: "d1", deviceCalendarId: "dc" }];
-  const out = planImport([found()], links);
-  assert.equal(out.length, 1);
-  assert.equal(out[0].alreadyHere, true);
+  const plan = planImport([found()], links);
+  assert.deepEqual(plan.candidates, []);
+  assert.equal(plan.alreadyHere, 1);
 });
 
-test("something new is not marked", () => {
-  assert.equal(planImport([found()], [])[0].alreadyHere, false);
+test("something new is offered", () => {
+  const plan = planImport([found()], []);
+  assert.equal(plan.candidates.length, 1);
+  assert.equal(plan.alreadyHere, 0);
+});
+
+test("this app's own copies are never offered back", () => {
+  // The bug from the screenshot: one device event was imported, then exported
+  // as a second device event, and the second one turned up as a third meeting.
+  const original = found({ deviceEventId: "d1", title: "Test native event" });
+  const ourCopy = found({ deviceEventId: "d2", title: "Test native event" });
+  const plan = planImport(
+    [original, ourCopy],
+    [{ eventId: "e1", deviceEventId: "d1", deviceCalendarId: "dc" }],
+    [{ eventId: "e1", deviceEventId: "d2", deviceCalendarId: "dc" }],
+  );
+
+  assert.deepEqual(plan.candidates, []);
+  assert.equal(plan.alreadyHere, 1);
+  assert.equal(plan.ours, 1);
+});
+
+test("our own copies are not counted as things already brought in", () => {
+  // Somebody who has imported nothing must not be told that everything they
+  // exported is "already here": we put it there, it is not their news.
+  const plan = planImport(
+    [found({ deviceEventId: "d9" })],
+    [],
+    [{ eventId: "e1", deviceEventId: "d9", deviceCalendarId: "dc" }],
+  );
+  assert.deepEqual(plan.candidates, []);
+  assert.equal(plan.alreadyHere, 0);
+  assert.equal(plan.ours, 1);
 });
 
 test("all-day events are offered, not filtered away", () => {
-  const out = planImport([found({ allDay: true, title: "Birthday" })], []);
-  assert.equal(out.length, 1);
-  assert.equal(out[0].allDay, true);
+  const plan = planImport([found({ allDay: true, title: "Birthday" })], []);
+  assert.equal(plan.candidates.length, 1);
+  assert.equal(plan.candidates[0].allDay, true);
 });
 
 test("candidates come back in time order", () => {
-  const out = planImport(
+  const plan = planImport(
     [
       found({ deviceEventId: "c", startUtc: "2026-09-12T09:00:00Z" }),
       found({ deviceEventId: "a", startUtc: "2026-09-10T09:00:00Z" }),
@@ -206,7 +266,7 @@ test("candidates come back in time order", () => {
     [],
   );
   assert.deepEqual(
-    out.map((e) => e.deviceEventId),
+    plan.candidates.map((e) => e.deviceEventId),
     ["a", "b", "c"],
   );
 });
@@ -216,6 +276,58 @@ test("importing does not change what it was given", () => {
   const copy = JSON.parse(JSON.stringify(input));
   planImport(input, []);
   assert.deepEqual(input, copy);
+});
+
+// --- the round trip ---------------------------------------------------------
+
+test("an event that came from the phone is never sent back to it", () => {
+  const events = [event({ eventId: "fromPhone" })];
+  const plan = planExport(
+    events,
+    chosen("fromPhone"),
+    [],
+    new Set(["fromPhone"]),
+  );
+  assert.deepEqual(plan, []);
+});
+
+test("a stray copy of an imported event is cleaned off the phone", () => {
+  // Repairing the damage automatic sync already did, rather than only
+  // declining to do it again.
+  const events = [event({ eventId: "fromPhone" })];
+  const links = [
+    { eventId: "fromPhone", deviceEventId: "stray", deviceCalendarId: "dc" },
+  ];
+  assert.deepEqual(planExport(events, chosen("fromPhone"), links, new Set(["fromPhone"])), [
+    { kind: "remove", deviceEventId: "stray" },
+  ]);
+});
+
+test("importing then syncing then importing again settles, with no duplicates", () => {
+  // The whole loop, end to end. One meeting on the phone must stay one
+  // meeting on the phone and one event here, however many times either
+  // direction runs.
+  const phone = [found({ deviceEventId: "d1", title: "Standup" })];
+  const first = planImport(phone, [], []);
+  assert.equal(first.candidates.length, 1);
+
+  // It is brought in, becoming an event here with an inward link.
+  const imported = [{ eventId: "e1", deviceEventId: "d1", deviceCalendarId: "dc" }];
+  const events = [event({ eventId: "e1", title: "Standup" })];
+
+  // Automatic sync must now find nothing to do.
+  const exportPlan = planExport(
+    events,
+    autoSelection(events, DEFAULT_SYNC_PREFS),
+    [],
+    new Set(imported.map((l) => l.eventId)),
+  );
+  assert.deepEqual(exportPlan, []);
+
+  // And the phone, unchanged, offers nothing new.
+  const second = planImport(phone, imported, []);
+  assert.deepEqual(second.candidates, []);
+  assert.equal(second.alreadyHere, 1);
 });
 
 // --- preferences ------------------------------------------------------------
