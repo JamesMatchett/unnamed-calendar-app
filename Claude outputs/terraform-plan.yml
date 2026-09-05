@@ -1,0 +1,153 @@
+name: terraform plan
+
+# Runs on every pull request that touches infrastructure. Plans all three
+# environments so that a change which is safe in dev but destructive in prod is
+# visible before merge, not after.
+on:
+  pull_request:
+    paths:
+      - "src/terraform/**"
+      - ".github/workflows/terraform-plan.yml"
+
+permissions:
+  contents: read
+  id-token: write        # required to mint the OIDC token
+  pull-requests: write   # required to post the plan summary
+
+env:
+  # Must be >= the newest Terraform that has applied any environment. State
+  # records the version that wrote it and an older binary refuses to read it, so
+  # a laptop on a newer release silently locks CI out of the state it just
+  # wrote. Bumping a local install means bumping this in the same commit.
+  # tools/check-infra.mjs holds the two workflows and required_version together.
+  TF_VERSION: "1.16.0"
+  AWS_REGION: eu-west-2
+  # Must match `project` in src/terraform/*/variables.tf: the role ARNs below
+  # are built by convention, so a prefix that disagrees fails at the point of
+  # assuming the role, with an error that names a role nobody ever created.
+  # tools/check-infra.mjs holds the two in step.
+  PROJECT: calder
+
+jobs:
+  fmt:
+    name: fmt and validate
+    runs-on: ubuntu-latest
+
+    # Which environments have an account behind them. Decided here rather than
+    # per job because a job-level `if` cannot see `matrix` — the matrix is
+    # expanded after that condition is evaluated — so the skip has to happen by
+    # building the matrix itself.
+    outputs:
+      environments: ${{ steps.configured.outputs.environments }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive src/terraform
+
+      # Validation needs no backend and no credentials, so it runs before the
+      # environment matrix and fails fast on syntax errors.
+      - name: terraform validate
+        run: |
+          for dir in src/terraform/envs/*/ src/terraform/bootstrap/; do
+            echo "::group::$dir"
+            terraform -chdir="$dir" init -backend=false
+            terraform -chdir="$dir" validate
+            echo "::endgroup::"
+          done
+
+      # Repository variables are the record of which accounts exist. An
+      # environment with none is not ready, and is left out rather than run and
+      # failed: two permanently red jobs on every pull request is how a red
+      # check stops meaning anything.
+      - name: which environments are configured
+        id: configured
+        env:
+          DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          STAGING: ${{ vars.AWS_ACCOUNT_ID_STAGING }}
+          PROD: ${{ vars.AWS_ACCOUNT_ID_PROD }}
+        run: |
+          list='[]'
+          for pair in "dev:$DEV" "staging:$STAGING" "prod:$PROD"; do
+            name="${pair%%:*}"
+            account="${pair#*:}"
+            if [ -n "$account" ]; then
+              list=$(jq -cn --argjson l "$list" --arg e "$name" --arg a "$account" \
+                '$l + [{environment: $e, account_id: $a}]')
+            fi
+          done
+          echo "environments=$list" >> "$GITHUB_OUTPUT"
+          echo "configured: $list"
+
+  plan:
+    name: plan (${{ matrix.environment }})
+    needs: fmt
+    runs-on: ubuntu-latest
+
+    # An empty matrix is an error rather than an empty run, so the job is
+    # skipped outright when nothing is configured. `needs` is readable here;
+    # `matrix` is not.
+    if: needs.fmt.outputs.environments != '[]'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Only the environments that exist, each carrying its own account id, so
+        # nothing here has to look a variable up by a name built at runtime.
+        include: ${{ fromJSON(needs.fmt.outputs.environments) }}
+
+    # A plan takes the state lock, so never run two against one environment.
+    concurrency:
+      group: terraform-${{ matrix.environment }}
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: assume plan role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/${{ env.PROJECT }}-${{ matrix.environment }}-ci-plan
+          role-session-name: gha-plan-${{ matrix.environment }}-${{ github.run_id }}
+
+      - name: terraform init
+        run: terraform -chdir=src/terraform/envs/${{ matrix.environment }} init
+
+      - name: terraform plan
+        id: plan
+        run: |
+          terraform -chdir=src/terraform/envs/${{ matrix.environment }} \
+            plan -no-color -lock-timeout=5m -out=tfplan 2>&1 | tee plan.txt
+          echo "exitcode=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: comment plan on the pull request
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const raw = fs.readFileSync('plan.txt', 'utf8');
+            // Comments are capped at 65,536 characters; keep the tail, which is
+            // where the summary line lives.
+            const body = raw.length > 60000
+              ? '_(truncated — see the workflow log for the full plan)_\n\n' + raw.slice(-60000)
+              : raw;
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `### terraform plan — \`${{ matrix.environment }}\`\n\n<details><summary>show plan</summary>\n\n\`\`\`terraform\n${body}\n\`\`\`\n\n</details>`,
+            });
+
+      - name: fail if plan errored
+        if: steps.plan.outputs.exitcode != '0'
+        run: exit 1
