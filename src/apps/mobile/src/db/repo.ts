@@ -108,9 +108,27 @@ export interface RsvpRow {
 }
 
 /** Access pattern 1. */
-export function listCalendars(): (CalendarRow & { my_role: "owner" | "member" })[] {
-  return getDb().getAllSync<CalendarRow & { my_role: "owner" | "member" }>(
-    `SELECT c.*, m.role AS my_role FROM calendars c
+export interface CalendarListRow extends CalendarRow {
+  my_role: "owner" | "member";
+  /** Every event in it, cancelled ones included: a cancelled trip still happened to be planned. */
+  event_count: number;
+  /** The latest end (or start, when there is none) of any event, or null with no events. */
+  last_event_end: string | null;
+}
+
+/**
+ * Pattern 1, plus the two numbers the Calendars tab needs to put a finished
+ * trip under "Past" (isPastCalendar in @calder/core): how many events it has,
+ * and when the last of them ends. Computed in the query rather than by
+ * loading every event of every calendar to count them.
+ */
+export function listCalendars(): CalendarListRow[] {
+  return getDb().getAllSync<CalendarListRow>(
+    `SELECT c.*, m.role AS my_role,
+            (SELECT COUNT(*) FROM events e WHERE e.calendar_id = c.calendar_id) AS event_count,
+            (SELECT MAX(COALESCE(e.end_utc, e.start_utc)) FROM events e
+              WHERE e.calendar_id = c.calendar_id) AS last_event_end
+       FROM calendars c
        JOIN members m ON m.calendar_id = c.calendar_id
       WHERE m.user_id = ? AND m.status = 'active' AND c.status = 'active'
       ORDER BY c.mode = 'continuous', COALESCE(c.start_date, '9999'), c.name`,

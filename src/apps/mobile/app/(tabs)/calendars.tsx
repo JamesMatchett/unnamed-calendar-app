@@ -2,6 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { Link, useRouter } from "expo-router";
 import { Pressable, ScrollView, Text, View } from "react-native";
 
+import { isPastCalendar } from "@calder/core";
+
 import { Cover } from "@/components/Cover";
 import { AvatarStack, Card, EmptyState } from "@/components/ui";
 import { listCalendars, listEvents, listMembers } from "@/db/repo";
@@ -25,11 +27,25 @@ export default function CalendarsScreen() {
     );
   }
 
+  // A trip that has happened goes to the bottom, under its own heading, so the
+  // list leads with what is coming. The rule is in @calder/core: dates AND
+  // events both behind us, and never a calendar with nothing in it.
+  const now = new Date();
+  const today = localDate(now);
+  const past = calendars.filter((c) =>
+    isPastCalendar(
+      { mode: c.mode, endDate: c.end_date, eventCount: c.event_count, lastEventEnd: c.last_event_end },
+      today,
+      now.toISOString(),
+    ),
+  );
+  const current = calendars.filter((c) => !past.includes(c));
+
   // Private first: they are the person's own, and burying them under trips they
   // share with other people gets the emphasis backwards.
-  const priv = calendars.filter((c) => c.is_private === 1);
-  const bounded = calendars.filter((c) => c.is_private !== 1 && c.mode === "bounded");
-  const continuous = calendars.filter(
+  const priv = current.filter((c) => c.is_private === 1);
+  const bounded = current.filter((c) => c.is_private !== 1 && c.mode === "bounded");
+  const continuous = current.filter(
     (c) => c.is_private !== 1 && c.mode === "continuous",
   );
 
@@ -57,6 +73,14 @@ export default function CalendarsScreen() {
       {continuous.length > 0 ? (
         <Section title="Ongoing calendars">
           {continuous.map((c) => (
+            <CalendarCard key={c.calendar_id} calendar={c} />
+          ))}
+        </Section>
+      ) : null}
+
+      {past.length > 0 ? (
+        <Section title="Past calendars">
+          {past.map((c) => (
             <CalendarCard key={c.calendar_id} calendar={c} />
           ))}
         </Section>
@@ -92,6 +116,12 @@ export default function CalendarsScreen() {
       </Pressable>
     </View>
   );
+}
+
+/** Today as YYYY-MM-DD in the phone's zone, which is what end dates compare against. */
+function localDate(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

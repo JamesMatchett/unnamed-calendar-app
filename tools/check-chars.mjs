@@ -23,7 +23,7 @@ import { globSync, readFileSync } from "node:fs";
 
 // Filtered here rather than through glob's own exclude, whose argument differs
 // between Node versions: this is a check that must not quietly scan nothing.
-const IGNORED = ["node_modules", "/dist/", "/.expo/"];
+const IGNORED = ["node_modules", "/dist/", "/.expo/", "/ios/", "/android/"];
 const FILES = globSync([
   "src/**/*.{ts,tsx,mjs,js,json}",
   "tools/**/*.mjs",

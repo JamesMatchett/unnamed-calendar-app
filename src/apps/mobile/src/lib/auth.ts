@@ -170,7 +170,13 @@ export async function signIn(provider: Provider): Promise<Account | null> {
   });
   if (result.type === "cancel" || result.type === "dismiss") return null;
   if (result.type !== "success") {
-    throw new SignInFailed(result.type === "error" ? (result.error?.message ?? "error") : result.type);
+    // expo-auth-session's AuthError carries the OAuth error_description and
+    // nothing else typed; there is no `message` on its type since SDK 57.0.16.
+    throw new SignInFailed(
+      result.type === "error"
+        ? (result.error?.description ?? "error")
+        : result.type,
+    );
   }
 
   const code = result.params["code"];

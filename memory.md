@@ -114,7 +114,11 @@ this app in a browser.
    Routes if it is ever wanted: the iOS/Android share sheet into the app (reuses natural-language
    entry; the user picks what crosses), a bot number added to a trip chat via the Business API,
    or an Android-only notification listener. Parked.
-8. **Alpha build readiness (Sept 2026).** The seven blockers are done: deletion and leaving,
+8. **Foldable iPhone with two displays (far future, noted Oct 2026).** The "iPhone duo"
+   shipped recently. A layout question, not a sync one: the week view across both panes, or
+   agenda beside a day. Nothing to do until the app has a tablet-width layout worth adapting;
+   `supportsTablet` is already on, so the first step is whatever iPad already shows.
+9. **Alpha build readiness (Sept 2026).** The seven blockers are done: deletion and leaving,
    local writes drawn as settled (`LOCAL_ONLY` in `src/config.ts`, now `false`: sync landed Oct 2026),
    first-run identity, example data as a Settings choice, an error boundary plus
    `reportError` seam for Sentry and a Send feedback row (mailto hello@calandder.com),

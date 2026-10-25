@@ -91,3 +91,35 @@ export function canDeleteCalendar({
 }): boolean {
   return role === "owner" && !isOwnPlans;
 }
+
+/**
+ * Has this calendar happened?
+ *
+ * Bounded calendars only, and only once BOTH its dates and its events are
+ * behind us: a trip whose end date has passed but whose last event is still to
+ * come (a late flight home, an all-day travel event) is not over, and nor is a
+ * trip whose dates have passed while someone adds photos from it as events.
+ * A calendar with no events at all is never "past", because it was never
+ * anything: an empty calendar from a trip that never happened is better shown
+ * where the person left it than tidied away.
+ *
+ * Dates compare as YYYY-MM-DD strings against today's date in the phone's zone;
+ * instants compare as ISO strings. Both sort correctly as text.
+ */
+export function isPastCalendar(
+  calendar: {
+    readonly mode: "bounded" | "continuous";
+    readonly endDate: string | null;
+    readonly eventCount: number;
+    /** The latest end (or start, when there is no end) of any event, as an instant. */
+    readonly lastEventEnd: string | null;
+  },
+  today: string,
+  now: string,
+): boolean {
+  if (calendar.mode !== "bounded") return false;
+  if (calendar.eventCount === 0) return false;
+  if (calendar.endDate === null || calendar.endDate >= today) return false;
+  if (calendar.lastEventEnd === null || calendar.lastEventEnd >= now) return false;
+  return true;
+}

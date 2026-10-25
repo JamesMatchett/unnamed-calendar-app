@@ -6,6 +6,7 @@ import {
   canLeaveCalendar,
   canRemoveMember,
   deleteStep,
+  isPastCalendar,
 } from "../dist/lifecycle.js";
 
 test("in a shared calendar an event is called off before it is removed", () => {
@@ -52,4 +53,34 @@ test("only an owner deletes a calendar, and never their own plans", () => {
   assert.equal(canDeleteCalendar({ role: "owner", isOwnPlans: false }), true);
   assert.equal(canDeleteCalendar({ role: "owner", isOwnPlans: true }), false);
   assert.equal(canDeleteCalendar({ role: "member", isOwnPlans: false }), false);
+});
+
+// --- past calendars ----------------------------------------------------------
+
+const TODAY = "2026-10-25";
+const NOW = "2026-10-25T12:00:00.000Z";
+const over = { mode: "bounded", endDate: "2026-10-01", eventCount: 3, lastEventEnd: "2026-10-01T22:00:00.000Z" };
+
+test("a bounded calendar is past once its dates and its events are both behind us", () => {
+  assert.equal(isPastCalendar(over, TODAY, NOW), true);
+});
+
+test("a calendar with no events is never past, however old its dates", () => {
+  assert.equal(isPastCalendar({ ...over, eventCount: 0, lastEventEnd: null }, TODAY, NOW), false);
+});
+
+test("dates passed but an event still to come is not past", () => {
+  // The late flight home, the all-day travel event, the photos added after.
+  assert.equal(isPastCalendar({ ...over, lastEventEnd: "2026-11-01T09:00:00.000Z" }, TODAY, NOW), false);
+});
+
+test("events passed but the dates have not is not past", () => {
+  assert.equal(isPastCalendar({ ...over, endDate: "2026-10-30" }, TODAY, NOW), false);
+  // Ending today is still today.
+  assert.equal(isPastCalendar({ ...over, endDate: TODAY }, TODAY, NOW), false);
+});
+
+test("continuous calendars and calendars without an end date are never past", () => {
+  assert.equal(isPastCalendar({ ...over, mode: "continuous" }, TODAY, NOW), false);
+  assert.equal(isPastCalendar({ ...over, endDate: null }, TODAY, NOW), false);
 });
