@@ -118,7 +118,13 @@ this app in a browser.
    shipped recently. A layout question, not a sync one: the week view across both panes, or
    agenda beside a day. Nothing to do until the app has a tablet-width layout worth adapting;
    `supportsTablet` is already on, so the first step is whatever iPad already shows.
-9. **Alpha build readiness (Sept 2026).** The seven blockers are done: deletion and leaving,
+9. **Create an event from a URL or a screenshot (idea, Oct 2026).** Paste-a-link is already
+   in §3.5 (fetch server-side, mind the SSRF trap); the screenshot half is new: the person
+   shares or picks a screenshot of a listing page and the app extracts title, time, place and
+   performing artist. Needs a vision-capable model behind a Lambda, an image upload path (§3.4,
+   presigned PUT), and a review step before anything is written, since extraction will be
+   wrong sometimes and a wrong time on a shared calendar is worse than no event.
+10. **Alpha build readiness (Sept 2026).** The seven blockers are done: deletion and leaving,
    local writes drawn as settled (`LOCAL_ONLY` in `src/config.ts`, now `false`: sync landed Oct 2026),
    first-run identity, example data as a Settings choice, an error boundary plus
    `reportError` seam for Sentry and a Send feedback row (mailto hello@calandder.com),
