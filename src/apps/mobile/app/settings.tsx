@@ -22,7 +22,8 @@ import {
 } from "@/db/repo";
 import { health, me } from "@/lib/api";
 import { providerLabel } from "@/lib/auth";
-import { isFresh, loadSession } from "@/lib/session";
+import { getIdToken } from "@/lib/auth";
+import { loadSession } from "@/lib/session";
 import { buildLabel, sendFeedback } from "@/lib/feedback";
 import { useQuery } from "@/lib/useQuery";
 import type { Appearance } from "@/theme";
@@ -292,14 +293,16 @@ async function checkAccount(set: (value: string) => void): Promise<void> {
     set("Not signed in");
     return;
   }
-  if (!isFresh(session)) {
-    // Refreshing is not wired up yet, so this is honest rather than hidden:
-    // the session exists and has aged out.
+  // Renews the hour-old token with the refresh token when it can. Null with a
+  // session present means the refresh itself failed: offline, or a refresh
+  // token that has lapsed and wants a sign-in.
+  const token = await getIdToken();
+  if (token === null) {
     set("Session expired");
     return;
   }
 
-  const result = await me(session.idToken);
+  const result = await me(token);
   if (!result.ok) {
     const { error } = result;
     set(

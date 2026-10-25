@@ -1,6 +1,6 @@
 # Cal&der — working memory
 
-Last updated: 2026-09-02
+Last updated: 2026-10-25
 
 Carry-over state for future sessions: where the project actually is, the conventions in use,
 and the traps that cost real thought to find. Read [context.md](context.md) first for what the
@@ -10,36 +10,34 @@ project *is*.
 
 ## Where things stand
 
-**Design complete, no code written.** The repository contains documents only.
+**Core loop on AWS (Oct 2026).** The dev environment is applied and the iOS app talks to it.
 
 | Area | State |
 |---|---|
 | Backend architecture | Settled — Architecture.md v0.2, 28 logged decisions |
 | Data model | Settled to the key-schema level; item attributes specified in §4.3 |
-| Sync and offline | Settled, including the client UX (§5.6) |
-| Invites, membership, roles | Settled (§7, §8) |
-| Event lifecycle and approvals | Settled (§8) |
+| Sync and offline | **Built.** Change log, delta endpoint, mutation queue, client push/pull (§5) |
+| Invites, membership, roles | Designed (§7, §8); leaving and removal are on the API, invites are still local |
+| Event lifecycle and approvals | Designed (§8); create, edit, cancel, delete and RSVP are on the API, suggestions are still local |
 | App IA and key flows | Settled (§3.5) |
 | Festivals, promoters, SEO | Designed but **deferred past v1** (§6.4–6.6) |
 | Visual design | Not started |
-| Infrastructure code | **Written, PENDING** — `src/terraform` skeleton, state bootstrap, the DynamoDB table module, GitHub OIDC roles, plan/apply workflows all exist. **Nothing has been applied**, and it is parked until the AWS accounts exist |
+| Infrastructure | **Applied in dev** (account 392852903961, eu-west-2): table, Cognito pool with Apple, HTTP API on `api.dev.calandder.com`, change-log consumer. Staging and prod have no account yet |
 
-### Parked: Terraform and CI
+### Infrastructure and CI
 
-Blocked on AWS account creation and the surrounding plumbing (Organization, accounts,
-billing, admin access). The code is committed but inert. When the accounts are ready,
-`src/terraform/README.md` has the full sequence; the short version:
+Dev is live; the `calder-dev` SSO profile applies it from a laptop and CI applies it on a
+push to `main`. The API reports the commit it was built from at `/v1/health`, which is how
+to tell whether dev has caught up with `main`. The Apple provider shows a permanent plan
+diff on five `provider_details` keys AWS adds itself; harmless, and an apply re-adds them.
 
-1. `terraform fmt -recursive src/terraform` **first** — the files were authored without a
-   local Terraform binary, so formatting is unverified and the CI `fmt -check` job will
-   otherwise be the first thing to fail.
-2. Run `bootstrap/` in each account; note the three outputs.
-3. Replace `REPLACE_WITH_ACCOUNT_ID` in each env's `backend.tf` and `terraform.tfvars`.
-4. Apply `envs/dev` locally once to create the CI roles.
-5. Set the three repository variables, create the three GitHub Environments, and add
-   required reviewers to `prod`.
+The Cognito **test client** (`calder-dev-test`, ADMIN_USER_PASSWORD_AUTH) is the way to
+exercise the API without an Apple ID: `admin-create-user`, `admin-set-user-password`,
+`admin-initiate-auth`, then curl with the ID token. The Pre Token Generation trigger mints
+a `uid` for the test user like any other; delete the user afterwards.
 
-Nothing else in the project depends on this being done.
+Staging and prod still need: an account each, `bootstrap/`, the account id in `backend.tf`
+and `terraform.tfvars`, the repository variables and GitHub Environments.
 
 ### Done since
 
@@ -111,8 +109,13 @@ this app in a browser.
    later; `?from=<handle>` carries the inviter). **Still to do: deploy `site/` to the domain
    and fill in the TestFlight link**, plus the Apple Team ID in
    `site/.well-known/apple-app-site-association` for universal links.
-7. **Alpha build readiness (Sept 2026).** The seven blockers are done: deletion and leaving,
-   local writes drawn as settled (`LOCAL_ONLY` in `src/config.ts`, flip when sync lands),
+7. **WhatsApp group chats as an event source (idea, Oct 2026).** Not possible directly: the
+   only API is the Business Platform, which does not expose personal groups or in-chat Events.
+   Routes if it is ever wanted: the iOS/Android share sheet into the app (reuses natural-language
+   entry; the user picks what crosses), a bot number added to a trip chat via the Business API,
+   or an Android-only notification listener. Parked.
+8. **Alpha build readiness (Sept 2026).** The seven blockers are done: deletion and leaving,
+   local writes drawn as settled (`LOCAL_ONLY` in `src/config.ts`, now `false`: sync landed Oct 2026),
    first-run identity, example data as a Settings choice, an error boundary plus
    `reportError` seam for Sentry and a Send feedback row (mailto hello@calandder.com),
    icon and splash (`tools/icon.py`), and the domain. Still open before TestFlight: an
@@ -230,7 +233,16 @@ Found while building the app, and all of them cost time to diagnose.
    `main`, so Expo falls back to its default `AppEntry.js` and fails with
    `Unable to resolve "../../App"` - which reads like a missing file rather than a wrong
    directory. `npm start` at the root now delegates to the workspace, so either place works.
-10. **Plain `git status` from a sandboxed shell can strand `.git/index.lock`.** It takes the
+10. **`expo run:ios` from a shell without a UTF-8 locale fails inside CocoaPods** with
+   "Unicode Normalization not appropriate for ASCII-8BIT" from `config.rb`, and Expo then
+   falls through to "No code signing certificates", which reads as a signing problem. It is
+   the locale: `export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8` first. Also pass no `--device`
+   for a simulator; a bare `expo run:ios` picks the booted one, while `--device <udid>` was
+   taken for a physical phone.
+11. **A forgotten `expo start` keeps port 8081 for weeks.** A fresh `expo run:ios` then either
+   prompts for another port or launches the app against the old server. `lsof -nP -iTCP:8081`
+   before building, and kill the stale one.
+12. **Plain `git status` from a sandboxed shell can strand `.git/index.lock`.** It takes the
    index lock to refresh, and if that shell cannot delete files the lock survives, after
    which every git command fails with "Another git process seems to be running". Use
    `git --no-optional-locks status`, which does not take the lock. To recover, `mv` the lock

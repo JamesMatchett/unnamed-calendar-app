@@ -11,6 +11,7 @@ import { getAppearance, identityComplete } from "@/db/repo";
 import { useAutoSync } from "@/lib/useAutoSync";
 import { useNotifier } from "@/lib/useNotifier";
 import { useQuery } from "@/lib/useQuery";
+import { useServerSync } from "@/lib/useServerSync";
 import type { Appearance } from "@/theme";
 import { ThemeProvider, themeFor } from "@/theme";
 
@@ -38,6 +39,9 @@ export default function RootLayout() {
   // an event from the sync screen. It does nothing at all unless the preference
   // is on and calendar access has already been granted.
   useAutoSync();
+  // The server is the other calendar to keep in step with (§5.3): on open, on
+  // coming back to the app, and a moment after anything is written here.
+  useServerSync();
   // Reminders are a real schedule held by the phone, so this has to run
   // wherever the person is, not on the screen where the preference lives.
   useNotifier();

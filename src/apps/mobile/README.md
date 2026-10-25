@@ -163,8 +163,40 @@ shows the first eight characters of the ULID the Pre Token Generation trigger
 minted. If that shows an id, everything between the phone and DynamoDB is
 working. Sign in twice and it should be the same id.
 
-`LOCAL_ONLY` is unaffected by any of this and stays `true`: signing in records
-who you are, and every calendar and event still lives only on the phone.
+Signing in is also the moment the phone learns who it belongs to. Until then
+every row carries a placeholder user id; `adoptServerIdentity` re-keys them to
+the ULID in the token and keeps it in `meta`, so what this phone writes and what
+the server echoes back are the same person. `CURRENT_USER_ID` and `OWN_PLANS_ID`
+in `seed.ts` are live `export let` bindings for exactly this reason.
+
+## Sync
+
+`LOCAL_ONLY` in `src/config.ts` is `false`: writes go to the server.
+
+Every write still lands in SQLite first and queues a row in `mutation_queue`
+(`method`, `path`, `body`), exactly as before. `src/db/sync.ts` drains that
+queue in order with the ID token, then pulls each calendar's change feed
+(`GET /v1/calendars/{id}/changes?since=`) from the calendar's `last_seq` and
+applies every change as an upsert through `src/db/apply.ts`. It runs on open, on
+coming back to the app, a moment after any local write (`useServerSync` at the
+root), and on pull-to-refresh.
+
+Three things worth knowing when something looks stuck:
+
+- **A 4xx is final; everything else retries.** A 400, 403, 404 or 409 drops
+  the queued write and the next pull brings back what the server holds. A 401
+  stops the drain without dropping anything, because the token is stale and
+  the write is not. Offline, timeouts and 5xx keep the row, count the attempt,
+  and stop so writes behind it keep their order.
+- **Edits carry `base_version`, not `version`.** `version` is bumped on every
+  local edit; `base_version` is what the server last confirmed, and it is what
+  a PATCH sends so the server can refuse a stale edit (§5.4). An edit to an
+  event whose create is still queued rewrites the create's body instead of
+  queueing a PATCH behind it.
+- **Example data does not sync.** Fixture calendars were never created on the
+  server, so a write against one is a 404 and is dropped. The one calendar that
+  is both seeded and real, "My own plans", gets a per-install ULID and is queued
+  like any other create; an install from before that is re-keyed on open.
 
 ## Which environment a build talks to
 
@@ -193,8 +225,7 @@ cannot look one up. That makes them a copy of a name Terraform owns, so
 `check:infra` holds the two in step — the symptom otherwise appears on somebody
 else's phone, and a build already in TestFlight cannot be fixed by an apply.
 
-**`LOCAL_ONLY` is a different question** and stays `true`. It says whether there
-is anywhere for a write to go, and there is not: sign-in needs Apple and Google
-credentials that do not exist yet. Knowing which environment this build belongs
-to, and being able to prove the phone can reach it, is useful before that and is
-what Settings > Server does.
+**`LOCAL_ONLY` is a different question.** It says whether there is anywhere for
+a write to go, and now there is; see Sync above. Knowing which environment this
+build belongs to, and being able to prove the phone can reach it, is still what
+Settings > Server does.

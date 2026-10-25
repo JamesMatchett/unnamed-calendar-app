@@ -35,5 +35,23 @@ writeFileSync(
   source.replace(pattern, `export const FIXTURE_EPOCH = "${now}";`),
 );
 
+// Say what the rebuilt fixtures will cover, so a set that has drifted to one
+// side of today is visible here rather than on the agenda. Offsets are read
+// out of the seed's own day()/isoDate() calls; a fixture written any other way
+// is not counted, which is a reason to write them that way.
+const offsets = [
+  ...[...source.matchAll(/\b(?:day|isoDate)\(\s*(-?\d+)/g)].map((m) => Number(m[1])),
+  // seedThisWeek's plan: one tuple per event, offset first, hour second.
+  ...[...source.matchAll(/^\s*\[(-?\d+),\s*\d+,\s*"/gm)].map((m) => Number(m[1])),
+];
+const before = offsets.filter((n) => n < 0).length;
+const today = offsets.filter((n) => n === 0).length;
+const after = offsets.filter((n) => n > 0).length;
+const span = offsets.length ? `${Math.min(...offsets)} to +${Math.max(...offsets)} days` : "none";
+
 console.log(`Fixtures set to ${now}.`);
+console.log(`They will land ${span} from today: ${before} before, ${today} on the day, ${after} after.`);
+if (before === 0 || after === 0) {
+  console.warn("WARNING: the fixtures no longer sit on both sides of today. See seedThisWeek in seed.ts.");
+}
 console.log("Reload the app (press r in the Expo terminal) to rebuild them.");

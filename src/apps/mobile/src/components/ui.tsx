@@ -3,6 +3,7 @@ import { Children } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { radius, space, type, useTheme } from "@/theme";
+import { useSyncStatus } from "@/lib/useSyncing";
 
 export function Card({ children, style }: { children: ReactNode; style?: object }) {
   const t = useTheme();
@@ -140,9 +141,15 @@ export function EmptyState({
  * Someone offline for two days needs a way to tell whether anything is stuck; a
  * per-item indicator would be noise (§5.6).
  */
+/**
+ * One quiet line (§5.6): how many changes are waiting, and the one reason they
+ * might wait for ever. Nothing when there is nothing to say.
+ */
 export function SyncBanner({ pending }: { pending: number }) {
   const t = useTheme();
+  const status = useSyncStatus();
   if (pending === 0) return null;
+  const stuck = status.signedIn === false;
   return (
     <View
       style={{
@@ -153,6 +160,7 @@ export function SyncBanner({ pending }: { pending: number }) {
     >
       <Text style={{ ...type.caption, color: t.color.accent }}>
         {pending} {pending === 1 ? "change" : "changes"} waiting to sync
+        {stuck ? ". Sign in to send them: Settings, then Replay the first run." : ""}
       </Text>
     </View>
   );

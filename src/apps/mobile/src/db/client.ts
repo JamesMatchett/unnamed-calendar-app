@@ -1,7 +1,13 @@
 import * as SQLite from "expo-sqlite";
 
 import { SCHEMA, SCHEMA_VERSION } from "./schema";
-import { CURRENT_USER_ID, FIXTURE_EPOCH, fixturesWanted, seedIfEmpty } from "./seed";
+import {
+  CURRENT_USER_ID,
+  FIXTURE_EPOCH,
+  fixturesWanted,
+  seedIfEmpty,
+  setCurrentUserId,
+} from "./seed";
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -20,6 +26,12 @@ export function getDb(): SQLite.SQLiteDatabase {
     "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)",
     [String(SCHEMA_VERSION)],
   );
+  // Who this phone belongs to, before anything is seeded in their name. Absent
+  // until the first sign-in, when adoptServerIdentity writes it.
+  const owner = db.getFirstSync<{ value: string }>(
+    "SELECT value FROM meta WHERE key = 'user_id'",
+  )?.value;
+  if (owner !== undefined) setCurrentUserId(owner);
   seedIfEmpty(db);
   db.runSync(
     "INSERT OR REPLACE INTO meta (key, value) VALUES ('fixture_epoch', ?)",
@@ -50,6 +62,14 @@ function addMissingColumns(database: SQLite.SQLiteDatabase): void {
     ["events", "scheduling_mode", "TEXT NOT NULL DEFAULT 'fixed'"],
     ["device_links", "hash", "TEXT"],
     ["notifications", "notified_at", "TEXT"],
+    // The version the SERVER last confirmed, as opposed to `version`, which
+    // the phone bumps on every local edit. A queued PATCH carries this one, so
+    // the server can tell a stale edit from a fresh one (§5.4) even when
+    // several local edits have collapsed into a single queued write.
+    ["events", "base_version", "INTEGER NOT NULL DEFAULT 0"],
+    // Calendars only ever had the server's version, because settings edits
+    // were local until now. Confirmed by sync; sent back on a settings PATCH.
+    ["calendars", "version", "INTEGER NOT NULL DEFAULT 1"],
   ];
 
   for (const [table, column, decl] of added) {
@@ -65,6 +85,12 @@ function addMissingColumns(database: SQLite.SQLiteDatabase): void {
     // been seen; mark them so.
     if (table === "notifications" && column === "notified_at") {
       database.runSync("UPDATE notifications SET notified_at = created_at");
+    }
+    // Rows that were already settled are at the version they show; rows still
+    // waiting have never been confirmed and stay at zero, which the queue
+    // treats as "send the create, not a patch".
+    if (table === "events" && column === "base_version") {
+      database.runSync("UPDATE events SET base_version = version WHERE sync_state = 'synced'");
     }
   }
 }

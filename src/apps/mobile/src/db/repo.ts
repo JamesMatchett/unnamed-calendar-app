@@ -45,6 +45,8 @@ import {
   fixturesWanted,
   loadFixtures,
   OWN_PLANS_ID,
+  rekeyUser,
+  setCurrentUserId,
 } from "./seed";
 
 export interface CalendarRow {
@@ -856,11 +858,101 @@ export function updateCalendar(
   if (sets.length === 0) return;
 
   args.push(calendarId);
-  getDb().runSync(
-    `UPDATE calendars SET ${sets.join(", ")} WHERE calendar_id = ?`,
-    args,
-  );
+  const db = getDb();
+  db.withTransactionSync(() => {
+    db.runSync(`UPDATE calendars SET ${sets.join(", ")} WHERE calendar_id = ?`, args);
+    queueCalendarWrite(db, calendarId, patch);
+  });
   notifyChanged();
+}
+
+/**
+ * Queue the server write for a calendar's settings.
+ *
+ * Same two shapes as queueEventWrite: a create still in the queue has its body
+ * rewritten from the row, otherwise a PATCH goes behind it carrying the
+ * version the server last confirmed. Only the settings the server knows are
+ * sent; travel mode and privacy are this phone's until the item grows them.
+ */
+function queueCalendarWrite(
+  db: ReturnType<typeof getDb>,
+  calendarId: string,
+  patch: Partial<{
+    name: string;
+    collectAvailability: boolean;
+    requireApproval: boolean;
+    allowMemberInvites: boolean;
+    allowMemberEvents: boolean;
+    coverImage: string | null;
+  }>,
+): void {
+  const row = db.getFirstSync<{
+    name: string;
+    mode: string;
+    start_date: string | null;
+    end_date: string | null;
+    default_tz: string;
+    collect_availability: number;
+    allow_member_events: number;
+    travel_mode: string;
+    is_private: number;
+    cover_image: string | null;
+    version: number;
+  }>(
+    `SELECT name, mode, start_date, end_date, default_tz, collect_availability, allow_member_events,
+            travel_mode, is_private, cover_image, version
+       FROM calendars WHERE calendar_id = ?`,
+    [calendarId],
+  );
+  if (!row) return;
+
+  const creating = db.getFirstSync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM mutation_queue WHERE mutation_id = ?",
+    [`create:${calendarId}`],
+  );
+  if ((creating?.n ?? 0) > 0) {
+    db.runSync("UPDATE mutation_queue SET body = ? WHERE mutation_id = ?", [
+      JSON.stringify({
+        name: row.name,
+        mode: row.mode,
+        startDate: row.start_date ?? undefined,
+        endDate: row.end_date ?? undefined,
+        defaultTz: row.default_tz,
+        collectAvailability: row.collect_availability === 1,
+        allowMemberEvents: row.allow_member_events === 1,
+        travelMode: row.travel_mode,
+        isPrivate: row.is_private === 1,
+        coverImage: row.cover_image,
+      }),
+      `create:${calendarId}`,
+    ]);
+    return;
+  }
+
+  const edit: Record<string, unknown> = {};
+  for (const key of [
+    "name",
+    "collectAvailability",
+    "requireApproval",
+    "allowMemberInvites",
+    "allowMemberEvents",
+    "coverImage",
+  ] as const) {
+    if (patch[key] !== undefined) edit[key] = patch[key];
+  }
+  if (Object.keys(edit).length === 0) return;
+
+  db.runSync(
+    `INSERT OR REPLACE INTO mutation_queue (mutation_id, calendar_id, method, path, body, queued_at)
+     VALUES (?,?, 'PATCH', ?, ?, ?)`,
+    [
+      `calendar-edit:${calendarId}`,
+      calendarId,
+      `/v1/calendars/${calendarId}`,
+      JSON.stringify({ ...edit, version: row.version }),
+      new Date().toISOString(),
+    ],
+  );
 }
 
 export function setMemberRole(
@@ -1497,18 +1589,7 @@ export function updateEvent(eventId: string, edits: EventEdits): void {
       ],
     );
 
-    db.runSync(
-      `INSERT OR REPLACE INTO mutation_queue
-         (mutation_id, calendar_id, method, path, body, queued_at)
-       VALUES (?,?, 'PATCH', ?, ?, ?)`,
-      [
-        `event-edit:${eventId}`,
-        event.calendar_id,
-        `/v1/calendars/${event.calendar_id}/events/${eventId}`,
-        JSON.stringify(edits),
-        now,
-      ],
-    );
+    queueEventWrite(db, eventId, now);
   });
 
   notifyChanged();
@@ -1525,14 +1606,102 @@ export function setEventCancelled(eventId: string, cancelled: boolean): void {
   const db = getDb();
   const now = new Date().toISOString();
 
-  db.runSync(
-    `UPDATE events SET status = ?, version = version + 1,
-       updated_by = ?, updated_at = ?, sync_state = 'pending'
-     WHERE event_id = ?`,
-    [cancelled ? "cancelled" : "active", CURRENT_USER_ID, now, eventId],
-  );
+  db.withTransactionSync(() => {
+    db.runSync(
+      `UPDATE events SET status = ?, version = version + 1,
+         updated_by = ?, updated_at = ?, sync_state = 'pending'
+       WHERE event_id = ?`,
+      [cancelled ? "cancelled" : "active", CURRENT_USER_ID, now, eventId],
+    );
+    // A cancel is an edit that sets status (§8.2), queued like one.
+    queueEventWrite(db, eventId, now);
+  });
 
   notifyChanged();
+}
+
+/**
+ * Queue the server write for an event as it now stands.
+ *
+ * The body is the whole row, flattened, which is what lets several edits made
+ * offline collapse into one queued write with nothing lost: the last body is
+ * the current state. Two shapes, depending on whether the server has ever
+ * heard of this event.
+ *
+ *   create still queued   the PUT has not left the phone, so its body is
+ *                         replaced rather than a PATCH queued behind it. A
+ *                         PATCH for an event the server has never seen would
+ *                         404 and be dropped.
+ *   create acknowledged   a PATCH carrying base_version, the version the
+ *                         server last confirmed, so it can refuse a stale
+ *                         edit (§5.4). Not the local version, which has been
+ *                         bumped once per edit and would always look stale.
+ */
+function queueEventWrite(db: ReturnType<typeof getDb>, eventId: string, now: string): void {
+  const row = db.getFirstSync<{
+    calendar_id: string;
+    title: string;
+    description: string | null;
+    start_utc: string;
+    end_utc: string | null;
+    tz: string;
+    local_wall: string;
+    precision: string;
+    location_name: string | null;
+    location_address: string | null;
+    tickets_required: number;
+    ticket_url: string | null;
+    allow_suggestions: number;
+    status: string;
+    base_version: number;
+  }>(
+    `SELECT calendar_id, title, description, start_utc, end_utc, tz, local_wall, precision,
+            location_name, location_address, tickets_required, ticket_url, allow_suggestions,
+            status, base_version
+       FROM events WHERE event_id = ?`,
+    [eventId],
+  );
+  if (!row) return;
+
+  const body = {
+    title: row.title,
+    description: row.description,
+    startUtc: row.start_utc,
+    endUtc: row.end_utc,
+    tz: row.tz,
+    localWall: row.local_wall,
+    precision: row.precision,
+    locationName: row.location_name,
+    locationAddress: row.location_address,
+    ticketsRequired: row.tickets_required === 1,
+    ticketUrl: row.ticket_url,
+    allowSuggestions: row.allow_suggestions === 1,
+    status: row.status,
+  };
+
+  const creating = db.getFirstSync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM mutation_queue WHERE mutation_id = ?",
+    [`event:${eventId}`],
+  );
+  if ((creating?.n ?? 0) > 0) {
+    db.runSync("UPDATE mutation_queue SET body = ? WHERE mutation_id = ?", [
+      JSON.stringify(body),
+      `event:${eventId}`,
+    ]);
+    return;
+  }
+
+  db.runSync(
+    `INSERT OR REPLACE INTO mutation_queue (mutation_id, calendar_id, method, path, body, queued_at)
+     VALUES (?,?, 'PATCH', ?, ?, ?)`,
+    [
+      `event-edit:${eventId}`,
+      row.calendar_id,
+      `/v1/calendars/${row.calendar_id}/events/${eventId}`,
+      JSON.stringify({ ...body, version: row.base_version }),
+      now,
+    ],
+  );
 }
 
 // --- suggestions (§8.1) ----------------------------------------------------
@@ -2600,6 +2769,18 @@ export function deleteEvent(eventId: string): void {
       db.runSync(`DELETE FROM ${table} WHERE event_id = ?`, [eventId]);
     }
     db.runSync("DELETE FROM events WHERE event_id = ?", [eventId]);
+    // Its own writes, still queued, go with it. If the create never left the
+    // phone the server has nothing to delete, and sending a create followed
+    // by a delete would log two changes for a thing nobody else ever saw.
+    const unsent = db.getFirstSync<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM mutation_queue WHERE mutation_id = ?",
+      [`event:${eventId}`],
+    );
+    db.runSync("DELETE FROM mutation_queue WHERE mutation_id IN (?, ?)", [
+      `event:${eventId}`,
+      `event-edit:${eventId}`,
+    ]);
+    if ((unsent?.n ?? 0) > 0) return;
     db.runSync(
       `INSERT OR REPLACE INTO mutation_queue (mutation_id, calendar_id, method, path, body, queued_at)
        VALUES (?,?, 'DELETE', ?, '{}', ?)`,
@@ -2642,6 +2823,16 @@ export function deleteCalendar(calendarId: string): void {
     db.runSync("DELETE FROM sent_invites WHERE calendar_id = ?", [calendarId]);
     db.runSync("DELETE FROM invite_links WHERE calendar_id = ?", [calendarId]);
     db.runSync("DELETE FROM join_requests WHERE calendar_id = ?", [calendarId]);
+    // As for events: a calendar the server never heard of has nothing to
+    // delete there, so every queued write for it goes instead of the delete.
+    const unsent = db.getFirstSync<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM mutation_queue WHERE mutation_id = ?",
+      [`create:${calendarId}`],
+    );
+    if ((unsent?.n ?? 0) > 0) {
+      db.runSync("DELETE FROM mutation_queue WHERE calendar_id = ?", [calendarId]);
+      return;
+    }
     db.runSync(
       `INSERT OR REPLACE INTO mutation_queue (mutation_id, calendar_id, method, path, body, queued_at)
        VALUES (?,?, 'DELETE', ?, '{}', ?)`,
@@ -2663,6 +2854,29 @@ export function deleteCalendar(calendarId: string): void {
  * a tester who picked Apple and later finds the app asking for a password has
  * been told something that was not true.
  */
+/**
+ * Become the person the server says we are.
+ *
+ * Called once per sign-in with the ULID from the token. Every row written
+ * under the placeholder is re-keyed, the id is kept in meta so the next open
+ * starts as this person, and the live binding in seed.ts follows, so the rest
+ * of the app notices nothing except that "You" now matches what the server
+ * echoes back. A second account signing in on the same phone re-keys the same
+ * way, which hands the first account's local rows to the second; acceptable
+ * while this is a development build, and worth a sign-out that clears the
+ * database before it is anything else.
+ */
+export function adoptServerIdentity(userId: string): void {
+  const db = getDb();
+  const previous = CURRENT_USER_ID;
+  if (previous !== userId) {
+    rekeyUser(db, previous, userId);
+    setCurrentUserId(userId);
+  }
+  db.runSync("INSERT OR REPLACE INTO meta (key, value) VALUES ('user_id', ?)", [userId]);
+  notifyChanged();
+}
+
 export function setAuthProvider(provider: string): void {
   getDb().runSync(
     "INSERT OR REPLACE INTO meta (key, value) VALUES ('auth:provider', ?)",

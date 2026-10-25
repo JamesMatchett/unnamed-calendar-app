@@ -8,20 +8,17 @@
 import Constants from "expo-constants";
 
 /**
- * The alpha keeps everything on the phone. There is no server to talk to, so
- * every local write would otherwise sit at 'pending' forever, greyed out with
- * a spinner that never stops: to a tester that reads as broken, not as
- * offline. While this is true the app draws local writes as settled and says
- * so, once, in Settings.
+ * Whether this build keeps everything on the phone.
  *
- * Flip it when sync lands. Nothing in the data model changes either way: writes
- * are still queued, so the day a server exists they go.
+ * False now that sync exists: local writes queue in SQLite and drain to the API
+ * (src/db/sync.ts), the change feed comes back the other way, and a write that
+ * has not been acknowledged is drawn as pending (§5.6) rather than as settled.
  *
- * Note this is NOT the same question as whether there is an API. There is one,
- * and ENVIRONMENT below says which; what there is not yet is a way to sign in
- * to it, so nothing but the health check has anywhere to go.
+ * Kept as a switch rather than deleted, because it is also the honest answer
+ * for a build with no environment behind it, and flipping one constant is a
+ * better way to ship that than reverting a dozen files.
  */
-export const LOCAL_ONLY = true;
+export const LOCAL_ONLY = false;
 
 /** Where the app lives on the web. The domain is the one machine-safe name. */
 export const SITE = "https://calandder.com";

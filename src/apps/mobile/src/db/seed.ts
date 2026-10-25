@@ -5,6 +5,7 @@
  */
 
 import type { TravelMode } from "@calder/core";
+import { ulid } from "@calder/core";
 import type * as SQLite from "expo-sqlite";
 
 /**
@@ -13,10 +14,28 @@ import type * as SQLite from "expo-sqlite";
  * last month shows a trip that has already happened; changing this makes the app
  * drop the fixtures and rebuild them starting from today.
  */
-export const FIXTURE_EPOCH = "2026-09-05T11:48:34.939Z";
+export const FIXTURE_EPOCH = "2026-10-25T17:34:39.874Z";
 
-/** Stands in for the signed-in user until Cognito exists (§3.2). */
-export const CURRENT_USER_ID = "01JC0USERJAMES0000000000";
+/**
+ * Who is holding the phone, as a user id.
+ *
+ * A LIVE BINDING, not a constant. Before anybody signs in it is a placeholder
+ * minted here, so the app works with no server at all; the moment a sign-in
+ * returns the ULID the Pre Token Generation trigger minted (§3.2), every row
+ * that carried the placeholder is rewritten to the real id and this binding
+ * follows. `export let` is what makes that possible without threading a getter
+ * through sixty call sites: ES modules import a binding, not a value, so an
+ * importer that read this an hour ago reads the new id now.
+ *
+ * Only setCurrentUserId may assign it, and only client.ts (on open) and
+ * adoptServerIdentity (on sign-in) may call that.
+ */
+export const LOCAL_USER_ID = "01JC0USERJAMES0000000000";
+export let CURRENT_USER_ID: string = LOCAL_USER_ID;
+
+export function setCurrentUserId(userId: string): void {
+  CURRENT_USER_ID = userId;
+}
 
 const day = (offset: number, hour: number, minute = 0): string => {
   const d = new Date();
@@ -85,8 +104,107 @@ export function myDisplayName(db: SQLite.SQLiteDatabase): string {
 }
 
 
-/** The id every account's own private calendar gets, until real user ids exist. */
-export const OWN_PLANS_ID = "01JC0CALSOLO000000000000";
+/**
+ * This phone's own private calendar, as a calendar id.
+ *
+ * Also a live binding, and for a sharper reason than CURRENT_USER_ID. This used
+ * to be one constant for everybody, which was harmless while nothing left the
+ * phone and would have been a leak the moment it did: two people syncing the
+ * same id would have made the second one an owner of the first one's private
+ * calendar. So it is minted per install, kept in meta, and loaded on open. An
+ * install that still has the old constant is re-keyed in ensureOwnPlans.
+ */
+export const LEGACY_OWN_PLANS_ID = "01JC0CALSOLO000000000000";
+export let OWN_PLANS_ID: string = LEGACY_OWN_PLANS_ID;
+
+export function setOwnPlansId(calendarId: string): void {
+  OWN_PLANS_ID = calendarId;
+}
+
+/**
+ * Every table that names a calendar, found by asking SQLite rather than kept as
+ * a list here: a list is one more thing to forget when a table is added, and a
+ * re-key that misses a table strands rows nothing can reach.
+ */
+function tablesWithColumn(db: SQLite.SQLiteDatabase, column: string): string[] {
+  const tables = db.getAllSync<{ name: string }>(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+  );
+  return tables
+    .map((t) => t.name)
+    .filter((table) =>
+      db
+        .getAllSync<{ name: string }>(`PRAGMA table_info(${table})`)
+        .some((c) => c.name === column),
+    );
+}
+
+/** Move every row that names one calendar id to another. Foreign keys are off for the duration. */
+export function rekeyCalendar(db: SQLite.SQLiteDatabase, from: string, to: string): void {
+  if (from === to) return;
+  // Foreign keys would reject the first UPDATE, because members would point at
+  // a calendar that has not been renamed yet, whichever order the tables go in.
+  db.execSync("PRAGMA foreign_keys = OFF");
+  try {
+    db.withTransactionSync(() => {
+      for (const table of tablesWithColumn(db, "calendar_id")) {
+        db.runSync(`UPDATE ${table} SET calendar_id = ? WHERE calendar_id = ?`, [to, from]);
+      }
+      // The queue carries the id inside the path as well as in its own column.
+      db.runSync(
+        "UPDATE mutation_queue SET path = REPLACE(path, ?, ?), mutation_id = REPLACE(mutation_id, ?, ?)",
+        [from, to, from, to],
+      );
+    });
+  } finally {
+    db.execSync("PRAGMA foreign_keys = ON");
+  }
+}
+
+/**
+ * Every column that holds a user id. Named rather than discovered, because
+ * user ids live in columns called several different things and nothing in the
+ * schema marks them. A column added without being listed here is a column that
+ * keeps the placeholder id after sign-in, which shows up as "You" turning into
+ * a stranger.
+ */
+const USER_COLUMNS = [
+  "user_id",
+  "created_by",
+  "updated_by",
+  "actor_id",
+  "from_user",
+  "to_user",
+  "suggested_by",
+  "invited_by",
+  "cancelled_by",
+  "requested_by",
+  "owner_id",
+];
+
+/** Move every row that names one user id to another. */
+export function rekeyUser(db: SQLite.SQLiteDatabase, from: string, to: string): void {
+  if (from === to) return;
+  db.execSync("PRAGMA foreign_keys = OFF");
+  try {
+    db.withTransactionSync(() => {
+      for (const column of USER_COLUMNS) {
+        for (const table of tablesWithColumn(db, column)) {
+          // Where the new id already has a row (a directory entry written by a
+          // sync before sign-in finished), the old row is the duplicate and
+          // goes, or the UPDATE fails on the primary key.
+          if (table === "directory" && column === "user_id") {
+            db.runSync("DELETE FROM directory WHERE user_id = ? AND EXISTS (SELECT 1 FROM directory WHERE user_id = ?)", [from, to]);
+          }
+          db.runSync(`UPDATE OR REPLACE ${table} SET ${column} = ? WHERE ${column} = ?`, [to, from]);
+        }
+      }
+      db.runSync("UPDATE mutation_queue SET path = REPLACE(path, ?, ?), mutation_id = REPLACE(mutation_id, ?, ?)", [from, to, from, to]);
+    });
+  } finally {
+    db.execSync("PRAGMA foreign_keys = ON");
+  }
+}
 
 /**
  * Everyone starts with somewhere private to put things.
@@ -98,6 +216,29 @@ export const OWN_PLANS_ID = "01JC0CALSOLO000000000000";
  * every other calendar.
  */
 export function ensureOwnPlans(db: SQLite.SQLiteDatabase): void {
+  const stored = db.getFirstSync<{ value: string }>(
+    "SELECT value FROM meta WHERE key = 'own_plans_id'",
+  )?.value;
+
+  if (stored === undefined) {
+    // Either a fresh install, or one from before the id was minted per phone.
+    // The second kind still has the shared constant as its calendar, and that
+    // row is re-keyed rather than recreated so nothing in it is lost.
+    const minted = ulid();
+    const legacy = db.getFirstSync<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM calendars WHERE calendar_id = ?",
+      [LEGACY_OWN_PLANS_ID],
+    );
+    if ((legacy?.n ?? 0) > 0) rekeyCalendar(db, LEGACY_OWN_PLANS_ID, minted);
+    db.runSync("INSERT OR REPLACE INTO meta (key, value) VALUES ('own_plans_id', ?)", [minted]);
+    setOwnPlansId(minted);
+    // A re-keyed legacy calendar has never been sent anywhere. Queue it like a
+    // new one so it reaches the server with everybody else's.
+    if ((legacy?.n ?? 0) > 0) queueOwnPlansCreate(db, minted);
+  } else {
+    setOwnPlansId(stored);
+  }
+
   const exists = db.getFirstSync<{ n: number }>(
     "SELECT COUNT(*) AS n FROM calendars WHERE calendar_id = ?",
     [OWN_PLANS_ID],
@@ -107,6 +248,7 @@ export function ensureOwnPlans(db: SQLite.SQLiteDatabase): void {
   // The phone's own zone, not London's: a personal calendar in the wrong zone
   // puts every plan an hour out for anyone who is not in the UK.
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/London";
+  const now = new Date().toISOString();
 
   db.withTransactionSync(() => {
     db.runSync(
@@ -115,14 +257,58 @@ export function ensureOwnPlans(db: SQLite.SQLiteDatabase): void {
          allow_member_events, is_private, status, created_by, created_at, last_seq)
        VALUES (?, 'My own plans', 'Things only I would say yes to.', 'continuous',
                ?, 0, 'walk', 1, 0, 1, 1, 'active', ?, ?, 0)`,
-      [OWN_PLANS_ID, tz, CURRENT_USER_ID, new Date().toISOString()],
+      [OWN_PLANS_ID, tz, CURRENT_USER_ID, now],
     );
     db.runSync(
       `INSERT INTO members (calendar_id, user_id, role, status, display_name, joined_at)
        VALUES (?,?, 'owner', 'active', ?, ?)`,
-      [OWN_PLANS_ID, CURRENT_USER_ID, myDisplayName(db), new Date().toISOString()],
+      [OWN_PLANS_ID, CURRENT_USER_ID, myDisplayName(db), now],
     );
+    queueOwnPlansCreate(db, OWN_PLANS_ID);
   });
+}
+
+/**
+ * The create for the own-plans calendar, in the queue like any other write.
+ *
+ * Not a fixture, so it is not exempt from sync: a reinstall should get this
+ * calendar and what is in it back from the server, which only happens if the
+ * server has ever heard of it.
+ */
+function queueOwnPlansCreate(db: SQLite.SQLiteDatabase, calendarId: string): void {
+  const row = db.getFirstSync<{
+    name: string;
+    mode: "bounded" | "continuous";
+    default_tz: string;
+    collect_availability: number;
+    allow_member_events: number;
+    travel_mode: string;
+    is_private: number;
+  }>(
+    `SELECT name, mode, default_tz, collect_availability, allow_member_events, travel_mode, is_private
+       FROM calendars WHERE calendar_id = ?`,
+    [calendarId],
+  );
+  if (!row) return;
+  db.runSync(
+    `INSERT OR REPLACE INTO mutation_queue (mutation_id, calendar_id, method, path, body, queued_at)
+     VALUES (?,?, 'PUT', ?, ?, ?)`,
+    [
+      `create:${calendarId}`,
+      calendarId,
+      `/v1/calendars/${calendarId}`,
+      JSON.stringify({
+        name: row.name,
+        mode: row.mode,
+        defaultTz: row.default_tz,
+        collectAvailability: row.collect_availability === 1,
+        allowMemberEvents: row.allow_member_events === 1,
+        travelMode: row.travel_mode,
+        isPrivate: row.is_private === 1,
+      }),
+      new Date().toISOString(),
+    ],
+  );
 }
 
 /**

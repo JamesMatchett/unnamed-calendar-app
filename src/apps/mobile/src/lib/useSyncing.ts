@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-import { isSyncing, subscribeSyncState } from "@/db/sync";
+import { getSyncStatus, isSyncing, subscribeSyncState, type SyncStatus } from "@/db/sync";
 
 /**
  * Is a sync attempt in progress?
@@ -11,3 +11,10 @@ import { isSyncing, subscribeSyncState } from "@/db/sync";
  */
 export const useSyncing = (): boolean =>
   useSyncExternalStore(subscribeSyncState, isSyncing, isSyncing);
+
+/**
+ * What the last attempt found: signed in or not, when, and what went wrong.
+ * Same store as the spinner, because they change at the same moments.
+ */
+export const useSyncStatus = (): SyncStatus =>
+  useSyncExternalStore(subscribeSyncState, getSyncStatus, getSyncStatus);

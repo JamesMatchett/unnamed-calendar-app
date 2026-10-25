@@ -3,11 +3,11 @@ import { API_BASE } from "@/config";
 /**
  * Talking to the API.
  *
- * Small on purpose. There is exactly one endpoint reachable without a token
- * today, so this is the shape rather than the client: a base URL, a timeout,
- * and errors that say which of the several ways a request can fail actually
- * happened. Authentication goes in when there is something to authenticate
- * with; the callers below already pass through a single place for it.
+ * Small on purpose: a base URL, a timeout, and errors that say which of the
+ * several ways a request can fail actually happened. `call` is the whole
+ * client; the named functions below are the handful of reads the screens make
+ * directly, and the sync layer drives `call` with whatever the mutation queue
+ * holds.
  */
 
 /** How long to wait. Long enough for a cold Lambda, short enough to give up. */
@@ -18,8 +18,8 @@ export type ApiFailure =
   | { kind: "offline"; detail: string }
   /** An answer, eventually, but not within TIMEOUT_MS. */
   | { kind: "timeout"; detail: string }
-  /** An answer, with a status that is not a success. */
-  | { kind: "status"; status: number; detail: string }
+  /** An answer, with a status that is not a success. `body` is its JSON, when it had any. */
+  | { kind: "status"; status: number; detail: string; body?: unknown }
   /** A success, whose body was not the JSON it claimed to be. */
   | { kind: "malformed"; detail: string };
 
@@ -31,26 +31,50 @@ export type ApiResult<T> = { ok: true; value: T } | { ok: false; error: ApiFailu
  * ours, and a 401 is neither — it means the token is stale. Collapsing them
  * into one "something went wrong" is how a network bug becomes unreportable.
  */
-async function request<T>(path: string, token?: string): Promise<ApiResult<T>> {
+export type Method = "GET" | "PUT" | "POST" | "PATCH" | "DELETE";
+
+export interface Call {
+  readonly method: Method;
+  readonly path: string;
+  /** JSON-encoded when present. A DELETE may carry one; the sync queue does. */
+  readonly body?: unknown;
+  readonly token?: string | undefined;
+}
+
+export async function call<T>(request: Call): Promise<ApiResult<T>> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${API_BASE}${path}`, {
+    const response = await fetch(`${API_BASE}${request.path}`, {
+      method: request.method,
       signal: controller.signal,
       headers: {
         accept: "application/json",
+        ...(request.body === undefined ? {} : { "content-type": "application/json" }),
         // The ID token, not the access token: it is the one carrying the `uid`
         // claim, because putting a custom claim in an access token would have
         // required Cognito's Essentials plan (decision 40).
-        ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
+        ...(request.token === undefined ? {} : { authorization: `Bearer ${request.token}` }),
       },
+      ...(request.body === undefined ? {} : { body: JSON.stringify(request.body) }),
     });
 
     if (!response.ok) {
+      // The body's `detail` when there is one, because "409 Conflict" says
+      // less than "event has moved on from version 3".
+      let detail = response.statusText;
+      let body: unknown;
+      try {
+        body = await response.json();
+        const parsed = body as { detail?: unknown };
+        if (typeof parsed.detail === "string") detail = parsed.detail;
+      } catch {
+        // Not JSON, or empty. The status text will have to do.
+      }
       return {
         ok: false,
-        error: { kind: "status", status: response.status, detail: response.statusText },
+        error: { kind: "status", status: response.status, detail, ...(body === undefined ? {} : { body }) },
       };
     }
 
@@ -75,6 +99,9 @@ async function request<T>(path: string, token?: string): Promise<ApiResult<T>> {
     clearTimeout(timer);
   }
 }
+
+const request = <T>(path: string, token?: string): Promise<ApiResult<T>> =>
+  call<T>({ method: "GET", path, token });
 
 export interface Health {
   status: string;

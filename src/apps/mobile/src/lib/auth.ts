@@ -3,8 +3,9 @@ import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
 
 import { LOCAL_ONLY } from "@/config";
+import { adoptServerIdentity } from "@/db/repo";
 import { apiConfig, me, type ApiConfig } from "@/lib/api";
-import { clearSession, loadSession, saveSession } from "@/lib/session";
+import { clearSession, isFresh, loadSession, saveSession } from "@/lib/session";
 
 // Closes the authentication sheet when the redirect comes back. Without it the
 // sheet stays open behind the app and the promise never settles.
@@ -210,11 +211,75 @@ export async function signIn(provider: Provider): Promise<Account | null> {
   // screen asks.
   const profile = await me(tokens.idToken);
 
+  // The one moment the phone learns who it belongs to. Every row written so
+  // far carries a placeholder id; from here they carry the ULID the Pre Token
+  // Generation trigger minted (§3.2), so what this phone creates and what the
+  // server echoes back are the same person. The API's answer is preferred;
+  // the token itself is the fallback, because the claim is in there either way.
+  const userId = (profile.ok ? profile.value.userId : null) ?? uidFromToken(tokens.idToken);
+  if (userId !== null) adoptServerIdentity(userId);
+
   return {
     provider,
     displayName: profile.ok ? profile.value.name : null,
     email: profile.ok ? profile.value.email : null,
   };
+}
+
+/**
+ * The `uid` claim, read straight out of the ID token.
+ *
+ * Not verified here and does not need to be: the token came from Cognito's
+ * token endpoint over TLS a moment ago, and the API verifies it on every
+ * request. This only saves a round trip when /v1/me is unreachable.
+ */
+function uidFromToken(idToken: string): string | null {
+  try {
+    const payload = idToken.split(".")[1];
+    if (payload === undefined) return null;
+    const padded = payload.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(payload.length / 4) * 4, "=");
+    const claims = JSON.parse(globalThis.atob(padded)) as { uid?: unknown };
+    return typeof claims.uid === "string" ? claims.uid : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A token the API will accept right now, renewing it when it has aged out.
+ *
+ * ID tokens last an hour and refresh tokens 180 days (§3.2), so for most of a
+ * session this is a Keychain read. When the hour is up, the refresh token is
+ * traded for a new pair at Cognito's token endpoint; the one case that ends
+ * in null with a session still present is the refresh itself failing, which
+ * means offline, or a refresh token that has lapsed and needs a sign-in.
+ */
+export async function getIdToken(): Promise<string | null> {
+  const session = await loadSession();
+  if (session === null) return null;
+  if (isFresh(session)) return session.idToken;
+  if (session.refreshToken === null) return null;
+
+  const config = await apiConfig();
+  if (!config.ok) return null;
+
+  try {
+    const tokens = await AuthSession.refreshAsync(
+      { clientId: config.value.clientId, refreshToken: session.refreshToken },
+      { tokenEndpoint: `https://${config.value.authDomain}/oauth2/token` },
+    );
+    if (tokens.idToken === undefined) return null;
+    await saveSession({
+      idToken: tokens.idToken,
+      // Cognito does not rotate refresh tokens, so the old one is still the one.
+      refreshToken: tokens.refreshToken ?? session.refreshToken,
+      expiresAt: Date.now() + (tokens.expiresIn ?? 3600) * 1000,
+      provider: session.provider,
+    });
+    return tokens.idToken;
+  } catch {
+    return null;
+  }
 }
 
 /**
