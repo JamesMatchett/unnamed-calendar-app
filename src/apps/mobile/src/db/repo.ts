@@ -2929,6 +2929,55 @@ export function replayOnboarding(): void {
   notifyChanged();
 }
 
+/**
+ * End the session on this phone, and nothing else.
+ *
+ * Signing out puts the first run back because that is where signing in lives,
+ * but it must not forget who this person said they were: the name and handle
+ * stay in the directory, keyed by the server's user id, so that signing back
+ * in can skip the question. replayOnboarding is the alpha's "show me the tour
+ * again" and clears more; the two were one function, which is why signing
+ * out and back in used to ask for a name the phone already knew.
+ */
+export function endSession(): void {
+  const db = getDb();
+  db.withTransactionSync(() => {
+    for (const key of ["identity_set", "auth:provider"]) {
+      db.runSync("DELETE FROM meta WHERE key = ?", [key]);
+    }
+  });
+  notifyChanged();
+}
+
+/**
+ * The name and handle this phone already holds for the signed-in user, or
+ * null when it has never been asked. Only ever a row written by setIdentity:
+ * nothing seeds a directory entry for the current user.
+ */
+export function knownIdentity(): { displayName: string; handle: string } | null {
+  const row = getDb().getFirstSync<{ handle: string; display_name: string }>(
+    "SELECT handle, display_name FROM directory WHERE user_id = ?",
+    [CURRENT_USER_ID],
+  );
+  if (!row || row.handle === "" || row.display_name.trim() === "") return null;
+  return { displayName: row.display_name, handle: row.handle };
+}
+
+/**
+ * Skip the name step when the answer is already here.
+ *
+ * Called right after a sign-in has adopted the server's user id, so the lookup
+ * is by the id the server echoes back: the same person on the same phone finds
+ * their own row; a different account, or a fresh install, finds nothing and
+ * is asked. Returns whether anything was restored.
+ */
+export function restoreIdentity(): boolean {
+  if (knownIdentity() === null) return false;
+  getDb().runSync("INSERT OR REPLACE INTO meta (key, value) VALUES ('identity_set', '1')");
+  notifyChanged();
+  return true;
+}
+
 export function identityComplete(): boolean {
   return (
     getDb().getFirstSync<{ value: string }>(

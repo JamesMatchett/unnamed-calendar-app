@@ -22,6 +22,7 @@ import {
   handleAvailable,
   normaliseHandle,
   setAppearance,
+  restoreIdentity,
   setAuthProvider,
   setIdentity,
   suggestHandle,
@@ -120,7 +121,12 @@ export function Onboarding({
           onPicked={(p, account) => {
             setProvider(p);
             setGiven(account?.displayName ?? null);
-            setStep("identity");
+            // Signing back in on a phone that already knows this person. The
+            // sign-in has just adopted their server id, so if a name and
+            // handle sit under it the question has been answered: skip to the
+            // appearance step, and if that was answered too the overlay is
+            // already gone by the time this renders.
+            setStep(restoreIdentity() ? "appearance" : "identity");
           }}
         />
       ) : null}

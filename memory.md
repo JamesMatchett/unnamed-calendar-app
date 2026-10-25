@@ -252,7 +252,12 @@ Found while building the app, and all of them cost time to diagnose.
 11. **A forgotten `expo start` keeps port 8081 for weeks.** A fresh `expo run:ios` then either
    prompts for another port or launches the app against the old server. `lsof -nP -iTCP:8081`
    before building, and kill the stale one.
-12. **Plain `git status` from a sandboxed shell can strand `.git/index.lock`.** It takes the
+12. **Never start Metro with `CI=1`.** Expo then runs "in CI mode, reloads are disabled":
+   Fast Refresh and the file watcher are off, so edits never reach the app and it looks like a
+   fix that did not work. Start it plainly (`npx expo start --dev-client`) and feed it
+   `< /dev/null` if the shell is not interactive. The `expo run:ios` wrapper has the same
+   problem; the headless build is `xcodebuild` on `ios/Calder.xcworkspace`, scheme `Calder`.
+13. **Plain `git status` from a sandboxed shell can strand `.git/index.lock`.** It takes the
    index lock to refresh, and if that shell cannot delete files the lock survives, after
    which every git command fails with "Another git process seems to be running". Use
    `git --no-optional-locks status`, which does not take the lock. To recover, `mv` the lock

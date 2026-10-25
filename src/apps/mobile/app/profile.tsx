@@ -13,6 +13,7 @@ import {
   handleAvailable,
   normaliseHandle,
   profileFootprint,
+  endSession,
   replayOnboarding,
   updateProfile,
 } from "@/db/repo";
@@ -340,8 +341,10 @@ export default function ProfileScreen() {
             void (async () => {
               await signOut();
               // The only route back in: signing in lives in the first-run flow,
-              // so ending a session means starting that again.
-              leaveThenReplay();
+              // so ending a session means starting that again. Only the session
+              // goes, though: the name and handle stay, so signing back in on
+              // this phone does not ask for them twice.
+              leaveThenReplay(undefined, endSession);
             })();
           },
         },
@@ -359,9 +362,9 @@ export default function ProfileScreen() {
    * iOS discards a presentation made while another controller is dismissing,
    * so the first run rendered and was never shown.
    */
-  function leaveThenReplay(also?: () => void) {
+  function leaveThenReplay(also?: () => void, reset: () => void = replayOnboarding) {
     also?.();
-    replayOnboarding();
+    reset();
     router.dismissAll();
     router.replace("/");
   }
