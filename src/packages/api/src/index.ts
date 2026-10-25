@@ -16,7 +16,7 @@
  * routes with different requirements can.
  */
 
-import type { UserId } from "@calder/core";
+import type { CalendarId, EventId, UserId } from "@calder/core";
 import { asCognitoSub } from "@calder/core";
 
 import { type HttpEvent, type HttpResult, json, parseBody } from "./http.js";
@@ -25,11 +25,15 @@ import { accessTo } from "./access.js";
 import { changesSince, DEFAULT_LIMIT } from "./changes.js";
 import {
   createCalendar,
+  deleteCalendar,
   editCalendar,
   listCalendars,
   type CalendarEdit,
   type NewCalendar,
 } from "./calendars.js";
+import { createEvent, deleteEvent, editEvent, type EventEdit, type NewEvent } from "./events.js";
+import { removeMember } from "./members.js";
+import { clearRsvp, putRsvp, setTicket } from "./rsvps.js";
 
 // The Stream consumer, also in this bundle. Same argument as the trigger below:
 // one artifact means the change log cannot drift from the handlers whose writes
@@ -47,7 +51,10 @@ export { preTokenGeneration } from "./identity.js";
 // local engine; nothing in the running system calls it.
 export { UID_CLAIM, resolveUserId, useClient } from "./identity.js";
 export { accessTo } from "./access.js";
-export { createCalendar, editCalendar, listCalendars } from "./calendars.js";
+export { createCalendar, deleteCalendar, editCalendar, listCalendars } from "./calendars.js";
+export { createEvent, deleteEvent, editEvent } from "./events.js";
+export { removeMember } from "./members.js";
+export { clearRsvp, putRsvp, setTicket } from "./rsvps.js";
 export { changesSince } from "./changes.js";
 export { isLoggable, logOne } from "./changelog.js";
 
@@ -109,10 +116,49 @@ function caller(event: HttpEvent): Caller {
   };
 }
 
+/**
+ * The error body for a handler's refusal.
+ *
+ * One spelling per status, so the client can switch on `error` without having
+ * to know which handler it was talking to. `detail` is the handler's sentence,
+ * written for the person reading a bug report rather than for the code.
+ */
+const ERROR_NAMES: Record<number, string> = {
+  400: "bad_request",
+  401: "unauthenticated",
+  403: "forbidden",
+  404: "not_found",
+  409: "conflict",
+  410: "gone",
+};
+
+function refused(status: number, detail: string): HttpResult {
+  return json(status, { error: ERROR_NAMES[status] ?? "error", detail });
+}
+
+/**
+ * The two ids every event route carries, or the 400 for a path without them.
+ *
+ * Checked once here rather than in each arm, because the check is the same
+ * eight lines every time and the arms are where the differences belong.
+ */
+function eventPath(
+  event: HttpEvent,
+): { ok: true; calendarId: CalendarId; eventId: EventId } | { ok: false; result: HttpResult } {
+  const calendarId = event.pathParameters?.["calendarId"];
+  const eventId = event.pathParameters?.["eventId"];
+  if (calendarId === undefined || calendarId === "" || eventId === undefined || eventId === "") {
+    return { ok: false, result: refused(400, "the path needs a calendar id and an event id") };
+  }
+  return { ok: true, calendarId: calendarId as CalendarId, eventId: eventId as EventId };
+}
+
 export async function route(
   event: HttpEvent,
   now: number = Date.now(),
 ): Promise<HttpResult> {
+  const iso = new Date(now).toISOString();
+
   switch (event.routeKey) {
     case "GET /v1/health":
       return json(200, {
@@ -288,6 +334,175 @@ export async function route(
         error: result.status === 409 ? "conflict" : result.status === 403 ? "forbidden" : "not_found",
         detail: result.detail,
       });
+    }
+
+    case "DELETE /v1/calendars/{calendarId}": {
+      const who = caller(event);
+      if (!who.ok) return who.result;
+      const calendarId = event.pathParameters?.["calendarId"];
+      if (calendarId === undefined || calendarId === "") {
+        return refused(400, "no calendar id in the path");
+      }
+      const result = await deleteCalendar(
+        env("CALDER_TABLE"),
+        calendarId as CalendarId,
+        who.userId,
+        iso,
+      );
+      if (result.ok) return json(200, { calendar: result.calendar });
+      return refused(result.status, result.detail);
+    }
+
+    // --- members -----------------------------------------------------------
+
+    case "DELETE /v1/calendars/{calendarId}/members/{userId}": {
+      const who = caller(event);
+      if (!who.ok) return who.result;
+      const calendarId = event.pathParameters?.["calendarId"];
+      const userId = event.pathParameters?.["userId"];
+      if (calendarId === undefined || calendarId === "" || userId === undefined || userId === "") {
+        return refused(400, "the path needs a calendar id and a user id");
+      }
+      const parsed = parseBody(event.body);
+      if (!parsed.ok) return refused(400, parsed.detail);
+
+      const result = await removeMember(
+        env("CALDER_TABLE"),
+        calendarId as CalendarId,
+        who.userId,
+        userId as UserId,
+        parsed.value["status"],
+        iso,
+      );
+      if (result.ok) return json(200, { membership: result.membership });
+      return refused(result.status, result.detail);
+    }
+
+    // --- events ------------------------------------------------------------
+    //
+    // The body shapes are the app's SQLite rows, flattened; events.ts folds
+    // them into the nested item. A client-generated ULID in the path makes the
+    // create idempotent, so 200 on a repeat is success and `created` says
+    // which it was, exactly as for calendars.
+
+    case "PUT /v1/calendars/{calendarId}/events/{eventId}": {
+      const who = caller(event);
+      if (!who.ok) return who.result;
+      const ids = eventPath(event);
+      if (!ids.ok) return ids.result;
+      const parsed = parseBody(event.body);
+      if (!parsed.ok) return refused(400, parsed.detail);
+
+      const result = await createEvent(
+        env("CALDER_TABLE"),
+        ids.calendarId,
+        ids.eventId,
+        who.userId,
+        parsed.value as unknown as NewEvent,
+        iso,
+      );
+      if (result.ok) return json(result.created ? 201 : 200, { created: result.created, event: result.event });
+      return refused(result.status, result.detail);
+    }
+
+    case "PATCH /v1/calendars/{calendarId}/events/{eventId}": {
+      const who = caller(event);
+      if (!who.ok) return who.result;
+      const ids = eventPath(event);
+      if (!ids.ok) return ids.result;
+      const parsed = parseBody(event.body);
+      if (!parsed.ok) return refused(400, parsed.detail);
+      if (typeof parsed.value["version"] !== "number") {
+        // Refused rather than defaulted, as for calendars: a missing version is
+        // a client that does not know what it is overwriting (§5.4).
+        return refused(400, "version is required, so a stale edit can be refused");
+      }
+
+      const result = await editEvent(
+        env("CALDER_TABLE"),
+        ids.calendarId,
+        ids.eventId,
+        who.userId,
+        parsed.value as unknown as EventEdit,
+        iso,
+      );
+      if (result.ok) return json(200, { event: result.event });
+      return refused(result.status, result.detail);
+    }
+
+    case "DELETE /v1/calendars/{calendarId}/events/{eventId}": {
+      const who = caller(event);
+      if (!who.ok) return who.result;
+      const ids = eventPath(event);
+      if (!ids.ok) return ids.result;
+
+      const result = await deleteEvent(env("CALDER_TABLE"), ids.calendarId, ids.eventId, who.userId);
+      if (result.ok) return json(200, { deleted: true });
+      return refused(result.status, result.detail);
+    }
+
+    // --- rsvps -------------------------------------------------------------
+    //
+    // Always the caller's own answer. The user id comes from the token and
+    // nowhere else, so there is no route for answering on somebody's behalf.
+
+    case "PUT /v1/calendars/{calendarId}/events/{eventId}/rsvp": {
+      const who = caller(event);
+      if (!who.ok) return who.result;
+      const ids = eventPath(event);
+      if (!ids.ok) return ids.result;
+      const parsed = parseBody(event.body);
+      if (!parsed.ok) return refused(400, parsed.detail);
+
+      const result = await putRsvp(
+        env("CALDER_TABLE"),
+        ids.calendarId,
+        ids.eventId,
+        who.userId,
+        parsed.value,
+        iso,
+      );
+      if (result.ok) return json(200, { rsvp: result.rsvp });
+      return refused(result.status, result.detail);
+    }
+
+    case "DELETE /v1/calendars/{calendarId}/events/{eventId}/rsvp": {
+      const who = caller(event);
+      if (!who.ok) return who.result;
+      const ids = eventPath(event);
+      if (!ids.ok) return ids.result;
+      const parsed = parseBody(event.body);
+      if (!parsed.ok) return refused(400, parsed.detail);
+
+      const result = await clearRsvp(
+        env("CALDER_TABLE"),
+        ids.calendarId,
+        ids.eventId,
+        who.userId,
+        parsed.value,
+      );
+      if (result.ok) return json(200, { cleared: true });
+      return refused(result.status, result.detail);
+    }
+
+    case "PUT /v1/calendars/{calendarId}/events/{eventId}/rsvp/ticket": {
+      const who = caller(event);
+      if (!who.ok) return who.result;
+      const ids = eventPath(event);
+      if (!ids.ok) return ids.result;
+      const parsed = parseBody(event.body);
+      if (!parsed.ok) return refused(400, parsed.detail);
+
+      const result = await setTicket(
+        env("CALDER_TABLE"),
+        ids.calendarId,
+        ids.eventId,
+        who.userId,
+        parsed.value,
+        iso,
+      );
+      if (result.ok) return json(200, { rsvp: result.rsvp });
+      return refused(result.status, result.detail);
     }
 
     case "GET /v1/calendars/{calendarId}/changes": {

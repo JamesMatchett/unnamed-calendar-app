@@ -240,7 +240,15 @@ resource "aws_apigatewayv2_route" "authenticated" {
     "PUT /v1/calendars/{calendarId}",
     "GET /v1/calendars/{calendarId}",
     "PATCH /v1/calendars/{calendarId}",
+    "DELETE /v1/calendars/{calendarId}",
     "GET /v1/calendars/{calendarId}/changes",
+    "DELETE /v1/calendars/{calendarId}/members/{userId}",
+    "PUT /v1/calendars/{calendarId}/events/{eventId}",
+    "PATCH /v1/calendars/{calendarId}/events/{eventId}",
+    "DELETE /v1/calendars/{calendarId}/events/{eventId}",
+    "PUT /v1/calendars/{calendarId}/events/{eventId}/rsvp",
+    "DELETE /v1/calendars/{calendarId}/events/{eventId}/rsvp",
+    "PUT /v1/calendars/{calendarId}/events/{eventId}/rsvp/ticket",
   ])
 
   api_id    = aws_apigatewayv2_api.main.id

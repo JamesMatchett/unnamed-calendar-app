@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "node:test";
 
-import { SK, calendarPk, userPk } from "./core/dist/keys.js";
+import { SK, calendarPk, userPk } from "@calder/core";
 import { TABLE, freshTable } from "./table.mjs";
 
 /**

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 
 import {
   CreateTableCommand,
+  DescribeTableCommand,
   DynamoDBClient,
 } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
@@ -97,6 +98,17 @@ export async function freshTable(tfSource) {
       ],
     }),
   );
+
+  // CreateTable returns before the table is usable, even with createTableMs
+  // set to zero: the status flips to ACTIVE on a later tick, and a write that
+  // lands first fails with ResourceNotFoundException. It showed up as one or
+  // two tests failing at random per run, never the same ones, which is the
+  // signature of a race and not of a bug in what was being tested.
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const { Table } = await base.send(new DescribeTableCommand({ TableName: TABLE }));
+    if (Table?.TableStatus === "ACTIVE") break;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
 
   const db = DynamoDBDocumentClient.from(base);
   return { db, close: () => server.close() };

@@ -25,13 +25,16 @@ import {
   GSI1_SK_PREFIX,
   GSI1_KEYS,
   KEY_PREFIX,
+  RETENTION_DAYS,
   SK,
   calendarPk,
+  daysFromNow,
   isOwner,
   userPk,
 } from "@calder/core";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import {
+  GetCommand,
   PutCommand,
   QueryCommand,
   UpdateCommand,
@@ -322,4 +325,73 @@ export async function editCalendar(
       detail: `calendar has moved on from version ${edit.version}`,
     };
   }
+}
+
+export type DeleteCalendarResult =
+  | { readonly ok: true; readonly calendar: CalendarItem }
+  | { readonly ok: false; readonly status: 403 | 404; readonly detail: string };
+
+/**
+ * Delete a calendar, for everyone in it.
+ *
+ * A status change rather than a removal, restorable for thirty days (§8.5): the
+ * META item takes `status: deleted`, a `deletedAt`, and an `expiresAt` thirty
+ * days out, so the table's TTL does the eventual removal and nothing here has
+ * to. Every other item in the partition stays where it is; accessTo answers
+ * 404 for a deleted calendar, which is what makes them unreachable.
+ *
+ * The one write that is NOT a version check. A delete is not an edit that can
+ * be stale: whichever version an owner was looking at, deleting it is what
+ * they meant. Already deleted is success, because the queue retries until it
+ * is.
+ */
+export async function deleteCalendar(
+  table: string,
+  calendarId: CalendarId,
+  actor: UserId,
+  now: Instant,
+  db: DynamoDBDocumentClient = client(),
+): Promise<DeleteCalendarResult> {
+  const access = await accessTo(table, calendarId, actor, db);
+  if (!access.ok) {
+    // accessTo cannot tell "deleted" from "not yours" to a caller, but it can
+    // to us, and a retry of a delete that already happened must succeed.
+    if (access.detail === "calendar is deleted") {
+      const gone = await db.send(
+        new GetCommand({ TableName: table, Key: { PK: calendarPk(calendarId), SK: SK.meta() } }),
+      );
+      return { ok: true, calendar: gone.Item as CalendarItem };
+    }
+    return { ok: false, status: 404, detail: access.detail };
+  }
+  if (!isOwner(access.membership)) {
+    return { ok: false, status: 403, detail: "only an owner may delete a calendar" };
+  }
+
+  const done = await db.send(
+    new UpdateCommand({
+      TableName: table,
+      Key: { PK: calendarPk(calendarId), SK: SK.meta() },
+      UpdateExpression:
+        "SET #status = :deleted, #deletedAt = :now, #expiresAt = :expires, " +
+        "#updatedAt = :now, #lastUpdatedBy = :actor, #version = #version + :one",
+      ExpressionAttributeNames: {
+        "#status": "status",
+        "#deletedAt": "deletedAt",
+        "#expiresAt": "expiresAt",
+        "#updatedAt": "updatedAt",
+        "#lastUpdatedBy": "lastUpdatedBy",
+        "#version": "version",
+      },
+      ExpressionAttributeValues: {
+        ":deleted": "deleted",
+        ":now": now,
+        ":expires": daysFromNow(RETENTION_DAYS.deletedCalendar),
+        ":actor": actor,
+        ":one": 1,
+      },
+      ReturnValues: "ALL_NEW",
+    }),
+  );
+  return { ok: true, calendar: done.Attributes as CalendarItem };
 }
